@@ -1,6 +1,6 @@
 {
   "name": "asnkitrt",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Encode and decode ASN.1 with compiled specifications, in the browser and Node.js",
   "license": "MIT",
   "type": "module",

@@ -4,7 +4,7 @@
 
 [package]
 name = "asnkitrt-wasm"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
 rust-version = "1.88"
 description = "The runtime of asnkit for the web and JavaScript, as WebAssembly"

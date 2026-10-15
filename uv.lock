@@ -15,7 +15,7 @@ members = [
 
 [[package]]
 name = "asnkit-gen-python"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/asnkit-gen-python" }
 dependencies = [
     { name = "asnkitrt" },
@@ -65,7 +65,7 @@ docs = [
 
 [[package]]
 name = "asnkitrt"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/asnkitrt" }
 
 [package.optional-dependencies]
