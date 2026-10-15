@@ -62,6 +62,60 @@ def runtime_can_load(asni: bytes) -> bool:
     return True
 
 
+class NotEmbeddedTest(unittest.TestCase):
+    """A module made with ``embed=false`` does not have the specification in
+    it, and is given one, as a file that is signed, encrypted and bound.
+
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.text = generate(
+            read("examples/corpus/plain.asni"), ["foo.asn"], "uper", embed=False
+        )
+        cls.foo = load_module(cls.text)
+
+    def corpus_key(self, name: str) -> bytes:
+        with open("examples/corpus/" + name) as fin:
+            return bytes.fromhex(fin.read().strip())
+
+    def test_the_specification_is_not_in_it(self) -> None:
+        self.assertNotIn("_ASNI", self.text)
+        self.assertIn("use_asni", self.foo.__all__)
+
+    def test_it_is_used_once_it_is_given(self) -> None:
+        question = self.foo.Question(id=1, question="Is 1+1=3?")
+        self.foo.spec.cache_clear()
+        self.foo._SPECIFICATION = None
+
+        with self.assertRaises(RuntimeError):
+            question.encode()
+
+        self.foo.use_asni(
+            read("examples/corpus/signed-encrypted-bound.asni"),
+            bound_to="corpus",
+            verification_keys={
+                bytes.fromhex("d543cae4811fc8b033704dc6e7896ff7"): self.corpus_key(
+                    "signing.pub"
+                )
+            },
+            decryption_keys={
+                bytes.fromhex("16cde2f77598fc5472df7570a510f54d"): self.corpus_key(
+                    "encryption.key"
+                )
+            },
+        )
+
+        for codec in ["ber", "uper", "jer"]:
+            self.assertEqual(
+                self.foo.Question.decode(question.encode(codec), codec), question
+            )
+
+    def test_a_file_that_fails_its_checks_is_not_used(self) -> None:
+        with self.assertRaises(asnkitrt.Error):
+            self.foo.use_asni(read("examples/corpus/signed.asni"))
+
+
 class GeneratedFooTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

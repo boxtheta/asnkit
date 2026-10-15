@@ -2,7 +2,7 @@
 
 A plugin for `asnkitcc` that generates Rust code from ASN.1. The
 generated module uses [`asnkitrt`](https://crates.io/crates/asnkitrt) and
-[`serde`](https://serde.rs), and embeds the compiled specification as
+[`serde`](https://serde.rs), and, by default, embeds the compiled specification as
 bytes. It has a struct for each `SEQUENCE` and `SET`, an enum for each
 `ENUMERATED` and `CHOICE`, and methods to encode and decode them.
 
@@ -43,6 +43,15 @@ Options, given with `--plugin-opt KEY=VALUE`:
   value. An `INTEGER` with bounds gets the smallest Rust integer type
   that fits them. Decoding a value that does not fit returns an error;
   it is never truncated.
+
+`embed`
+: `false` to leave the compiled specification out of the module, as for
+  one sent signed or encrypted. The module then has no `load()` and
+  `load_with()`: load the `.asni` file with
+  `asnkitrt::runtime::Specification::from_asni()`, with the
+  `asnkitrt::container::Checks` it needs, and give it to the methods as
+  any other. The file has to be compiled from the same specification.
+  Default: `true`.
 
 ## Type mapping
 

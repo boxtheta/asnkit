@@ -7,6 +7,16 @@ and `.asnst` formats, the runtime APIs and the command line keep
 working within a major version. `SECURITY.md` tells which releases get
 security fixes.
 
+## [Unreleased]
+
+### Added
+
+- The option `embed` of the plugins `asnkit-gen-python` and
+  `asnkit-gen-rust`: with `embed=false`, the module made does not have
+  the compiled specification in it, and is given one that is loaded
+  from a file, as one that is signed, encrypted, bound or has a nonce.
+  The module of Python then has `use_asni()`.
+
 ## [1.0.1] - 2026-10-15
 
 What the runtimes write and read now follows the standards where it

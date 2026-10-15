@@ -29,6 +29,10 @@ mod rfc5280;
 #[allow(dead_code)]
 #[path = "generated/shapes.rs"]
 mod shapes;
+#[rustfmt::skip]
+#[allow(dead_code)]
+#[path = "generated/shapes_not_embedded.rs"]
+mod shapes_not_embedded;
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -77,6 +81,62 @@ fn the_generated_files_are_current() {
             ..Options::default()
         },
     );
+    is_current(
+        "tests/generated/shapes.asni",
+        "tests/generated/shapes_not_embedded.rs",
+        Options {
+            embed: false,
+            ..Options::default()
+        },
+    );
+}
+
+/// Without the specification in it, a module is used with one that is
+/// loaded from a file, and encodes and decodes as one with it in does.
+#[test]
+fn a_module_without_the_specification_uses_one_that_is_loaded() {
+    use shapes_not_embedded::Asn1Type as _;
+
+    let text = fs::read_to_string(root().join("tests/generated/shapes_not_embedded.rs")).unwrap();
+
+    assert!(!text.contains("const ASNI") && !text.contains("pub fn load"));
+
+    let data = fs::read(root().join("tests/generated/shapes.asni")).unwrap();
+    let value = shapes_not_embedded::Keywords {
+        r#type: 255,
+        self_: true,
+        r#match: Some("m".into()),
+        foo_bar: -100,
+        foo_bar_2: 65535,
+        crate_: (),
+    };
+
+    for codec in CODECS {
+        let specification = asnkitrt::runtime::Specification::from_asni(
+            &data,
+            &asnkitrt::container::Checks::default(),
+            asnkitrt::runtime::Options::new(codec),
+        )
+        .unwrap();
+        let encoded = value.encode(&specification).unwrap();
+        let embedded = shapes::Keywords {
+            r#type: 255,
+            self_: true,
+            r#match: Some("m".into()),
+            foo_bar: -100,
+            foo_bar_2: 65535,
+            crate_: (),
+        };
+
+        assert_eq!(
+            encoded,
+            embedded.encode(&shapes::load(codec).unwrap()).unwrap()
+        );
+        assert_eq!(
+            shapes_not_embedded::Keywords::decode(&specification, &encoded).unwrap(),
+            value
+        );
+    }
 }
 
 #[test]

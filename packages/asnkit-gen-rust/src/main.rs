@@ -13,7 +13,9 @@
 //! first file the specification is from), `no_std`, which is `true` for
 //! code that needs `alloc` and not `std` (default `false`), and
 //! `integer`, which is what an INTEGER with no bounds is: `i64`
-//! (default), `i128` or `big`.
+//! (default), `i128` or `big`, and `embed`, which is `false` for code
+//! that does not have the compiled specification in it, which the code
+//! that uses it loads (default `true`).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -84,12 +86,13 @@ fn run(arguments: &Arguments) -> Result<(), Error> {
         match key {
             "name" if !value.is_empty() => name = Some(value.to_string()),
             "no_std" if ["true", "false"].contains(&value) => options.no_std = value == "true",
+            "embed" if ["true", "false"].contains(&value) => options.embed = value == "true",
             "integer" if Integer::parse(value).is_some() => {
                 options.integer = Integer::parse(value).unwrap_or_default();
             }
             _ => {
                 return Err(Error(format!(
-                    "Expected the option {item} as name=NAME, no_std=true|false or integer=i64|i128|big."
+                    "Expected the option {item} as name=NAME, no_std=true|false, integer=i64|i128|big or embed=true|false."
                 )));
             }
         }

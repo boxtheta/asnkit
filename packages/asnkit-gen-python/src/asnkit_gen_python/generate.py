@@ -69,6 +69,7 @@ TAKEN = {
     "enum",
     "functools",
     "spec",
+    "use_asni",
 }
 
 # Names of what the methods of the classes are called, which a member
@@ -136,17 +137,7 @@ from asnkitrt.runtime import CodecType
 
 DEFAULT_CODEC: CodecType = "{codec}"
 
-# The compiled specification, as the contents of an .asni file.
-_ASNI = (
-{asni}
-)
-
-
-@functools.cache
-def spec(codec: CodecType = DEFAULT_CODEC) -> asnkitrt.Specification:
-    """The specification, loaded for the given codec."""
-
-    return asnkitrt.load_asni(_ASNI, codec)
+{load}
 
 
 def _type(codec: CodecType, asn1_type: tuple[str, str]) -> Any:
@@ -338,6 +329,7 @@ class Generator:
         asni: bytes,
         sources: list[str],
         codec: str,
+        embed: bool = True,
     ) -> None:
         from asnkitrt.version import __version__ as asnkit_version  # noqa: F401
 
@@ -347,11 +339,15 @@ class Generator:
         self.asni = asni
         self.sources = sources
         self.codec = codec
+        self.embed = embed
         self.modules: dict[str, Any] = syntax.compiled_to_dict(compiled)
         self.blocks: list[str] = []
         self.registrations: list[str] = []
         self.functions: list[str] = []
         self.exported: list[str] = ["DEFAULT_CODEC", "spec"]
+
+        if not embed:
+            self.exported.append("use_asni")
         self.taken: dict[str, str] = {name: "the code of the module" for name in TAKEN}
         self.names: dict[tuple[str, str], str] = {}
         self.aliases: dict[tuple[str, str], tuple[str, str]] = {}
@@ -728,7 +724,11 @@ class Generator:
             version=self.version,
             sources=", ".join(self.sources) or "a specification",
             codec=self.codec,
-            asni=format_bytes(self.asni),
+            load=(
+                EMBEDDED.format(asni=format_bytes(self.asni))
+                if self.embed
+                else NOT_EMBEDDED
+            ).strip("\n"),
         )
         parts = [
             header,
@@ -743,6 +743,70 @@ class Generator:
         ]
 
         return "\n\n\n".join(part.strip("\n") for part in parts if part.strip()) + "\n"
+
+
+# How a module loads its specification when it is in it.
+EMBEDDED = """\
+# The compiled specification, as the contents of an .asni file.
+_ASNI = (
+{asni}
+)
+
+
+@functools.cache
+def spec(codec: CodecType = DEFAULT_CODEC) -> asnkitrt.Specification:
+    \"\"\"The specification, loaded for the given codec.\"\"\"
+
+    return asnkitrt.load_asni(_ASNI, codec)
+"""
+
+# How a module loads its specification when it is not in it, but given
+# by the code that uses it.
+NOT_EMBEDDED = """\
+# The compiled specification is not in this module: give it with use_asni().
+_SPECIFICATION: asnkitrt.syntax.CompiledSpecification | None = None
+
+
+def use_asni(
+    data: bytes | bytearray,
+    nonce: asnkitrt.syntax.NonceCheck = None,
+    accept_any_nonce: bool = False,
+    bound_to: str | None = None,
+    accept_any_binding: bool = False,
+    verification_keys: asnkitrt.syntax.Keys | None = None,
+    accept_any_signature: bool = False,
+    decryption_keys: asnkitrt.syntax.Keys | None = None,
+) -> None:
+    \"\"\"Uses the contents of an .asni file, made from the specification this
+    module is made from, for all codecs. It is checked once, here, with the
+    options of asnkitrt.load_asni().
+
+    \"\"\"
+
+    global _SPECIFICATION
+
+    _SPECIFICATION = asnkitrt.syntax.from_asni(
+        data,
+        nonce,
+        accept_any_nonce,
+        bound_to,
+        accept_any_binding,
+        verification_keys,
+        accept_any_signature,
+        decryption_keys,
+    )
+    spec.cache_clear()
+
+
+@functools.cache
+def spec(codec: CodecType = DEFAULT_CODEC) -> asnkitrt.Specification:
+    \"\"\"The specification given with use_asni(), loaded for the given codec.\"\"\"
+
+    if _SPECIFICATION is None:
+        raise RuntimeError("No specification: give it with use_asni().")
+
+    return asnkitrt.load(_SPECIFICATION, codec)
+"""
 
 
 REGISTER = """\
@@ -769,13 +833,16 @@ def generate(
     asni: bytes,
     sources: list[str] | None = None,
     codec: str = DEFAULT_CODEC,
+    embed: bool = True,
 ) -> str:
     """Returns the text of a Python module for given contents of an
     ``.asni`` file, which must not be signed, encrypted, bound to
-    something or have a nonce to check, as it is embedded in the module
-    and loaded without any of those. `sources` are the names of the
-    files it was made from, and `codec` is what the module encodes and
-    decodes with if not told otherwise.
+    something or have a nonce to check, as it may be embedded in the
+    module and loaded without any of those. `sources` are the names of
+    the files it was made from, and `codec` is what the module encodes
+    and decodes with if not told otherwise. Without `embed`, the module
+    does not have the specification in it, and is given it with its
+    ``use_asni()``, as from a file that is signed or encrypted.
 
     """
 
@@ -787,4 +854,4 @@ def generate(
             "bound to something or has a nonce, but: {}".format(error)
         )
 
-    return Generator(compiled, asni, sources or [], codec).run()
+    return Generator(compiled, asni, sources or [], codec, embed).run()

@@ -60,9 +60,11 @@ The formats are in [file formats](file_formats.md).
 The first plugin makes a Python module that imports `asnkitrt`, has the
 compiled specification in it as bytes, and has data classes with
 `encode()`, `decode()`, `to_value()` and `from_value()`. Its
-options are `name`, the name of the module, and `codec`, which the
+options are `name`, the name of the module, `codec`, which the
 module encodes and decodes with if not told otherwise (default
-`ber`). See `packages/asnkit-gen-python/README.rst`.
+`ber`), and `embed`, which is `false` for a module without the
+compiled specification, which is then given to it with its
+`use_asni()` (default `true`). See `packages/asnkit-gen-python/README.rst`.
 
 ## asnkit-gen-rust
 
@@ -74,5 +76,7 @@ for each `ENUMERATED` and `CHOICE`, with `encode()`, `decode()`,
 options are `name`, the name of the module, `no_std`, which is
 `true` for code that needs `alloc` and not `std` (default
 `false`), and `integer`, which is what an `INTEGER` with no bounds
-is: `i64` (default), `i128` or `big`, which holds any. See
+is: `i64` (default), `i128` or `big`, which holds any, and `embed`,
+which is `false` for a module without the compiled specification and
+its `load()`, which the code that uses it loads (default `true`). See
 `packages/asnkit-gen-rust/README.md`.

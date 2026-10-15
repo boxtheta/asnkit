@@ -2,7 +2,7 @@ asnkit-gen-python
 =================
 
 A plugin for `asnkitcc`_ that generates Python code from ASN.1. The
-generated module imports `asnkitrt`_ and embeds the compiled
+generated module imports `asnkitrt`_ and, by default, embeds the compiled
 specification as bytes. It has a data class for each ``SEQUENCE`` and
 ``SET``, an enumeration for each ``ENUMERATED`` and a class for each
 alternative of a ``CHOICE``, all with methods to encode and decode.
@@ -27,6 +27,16 @@ Options, given with ``--plugin-opt KEY=VALUE``:
 
 ``codec``
    The codec used when none is given. Default: ``ber``.
+
+``embed``
+   ``false`` to leave the compiled specification out of the module, as
+   for one sent signed or encrypted. The module then has
+   ``use_asni(data, ...)``, which takes the contents of the ``.asni``
+   file with the options of ``asnkitrt.load_asni()`` (``nonce``,
+   ``bound_to``, ``verification_keys``, ``decryption_keys`` and those
+   to accept any), checks it once and uses it for every codec. Until it
+   is called, encoding and decoding raise ``RuntimeError``. The file has
+   to be compiled from the same specification. Default: ``true``.
 
 Names are converted to Python style: ``fooBar`` becomes ``foo_bar`` and
 a type ``Foo-Bar`` becomes ``FooBar``. If two names end up the same in

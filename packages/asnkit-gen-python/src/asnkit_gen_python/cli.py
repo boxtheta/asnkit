@@ -10,9 +10,11 @@
 
 It writes one Python module to the folder. The options are ``name``,
 which is the name of the module without ``.py`` (default: that of
-the first file the specification is from), and ``codec``, which is
+the first file the specification is from), ``codec``, which is
 what the module encodes and decodes with if not told otherwise
-(default: ``ber``).
+(default: ``ber``), and ``embed``, which is ``false`` for a module that
+does not have the compiled specification in it, and is given it with
+its ``use_asni()`` (default: ``true``).
 
 """
 
@@ -26,7 +28,7 @@ from asnkitrt.errors import Error
 from .generate import DEFAULT_CODEC, GenerateError, generate
 from .version import __version__
 
-OPTIONS = {"name", "codec"}
+OPTIONS = {"name", "codec", "embed"}
 
 
 def read_options(items: list[str]) -> dict[str, str]:
@@ -71,7 +73,14 @@ def run(args: argparse.Namespace) -> str:
     if not name.isidentifier():
         raise GenerateError("Expected a name of a module, but got '{}'.".format(name))
 
-    text = generate(asni, sources, options.get("codec", DEFAULT_CODEC))
+    embed = options.get("embed", "true")
+
+    if embed not in ("true", "false"):
+        raise GenerateError(
+            "Expected embed=true or embed=false, but got '{}'.".format(embed)
+        )
+
+    text = generate(asni, sources, options.get("codec", DEFAULT_CODEC), embed == "true")
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, name + ".py")
 
