@@ -36,7 +36,7 @@ Python, generation fails with an error.
 
 .. _asnkitrt: https://pypi.org/project/asnkitrt/
 
-.. _COPYING: https://github.com/boxtheta/asnkit/blob/main/COPYING
+.. _COPYING: https://github.com/boxtheta/asnkit/blob/trunk/COPYING
 
 License
 -------

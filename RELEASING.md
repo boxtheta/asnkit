@@ -25,7 +25,7 @@ and passes its tests.
   and store it as the secret `NPM_TOKEN` of the environment `npm`.
   Once the package exists, trusted publishing can replace the token.
 - **DCO:** install the [DCO app](https://github.com/apps/dco) on the
-  repository, and make its check required on `main`, so that every
+  repository, and make its check required on `trunk`, so that every
   commit of a pull request is signed off (see `CONTRIBUTING.md`).
 
 ## Each release
@@ -68,7 +68,7 @@ and passes its tests.
 3. In `CHANGELOG.md`, give the section of the version its date
    (`## [1.2.3] - 2026-10-15`) and add the link at the end.
 
-4. Run all the checks of `CONTRIBUTING.md`, commit, and merge to `main`.
+4. Run all the checks of `CONTRIBUTING.md`, commit, and merge to `trunk`.
 
 5. Tag the merge commit and push the tag:
 

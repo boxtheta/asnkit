@@ -27,7 +27,7 @@ Signed-off-by: Your Name <you@example.com>
 ```
 
 A check on the pull request fails if a commit is not signed off. To
-sign off commits you already made, run `git rebase --signoff main` and
+sign off commits you already made, run `git rebase --signoff trunk` and
 push again. If you contribute on behalf of your employer, make sure
 that you are allowed to.
 
@@ -113,7 +113,7 @@ that you are allowed to.
    directory:
 
    ```text
-   git switch main
+   git switch trunk
    mkdir -p ../bench/before
    ASNKIT_BENCH_OUT="$PWD/../bench/before" cargo bench -p asnkitrt --bench runtime
    git switch my-branch

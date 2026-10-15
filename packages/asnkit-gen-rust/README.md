@@ -73,4 +73,4 @@ does not know returns an error.
 
 Apache License 2.0 (`LICENSE-COMPILER`). The generated code, with the
 helper code copied into it, is yours to use under terms of your choice;
-see [`COPYING`](https://github.com/boxtheta/asnkit/blob/main/COPYING).
+see [`COPYING`](https://github.com/boxtheta/asnkit/blob/trunk/COPYING).

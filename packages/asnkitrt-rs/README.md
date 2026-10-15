@@ -58,7 +58,7 @@ encoded either way. All of these return an error; none produces a wrong
 value.
 
 It is the runtime of reference: the more than 5,300 vectors in
-[`tests/vectors`](https://github.com/boxtheta/asnkit/blob/main/tests/vectors) are what it encodes and decodes,
+[`tests/vectors`](https://github.com/boxtheta/asnkit/blob/trunk/tests/vectors) are what it encodes and decodes,
 including constraint checks, and the Python and WebAssembly runtimes
 are held to them. `tests/x509.rs` checks it against OpenSSL.
 

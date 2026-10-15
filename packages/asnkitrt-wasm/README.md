@@ -100,7 +100,7 @@ of `tests/vectors` through the JavaScript API, as the Rust runtime does
 in Rust.
 
 It supports what the Rust runtime supports; see
-[its README](https://github.com/boxtheta/asnkit/blob/main/packages/asnkitrt-rs/README.md#limitations) for the
+[its README](https://github.com/boxtheta/asnkit/blob/trunk/packages/asnkitrt-rs/README.md#limitations) for the
 limitations.
 
 Licensed under the MIT License. See `LICENSE-RUNTIMES`.

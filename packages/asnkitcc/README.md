@@ -16,10 +16,10 @@ $ asnkitcc generate --plugin rust -o src foo.asn     # Writes src/foo.rs.
 The compiler can also add a nonce to an `.asnc` file, bind it to a
 string, and sign and encrypt it. Run `asnkitcc` without arguments to see
 the options. The plugin `NAME` is the program `asnkit-gen-NAME`, looked
-up on the `PATH`; see [`docs/plugins.md`](https://github.com/boxtheta/asnkit/blob/main/docs/plugins.md). Install
+up on the `PATH`; see [`docs/plugins.md`](https://github.com/boxtheta/asnkit/blob/trunk/docs/plugins.md). Install
 the plugins with `cargo install asnkit-gen-rust` or
 `pip install asnkit-gen-python`.
 
 Licensed under the Apache License 2.0 (`LICENSE-COMPILER`). What it
 produces is yours to use under terms of your choice; see
-[`COPYING`](https://github.com/boxtheta/asnkit/blob/main/COPYING).
+[`COPYING`](https://github.com/boxtheta/asnkit/blob/trunk/COPYING).

@@ -2,9 +2,9 @@ name: Documentation
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "trunk" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "trunk" ]
 
 jobs:
   # The documentation is built with MkDocs, and any warning is an error.
