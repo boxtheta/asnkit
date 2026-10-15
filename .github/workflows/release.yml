@@ -155,7 +155,7 @@ jobs:
         if npm view "asnkitrt@${GITHUB_REF_NAME#v}" version | grep -q .; then
           echo "asnkitrt ${GITHUB_REF_NAME#v} is already published."
         else
-          npm publish --access public npm/asnkitrt-*.tgz
+          npm publish --access public ./npm/asnkitrt-*.tgz
         fi
 
   github:
