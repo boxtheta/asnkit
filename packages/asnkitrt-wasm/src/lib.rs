@@ -5,7 +5,7 @@
 //! The runtime of asnkit for the web and JavaScript: the runtime for
 //! Rust, built as WebAssembly with `wasm-bindgen`.
 //!
-//! It loads `.asnc` files and encodes and decodes with them, as the
+//! It loads `.asni` files and encodes and decodes with them, as the
 //! runtime for Python does, with the values of JavaScript (see
 //! `convert`). The JavaScript of `js/` loads the WebAssembly, in a
 //! browser or in Node.js, and is what is used.
@@ -180,8 +180,8 @@ pub struct Specification {
 
 #[wasm_bindgen]
 impl Specification {
-    /// Loads the contents of an `.asnc` file for `codec`, `ber` if not
-    /// given. The options are those of `asnkitrt.load_asnc()` of the
+    /// Loads the contents of an `.asni` file for `codec`, `ber` if not
+    /// given. The options are those of `asnkitrt.load_asni()` of the
     /// runtime for Python, in camel case: `numericEnums`, `lenient`,
     /// `nonce` (a number, or a function that tells if a nonce is
     /// accepted), `acceptAnyNonce`, `boundTo`, `acceptAnyBinding`,
@@ -189,7 +189,7 @@ impl Specification {
     /// are `[id, key]` pairs of `Uint8Array`s, as a `Map` or an array.
     #[wasm_bindgen(constructor)]
     pub fn new(
-        asnc: &[u8],
+        asni: &[u8],
         codec: Option<String>,
         options: JsValue,
     ) -> Result<Specification, JsValue> {
@@ -247,7 +247,7 @@ impl Specification {
         };
 
         Ok(Specification {
-            inner: Inner::from_asnc(asnc, &checks, load).map_err(runtime_error)?,
+            inner: Inner::from_asni(asni, &checks, load).map_err(runtime_error)?,
             codec,
         })
     }

@@ -19,12 +19,12 @@ export function ready() {
   return Promise.resolve();
 }
 
-/** Loads the contents of an `.asnc` file for a codec. */
-export async function load(asnc, codec = 'ber', options = {}) {
-  return new Specification(asnc, codec, options);
+/** Loads the contents of an `.asni` file for a codec. */
+export async function load(asni, codec = 'ber', options = {}) {
+  return new Specification(asni, codec, options);
 }
 
-/** Loads the `.asnc` file with this path for a codec. */
+/** Loads the `.asni` file with this path for a codec. */
 export async function loadFile(path, codec = 'ber', options = {}) {
   return new Specification(await readFile(path), codec, options);
 }

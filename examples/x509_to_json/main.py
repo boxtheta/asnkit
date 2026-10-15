@@ -17,7 +17,7 @@ import sys
 import asnkitrt
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-RFC5280_ASNC_PATH = os.path.join(SCRIPT_DIR, "..", "compiled", "rfc5280.asnc")
+RFC5280_ASNI_PATH = os.path.join(SCRIPT_DIR, "..", "compiled", "rfc5280.asni")
 
 PEM_RE = re.compile(
     rb"-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----", re.DOTALL
@@ -82,7 +82,7 @@ def main():
         with open(args.certificate, "rb") as fin:
             data = fin.read()
 
-    rfc5280 = asnkitrt.load_asnc_file(RFC5280_ASNC_PATH, "der")
+    rfc5280 = asnkitrt.load_asni_file(RFC5280_ASNI_PATH, "der")
     decoded = rfc5280.decode("Certificate", pem_to_der(data))
 
     print(json.dumps(to_json_value(decoded), indent=4))

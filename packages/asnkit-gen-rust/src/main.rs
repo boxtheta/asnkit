@@ -5,7 +5,7 @@
 //! The plugin `asnkit-gen-rust`, as `asnkitcc generate` runs it:
 //!
 //! ```text
-//! asnkit-gen-rust --asnc FILE [--asnst FILE] --out FOLDER [--opt KEY=VALUE ...]
+//! asnkit-gen-rust --asni FILE [--asnst FILE] --out FOLDER [--opt KEY=VALUE ...]
 //! ```
 //!
 //! It writes one Rust module to the folder. The options are `name`,
@@ -21,16 +21,16 @@ use std::process::ExitCode;
 use asnkit_gen_rust::{Error, Integer, Options, VERSION, generate};
 
 const USAGE: &str =
-    "usage: asnkit-gen-rust --asnc FILE [--asnst FILE] --out FOLDER [--opt KEY=VALUE ...]";
+    "usage: asnkit-gen-rust --asni FILE [--asnst FILE] --out FOLDER [--opt KEY=VALUE ...]";
 
 struct Arguments {
-    asnc: PathBuf,
+    asni: PathBuf,
     out: PathBuf,
     options: Vec<String>,
 }
 
 fn parse_arguments(arguments: &[String]) -> Result<Option<Arguments>, String> {
-    let mut asnc = None;
+    let mut asni = None;
     let mut out = None;
     let mut options = Vec::new();
     let mut iterator = arguments.iter();
@@ -56,8 +56,8 @@ fn parse_arguments(arguments: &[String]) -> Result<Option<Arguments>, String> {
 
                 return Ok(None);
             }
-            "--asnc" => asnc = Some(PathBuf::from(value("--asnc")?)),
-            // The names of the files are in the .asnc file too.
+            "--asni" => asni = Some(PathBuf::from(value("--asni")?)),
+            // The names of the files are in the .asni file too.
             "--asnst" => {
                 value("--asnst")?;
             }
@@ -68,7 +68,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Option<Arguments>, String> {
     }
 
     Ok(Some(Arguments {
-        asnc: asnc.ok_or_else(|| format!("error: --asnc is needed.\n{USAGE}"))?,
+        asni: asni.ok_or_else(|| format!("error: --asni is needed.\n{USAGE}"))?,
         out: out.ok_or_else(|| format!("error: --out is needed.\n{USAGE}"))?,
         options,
     }))
@@ -95,9 +95,9 @@ fn run(arguments: &Arguments) -> Result<(), Error> {
         }
     }
 
-    let asnc = std::fs::read(&arguments.asnc)
-        .map_err(|error| Error(format!("{}: {error}", arguments.asnc.display())))?;
-    let (text, sources) = generate(&asnc, options)?;
+    let asni = std::fs::read(&arguments.asni)
+        .map_err(|error| Error(format!("{}: {error}", arguments.asni.display())))?;
+    let (text, sources) = generate(&asni, options)?;
 
     let name = match name {
         Some(name) => name,

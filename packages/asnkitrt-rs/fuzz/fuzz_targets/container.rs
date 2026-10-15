@@ -8,7 +8,7 @@ use asnkitrt::container::{self, Binding, Checks, Nonce, Signature};
 use asnkitrt::node::Spec;
 use libfuzzer_sys::fuzz_target;
 
-// An .asnc file that is anything, read by a reader that accepts any
+// An .asni file that is anything, read by a reader that accepts any
 // signature, nonce and binding, which is as far as it can be taken, and
 // the nodes of it, which are lowered for every codec.
 fuzz_target!(|data: &[u8]| {

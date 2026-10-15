@@ -62,7 +62,7 @@ export type Value =
 /** A key and its identifier, of 16 and 32 bytes. */
 export type KeyPair = [id: Uint8Array, key: Uint8Array];
 
-/** What an `.asnc` file has to be to be loaded, and how. */
+/** What an `.asni` file has to be to be loaded, and how. */
 export interface LoadOptions {
   /** ENUMERATED values are numbers and not names. */
   numericEnums?: boolean;
@@ -94,7 +94,7 @@ export interface CodecOptions {
 /** A compiled specification, loaded for a codec. */
 export class Specification {
   /** Loads a specification. The WebAssembly has to be loaded first: see `ready()`. */
-  constructor(asnc: Uint8Array, codec?: Codec, options?: LoadOptions);
+  constructor(asni: Uint8Array, codec?: Codec, options?: LoadOptions);
   readonly codec: Codec;
   encode(name: string, value: Value, options?: CodecOptions): Uint8Array;
   /** Decodes bytes, or the text of JER and XER. */
@@ -115,8 +115,8 @@ export class Specification {
 /** Loads the WebAssembly, which `load()` does too. */
 export function ready(): Promise<void>;
 
-/** Loads the contents of an `.asnc` file. */
-export function load(asnc: Uint8Array, codec?: Codec, options?: LoadOptions): Promise<Specification>;
+/** Loads the contents of an `.asni` file. */
+export function load(asni: Uint8Array, codec?: Codec, options?: LoadOptions): Promise<Specification>;
 
-/** Node.js only: loads the `.asnc` file with this path. */
+/** Node.js only: loads the `.asni` file with this path. */
 export function loadFile(path: string, codec?: Codec, options?: LoadOptions): Promise<Specification>;

@@ -21,7 +21,7 @@ files below.
 
 The plugin is run with these arguments:
 
-- `--asnc FILE` — The compiled specification, an `.asnc` file. It is not signed,
+- `--asni FILE` — The compiled specification, an `.asni` file. It is not signed,
   encrypted, bound to something or made with a nonce, as it is meant to
   be put in what the plugin makes and loaded from there. `asnkitcc generate` refuses the options for those.
 
@@ -42,7 +42,7 @@ was asked for, and anything else is that it did not. What it writes to
 standard error is shown to the person running it as it is, and what it
 writes to standard output as well.
 
-Most plugins want the compiled specification (`--asnc`), where
+Most plugins want the compiled specification (`--asni`), where
 everything is resolved: `COMPONENTS OF`, tags, parameterized types and
 the modules that types come from are all worked out. The syntax tree is
 for those that want what is written, such as the names of the files, or

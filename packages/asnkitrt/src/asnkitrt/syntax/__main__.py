@@ -4,9 +4,9 @@
 
 """Print a syntax tree or a compiled specification as JSON.
 
-Give an ``.asnst`` or ``.asnc`` file::
+Give an ``.asnst`` or ``.asni`` file::
 
-    python -m asnkitrt.syntax foo.asnc
+    python -m asnkitrt.syntax foo.asni
     python -m asnkitrt.syntax foo.asnst
 
 """
@@ -16,7 +16,7 @@ import dataclasses
 import json
 from typing import Any, Sequence
 
-from .container import from_asnc, from_asnst, read_header
+from .container import from_asni, from_asnst, read_header
 from .wire import to_json
 
 
@@ -40,18 +40,18 @@ def main(arguments: Sequence[str] | None = None) -> None:
         "files",
         nargs="+",
         metavar="FILE",
-        help="An .asnc file or an .asnst file.",
+        help="An .asni file or an .asnst file.",
     )
     args = parser.parse_args(arguments)
     tree: Any
 
-    if not args.files[0].endswith((".asnc", ".asnst")):
+    if not args.files[0].endswith((".asni", ".asnst")):
         parser.error(
-            "Expected an .asnc or an .asnst file. ASN.1 is parsed by asnkitcc."
+            "Expected an .asni or an .asnst file. ASN.1 is parsed by asnkitcc."
         )
 
     if len(args.files) > 1:
-        parser.error("Only one .asnc or .asnst file can be given.")
+        parser.error("Only one .asni or .asnst file can be given.")
 
     with open(args.files[0], "rb") as fin:
         data = fin.read()
@@ -70,9 +70,9 @@ def main(arguments: Sequence[str] | None = None) -> None:
 
     # Whatever its nonce and what it is bound to, as it is only
     # looked at.
-    if header.kind == "asnc":
+    if header.kind == "asni":
         # Who signed it does not matter either.
-        tree = from_asnc(
+        tree = from_asni(
             data,
             accept_any_nonce=True,
             accept_any_binding=True,

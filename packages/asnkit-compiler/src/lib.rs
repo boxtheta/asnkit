@@ -8,17 +8,17 @@
 //!
 //! ```
 //! use asnkit_compiler::container::Protection;
-//! use asnkit_compiler::{Input, compile_to_asnc, parse_to_asnst};
+//! use asnkit_compiler::{Input, compile_to_asni, parse_to_asnst};
 //!
 //! let input = Input::String(
 //!     "Foo DEFINITIONS ::= BEGIN Number ::= INTEGER (0..9) END".to_string(),
 //! );
 //!
 //! // What a runtime loads, and the syntax tree for plugins.
-//! let asnc = compile_to_asnc(&input, None, None, &Protection::default())?;
+//! let asni = compile_to_asni(&input, None, None, &Protection::default())?;
 //! let asnst = parse_to_asnst(&input)?;
 //!
-//! assert!(asnc.starts_with(b"ASNC"));
+//! assert!(asni.starts_with(b"ASNI"));
 //! assert!(!asnst.is_empty());
 //! # Ok::<(), asnkit_compiler::Error>(())
 //! ```
@@ -195,18 +195,18 @@ fn summarize(nodes: &Value) -> Vec<ModuleSummary> {
         .unwrap_or_default()
 }
 
-/// The contents of the `.asnc` file of an input.
-pub fn compile_to_asnc(
+/// The contents of the `.asni` file of an input.
+pub fn compile_to_asni(
     input: &Input,
     nonce: Option<u32>,
     bound_to: Option<String>,
     protection: &container::Protection,
 ) -> Result<Vec<u8>, Error> {
-    compile_to_asnc_with_summary(input, nonce, bound_to, protection).map(|(data, _)| data)
+    compile_to_asni_with_summary(input, nonce, bound_to, protection).map(|(data, _)| data)
 }
 
-/// Same as `compile_to_asnc()`, and tells what the modules have.
-pub fn compile_to_asnc_with_summary(
+/// Same as `compile_to_asni()`, and tells what the modules have.
+pub fn compile_to_asni_with_summary(
     input: &Input,
     nonce: Option<u32>,
     bound_to: Option<String>,
@@ -218,7 +218,7 @@ pub fn compile_to_asnc_with_summary(
     metadata.bound_to = bound_to;
 
     let data =
-        container::write_asnc(&metadata, &nodes, nonce, protection).map_err(container_error)?;
+        container::write_asni(&metadata, &nodes, nonce, protection).map_err(container_error)?;
 
     Ok((data, summary))
 }

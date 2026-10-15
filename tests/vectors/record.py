@@ -15,7 +15,7 @@ This finds the cases, the specifications, types and values to try, in
 the tests of the codecs of the runtime for Python. It runs them with
 `load_dict()` and the encode and decode methods of a specification
 wrapped. Each time a test loads a specification, it is resolved and
-kept as an ``.asnc`` file in ``specs``, named by the SHA-256 of its
+kept as an ``.asni`` file in ``specs``, named by the SHA-256 of its
 contents. Each time a test encodes or decodes, the type and what is
 given (the value to encode, or the bytes to decode) are noted.
 
@@ -86,7 +86,7 @@ class Recorder:
             return
 
         try:
-            asnc = syntax.to_asnc(
+            asni = syntax.to_asni(
                 syntax.compiled_from_dict(specification),
                 syntax.Metadata(generator=None),
             )
@@ -94,8 +94,8 @@ class Recorder:
             # Not a specification that can be compiled to a file.
             return
 
-        digest = hashlib.sha256(asnc).hexdigest()[:16]
-        self.specs[digest] = asnc
+        digest = hashlib.sha256(asni).hexdigest()[:16]
+        self.specs[digest] = asni
         self.by_object[id(loaded)] = (loaded, digest, codec, numeric_enums, lenient)
 
     def note(self, loaded, operation, name, given, options):
@@ -217,9 +217,9 @@ def main():
     for name in os.listdir(specs_folder):
         os.remove(os.path.join(specs_folder, name))
 
-    for digest, asnc in RECORDER.specs.items():
-        with open(os.path.join(specs_folder, digest + ".asnc"), "wb") as fout:
-            fout.write(asnc)
+    for digest, asni in RECORDER.specs.items():
+        with open(os.path.join(specs_folder, digest + ".asni"), "wb") as fout:
+            fout.write(asni)
 
     cases = list(RECORDER.vectors.values())
     done = run_rust(cases)

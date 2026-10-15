@@ -7,8 +7,8 @@ Everyone who takes part is expected to follow the
 
 ## Developer Certificate of Origin
 
-asnkit is licensed under the Apache License 2.0, the MIT License and
-CC-BY-4.0, each for its own part of the repository (see `COPYING`). A
+asnkit is licensed under the Apache License 2.0 and the MIT License,
+each for its own part of the repository. A
 contribution is under the license of the files it changes, as section
 5 of the Apache License says for the parts under it.
 
@@ -140,8 +140,8 @@ that you are allowed to.
   `sha256` when a source file changes.
 - **The table of kinds** of nodes is in `docs/file_formats.md` and,
   copied, in `packages/asnkit-compiler/src/kinds.md`. Change both.
-- **`examples/asnc.asn`** describes the node tree, so a change to the
-  shape of a node changes it, its converter in `tests/test_asnc_asn.py`
+- **`examples/asni.asn`** describes the node tree, so a change to the
+  shape of a node changes it, its converter in `tests/test_asni_asn.py`
   and its golden case.
 - **Generated code:** after a change to `asnkit-gen-rust`, make its
   files again with

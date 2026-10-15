@@ -6,7 +6,7 @@
 //!
 //! This is the runtime for Rust of the formats in
 //! `docs/file_formats.md`. It needs the `alloc` crate but not `std`,
-//! and it has no parser: it loads the `.asnc` files `asnkitcc` makes.
+//! and it has no parser: it loads the `.asni` files `asnkitcc` makes.
 //!
 //! It does BER, DER, OER, PER and UPER, and checks the constraints of
 //! a value, and it does what the runtime for Python does: the vectors
@@ -20,8 +20,8 @@
 //!
 //! # fn main() -> asnkitrt::Result<()> {
 //! // A compiled specification, loaded for a codec.
-//! let data = include_bytes!("../../../examples/compiled/foo.asnc");
-//! let foo = Specification::from_asnc(data, &Checks::default(), Options::new(Codec::Ber))?;
+//! let data = include_bytes!("../../../examples/compiled/foo.asni");
+//! let foo = Specification::from_asni(data, &Checks::default(), Options::new(Codec::Ber))?;
 //!
 //! let question = Value::Map(vec![
 //!     ("id".into(), Value::Integer(1)),
@@ -38,7 +38,7 @@
 //! # Features
 //!
 //! - `std`, on by default.
-//! - `signing` and `encryption`, on by default, to load `.asnc` files
+//! - `signing` and `encryption`, on by default, to load `.asni` files
 //!   that are signed or encrypted. A device that is sent its
 //!   specifications builds with `default-features = false` and these.
 //! - `serde`, on by default, for [`serde_value::to_value`] and

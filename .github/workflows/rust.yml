@@ -196,14 +196,14 @@ jobs:
     - name: Compile rfc5280 with the Rust compiler
       run: |
         cargo build --locked --release --bin asnkitcc
-        ./target/release/asnkitcc compile -o "$RUNNER_TEMP/rfc5280.asnc" examples/compiled/rfc5280.asn
+        ./target/release/asnkitcc compile -o "$RUNNER_TEMP/rfc5280.asni" examples/compiled/rfc5280.asn
     - name: Try it with OpenSSL
       run: |
-        ASNKIT_RFC5280_ASNC="$RUNNER_TEMP/rfc5280.asnc" ASNKIT_EXPECT_GENERATOR="(Rust)" \
+        ASNKIT_RFC5280_ASNI="$RUNNER_TEMP/rfc5280.asni" ASNKIT_EXPECT_GENERATOR="(Rust)" \
             uv run python -m unittest tests.test_openssl_x509
     - name: Try X.509 with the runtime in Rust and what the Rust compiler makes
       run: |
-        ASNKIT_RFC5280_ASNC="$RUNNER_TEMP/rfc5280.asnc" cargo test --locked -p asnkitrt --test x509
+        ASNKIT_RFC5280_ASNI="$RUNNER_TEMP/rfc5280.asni" cargo test --locked -p asnkitrt --test x509
     - name: Read signed and encrypted files with the runtime of Python
       run: |
         ASNKIT_RUST_BINARY="$PWD/target/release/asnkitcc" \

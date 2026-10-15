@@ -16,8 +16,8 @@ use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 use asnkitrt::value::Value;
 
-const FOO: &[u8] = include_bytes!("../../../examples/compiled/foo.asnc");
-const RFC5280: &[u8] = include_bytes!("../../../examples/compiled/rfc5280.asnc");
+const FOO: &[u8] = include_bytes!("../../../examples/compiled/foo.asni");
+const RFC5280: &[u8] = include_bytes!("../../../examples/compiled/rfc5280.asni");
 // A certificate with all the extensions OpenSSL makes.
 const CERTIFICATE: &[u8] = include_bytes!("../tests/fixtures/x509/extensions_all.der");
 
@@ -34,7 +34,7 @@ const CODECS: [(&str, Codec, bool); 7] = [
 ];
 
 fn load(data: &[u8], codec: Codec) -> Specification {
-    Specification::from_asnc(data, &Checks::default(), Options::new(codec)).unwrap()
+    Specification::from_asni(data, &Checks::default(), Options::new(codec)).unwrap()
 }
 
 fn main() {

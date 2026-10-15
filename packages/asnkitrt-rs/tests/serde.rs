@@ -19,7 +19,7 @@ fn compiled(name: &str, codec: Codec) -> Specification {
         .join("../../examples/compiled")
         .join(name);
 
-    Specification::from_asnc(
+    Specification::from_asni(
         &fs::read(path).unwrap(),
         &Checks::default(),
         Options::new(codec),
@@ -35,7 +35,7 @@ struct Question {
 
 #[test]
 fn a_sequence_is_a_struct() {
-    let foo = compiled("foo.asnc", Codec::Ber);
+    let foo = compiled("foo.asni", Codec::Ber);
     let question = Question {
         id: 1,
         question: "Is 1+1=3?".into(),
@@ -101,7 +101,7 @@ struct SubjectPublicKeyInfo {
 
 #[test]
 fn bit_strings_and_optional_members() {
-    let der = compiled("rfc5280.asnc", Codec::Der);
+    let der = compiled("rfc5280.asni", Codec::Der);
     let data = fs::read(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/x509/key_p256.der"),
     )

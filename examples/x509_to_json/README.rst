@@ -3,7 +3,7 @@ Dump an X.509 certificate as JSON
 
 Reads a certificate in PEM or DER, from a file or from standard input,
 and prints it as JSON. It decodes with the precompiled RFC 5280
-specification in ``../compiled/rfc5280.asnc``, so no ASN.1 parser is
+specification in ``../compiled/rfc5280.asni``, so no ASN.1 parser is
 needed.
 
 .. code-block:: text

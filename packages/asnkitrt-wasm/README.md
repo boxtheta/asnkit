@@ -2,24 +2,24 @@
 
 The asnkit runtime for browsers and Node.js. It is the Rust runtime
 compiled to WebAssembly, with a small JavaScript API. It loads the
-`.asnc` files produced by `asnkitcc` and uses them to encode and decode
+`.asni` files produced by `asnkitcc` and uses them to encode and decode
 ASN.1, without parsing ASN.1 itself.
 
 The codecs are BER, DER, OER, PER, UPER, JER and XER. It can also check
 values against their constraints, and load signed, encrypted and bound
-`.asnc` files.
+`.asni` files.
 
 ```js
 import { load } from 'asnkitrt';
 
-const asnc = new Uint8Array(await (await fetch('foo.asnc')).arrayBuffer());
-const foo = await load(asnc, 'uper');
+const asni = new Uint8Array(await (await fetch('foo.asni')).arrayBuffer());
+const foo = await load(asni, 'uper');
 
 const encoded = foo.encode('Question', { id: 1, question: 'Is 1+1=3?' });
 const decoded = foo.decode('Question', encoded);
 ```
 
-In Node.js, `loadFile('foo.asnc', 'uper')` reads the file too. The
+In Node.js, `loadFile('foo.asni', 'uper')` reads the file too. The
 package picks its entry point through the `node` condition of
 `exports`: the browser entry fetches the `.wasm` file from next to its
 module, which bundlers such as Vite and webpack handle, and the Node.js
@@ -57,8 +57,8 @@ string for JER and XER.
 
 ## API
 
-- `load(asnc, codec = 'ber', options)` loads the contents of an `.asnc`
-  file. The options are those of `asnkitrt.load_asnc()` in Python, in
+- `load(asni, codec = 'ber', options)` loads the contents of an `.asni`
+  file. The options are those of `asnkitrt.load_asni()` in Python, in
   camel case: `numericEnums`, `lenient`, `nonce` (a number, or a
   function that returns whether a nonce is accepted), `acceptAnyNonce`,
   `boundTo`, `acceptAnyBinding`, `verificationKeys`,

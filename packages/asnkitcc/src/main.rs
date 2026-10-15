@@ -5,12 +5,12 @@
 //! The command `asnkitcc`, which compiles and parses ASN.1 specifications:
 //!
 //! ```text
-//! asnkitcc compile foo.asn             # Makes foo.asnc.
+//! asnkitcc compile foo.asn             # Makes foo.asni.
 //! asnkitcc parse foo.asn               # Makes foo.asnst.
 //! ```
 
 use asnkit_compiler::container::{KEY_ID_SIZE, KEY_SIZE, Key, Protection, derive_key_id};
-use asnkit_compiler::{Input, compile_to_asnc_with_summary, parse_to_asnst, plugin};
+use asnkit_compiler::{Input, compile_to_asni_with_summary, parse_to_asnst, plugin};
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -197,7 +197,7 @@ fn generate(arguments: &Arguments) -> Result<(), String> {
         paths: arguments.files.clone(),
         encoding: arguments.encoding.clone(),
     };
-    let (asnc, summary) = compile_to_asnc_with_summary(&input, None, None, &Protection::default())
+    let (asni, summary) = compile_to_asni_with_summary(&input, None, None, &Protection::default())
         .map_err(|error| format!("error: {}", error.message))?;
     let asnst = parse_to_asnst(&input).map_err(|error| format!("error: {}", error.message))?;
 
@@ -221,7 +221,7 @@ fn generate(arguments: &Arguments) -> Result<(), String> {
         eprintln!("Running {}.", plugin::program(name).display());
     }
 
-    plugin::run(name, &arguments.plugin_options, &out, &asnc, &asnst)
+    plugin::run(name, &arguments.plugin_options, &out, &asni, &asnst)
         .map_err(|error| format!("error: {}", error.message))
 }
 
@@ -234,7 +234,7 @@ fn main() -> ExitCode {
         }
 
         let extension = if arguments.command == "compile" {
-            "asnc"
+            "asni"
         } else {
             "asnst"
         };
@@ -283,7 +283,7 @@ fn main() -> ExitCode {
                 iv: None,
             };
 
-            let (data, summary) = compile_to_asnc_with_summary(
+            let (data, summary) = compile_to_asni_with_summary(
                 &input,
                 arguments.nonce,
                 arguments.bound_to.clone(),

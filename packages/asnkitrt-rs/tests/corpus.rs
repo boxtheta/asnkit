@@ -53,14 +53,14 @@ fn encryption_key() -> Key {
 }
 
 const FILES: [(&str, bool, bool, bool); 8] = [
-    ("plain.asnc", false, false, false),
-    ("signed.asnc", true, false, false),
-    ("encrypted.asnc", false, true, false),
-    ("bound.asnc", false, false, true),
-    ("signed-encrypted.asnc", true, true, false),
-    ("signed-bound.asnc", true, false, true),
-    ("encrypted-bound.asnc", false, true, true),
-    ("signed-encrypted-bound.asnc", true, true, true),
+    ("plain.asni", false, false, false),
+    ("signed.asni", true, false, false),
+    ("encrypted.asni", false, true, false),
+    ("bound.asni", false, false, true),
+    ("signed-encrypted.asni", true, true, false),
+    ("signed-bound.asni", true, false, true),
+    ("encrypted-bound.asni", false, true, true),
+    ("signed-encrypted-bound.asni", true, true, true),
 ];
 
 /// The checks that read a file that is signed, encrypted and bound as
@@ -96,47 +96,47 @@ fn every_combination() {
 
     for (name, signed, encrypted, bound) in FILES {
         let data = corpus(name);
-        let asnc = container::read(
+        let asni = container::read(
             &data,
             &checks(&signing, &encryption, signed, encrypted, bound),
         )
         .unwrap_or_else(|error| panic!("{name}: {error}"));
 
-        assert_eq!(asnc.header.version.0, 1, "{name}");
-        assert_eq!(asnc.header.nonce, None, "{name}");
+        assert_eq!(asni.header.version.0, 1, "{name}");
+        assert_eq!(asni.header.nonce, None, "{name}");
         assert_eq!(
-            asnc.header.signed_by,
+            asni.header.signed_by,
             signed.then(|| signing[0].id),
             "{name}"
         );
         assert_eq!(
-            asnc.header.encrypted_with,
+            asni.header.encrypted_with,
             encrypted.then(|| encryption[0].id),
             "{name}"
         );
         assert_eq!(
-            asnc.metadata.bound_to.as_deref(),
+            asni.metadata.bound_to.as_deref(),
             bound.then_some("corpus"),
             "{name}"
         );
-        assert!(asnc.metadata.generator.is_some(), "{name}");
-        assert_eq!(asnc.metadata.sources.len(), 1, "{name}");
+        assert!(asni.metadata.generator.is_some(), "{name}");
+        assert_eq!(asni.metadata.sources.len(), 1, "{name}");
         assert_eq!(
-            asnc.metadata.sources[0].name.as_deref(),
+            asni.metadata.sources[0].name.as_deref(),
             Some("foo.asn"),
             "{name}"
         );
 
         // The metadata is not known without the key.
-        assert_eq!(asnc.header.metadata.is_none(), encrypted, "{name}");
+        assert_eq!(asni.header.metadata.is_none(), encrypted, "{name}");
 
         // A CompiledSpecification, kind 1, with its list of modules.
-        let Cbor::Array(top) = &asnc.nodes else {
+        let Cbor::Array(top) = &asni.nodes else {
             panic!("{name}: not a node")
         };
         assert_eq!(top[0], Cbor::Int(1), "{name}");
 
-        nodes.push(asnc.nodes);
+        nodes.push(asni.nodes);
     }
 
     // Whatever it is signed, encrypted or bound, it holds the same.
@@ -185,8 +185,8 @@ fn any_binding_reads_both() {
         ..Checks::default()
     };
 
-    container::read(&corpus("plain.asnc"), &checks).unwrap();
-    container::read(&corpus("bound.asnc"), &checks).unwrap();
+    container::read(&corpus("plain.asni"), &checks).unwrap();
+    container::read(&corpus("bound.asni"), &checks).unwrap();
 }
 
 #[test]
@@ -212,13 +212,13 @@ fn wrong_setup() {
 
     // Signature.
     assert_eq!(
-        read("signed.asnc", Checks::default()),
+        read("signed.asni", Checks::default()),
         Error::NoVerificationKeys
     );
-    assert_eq!(read("plain.asnc", ok(true, false, false)), Error::NotSigned);
+    assert_eq!(read("plain.asni", ok(true, false, false)), Error::NotSigned);
     assert_eq!(
         read(
-            "signed.asnc",
+            "signed.asni",
             Checks {
                 signature: Signature::Keys(&other),
                 ..Checks::default()
@@ -228,7 +228,7 @@ fn wrong_setup() {
     );
     assert_eq!(
         read(
-            "signed.asnc",
+            "signed.asni",
             Checks {
                 signature: Signature::Keys(&wrong_signer),
                 ..Checks::default()
@@ -239,16 +239,16 @@ fn wrong_setup() {
 
     // Encryption.
     assert_eq!(
-        read("encrypted.asnc", Checks::default()),
+        read("encrypted.asni", Checks::default()),
         Error::NoDecryptionKeys
     );
     assert_eq!(
-        read("plain.asnc", ok(false, true, false)),
+        read("plain.asni", ok(false, true, false)),
         Error::NotEncrypted
     );
     assert_eq!(
         read(
-            "encrypted.asnc",
+            "encrypted.asni",
             Checks {
                 decryption_keys: Some(&other),
                 ..Checks::default()
@@ -258,7 +258,7 @@ fn wrong_setup() {
     );
     assert_eq!(
         read(
-            "encrypted.asnc",
+            "encrypted.asni",
             Checks {
                 decryption_keys: Some(&wrong_key),
                 ..Checks::default()
@@ -268,14 +268,14 @@ fn wrong_setup() {
     );
 
     // Binding.
-    assert_eq!(read("bound.asnc", Checks::default()), Error::BadBinding);
+    assert_eq!(read("bound.asni", Checks::default()), Error::BadBinding);
     assert_eq!(
-        read("plain.asnc", ok(false, false, true)),
+        read("plain.asni", ok(false, false, true)),
         Error::BadBinding
     );
     assert_eq!(
         read(
-            "bound.asnc",
+            "bound.asni",
             Checks {
                 bound_to: Binding::To("corpu"),
                 ..Checks::default()
@@ -285,7 +285,7 @@ fn wrong_setup() {
     );
     assert_eq!(
         read(
-            "bound.asnc",
+            "bound.asni",
             Checks {
                 bound_to: Binding::To("corpus "),
                 ..Checks::default()
@@ -296,7 +296,7 @@ fn wrong_setup() {
     // Bound and encrypted: it is not known until it is decrypted.
     assert_eq!(
         read(
-            "encrypted-bound.asnc",
+            "encrypted-bound.asni",
             Checks {
                 bound_to: Binding::To("other"),
                 ..ok(false, true, false)
@@ -308,7 +308,7 @@ fn wrong_setup() {
     // A file with no nonce when one is to be checked.
     assert_eq!(
         read(
-            "plain.asnc",
+            "plain.asni",
             Checks {
                 nonce: Nonce::Exact(1),
                 ..Checks::default()
@@ -329,7 +329,7 @@ fn with_nonce(mut data: Vec<u8>, nonce: u32) -> Vec<u8> {
 
 #[test]
 fn nonce() {
-    let data = with_nonce(corpus("plain.asnc"), 0x010203);
+    let data = with_nonce(corpus("plain.asni"), 0x010203);
     let read = |nonce| {
         container::read(
             &data,
@@ -356,7 +356,7 @@ fn nonce() {
     // Any nonce also reads a file with none.
     assert!(
         container::read(
-            &corpus("plain.asnc"),
+            &corpus("plain.asni"),
             &Checks {
                 nonce: Nonce::Any,
                 ..Checks::default()
@@ -369,7 +369,7 @@ fn nonce() {
 #[test]
 fn signed_nonce_is_signed() {
     let signing = [signing_key()];
-    let data = with_nonce(corpus("signed.asnc"), 7);
+    let data = with_nonce(corpus("signed.asni"), 7);
     let checks = Checks {
         signature: Signature::Keys(&signing),
         nonce: Nonce::Exact(7),
@@ -387,7 +387,7 @@ fn every_byte_of_a_signed_encrypted_file_counts() {
     let signing = [signing_key()];
     let encryption = [encryption_key()];
     let checks = checks(&signing, &encryption, true, true, true);
-    let data = corpus("signed-encrypted-bound.asnc");
+    let data = corpus("signed-encrypted-bound.asni");
 
     assert!(container::read(&data, &checks).is_ok());
 
@@ -406,7 +406,7 @@ fn every_byte_of_a_signed_encrypted_file_counts() {
 fn every_byte_of_an_encrypted_file_counts() {
     let encryption = [encryption_key()];
     let checks = checks(&[], &encryption, false, true, false);
-    let data = corpus("encrypted.asnc");
+    let data = corpus("encrypted.asni");
 
     for index in 0..data.len() {
         let mut changed = data.clone();
@@ -421,12 +421,12 @@ fn every_byte_of_an_encrypted_file_counts() {
 
 #[test]
 fn bad_files() {
-    let plain = corpus("plain.asnc");
+    let plain = corpus("plain.asni");
     let read = |data: &[u8]| container::read(data, &Checks::default()).unwrap_err();
 
-    assert_eq!(read(b""), Error::NotAsnc);
-    assert_eq!(read(b"ASN"), Error::NotAsnc);
-    assert_eq!(read(b"{\"format\": \"asnst\"}"), Error::NotAsnc);
+    assert_eq!(read(b""), Error::NotAsni);
+    assert_eq!(read(b"ASN"), Error::NotAsni);
+    assert_eq!(read(b"{\"format\": \"asnst\"}"), Error::NotAsni);
 
     let mut data = plain.clone();
     data[4] = 2;
@@ -457,7 +457,7 @@ fn bad_files() {
         );
     }
 
-    for name in ["signed.asnc", "encrypted.asnc", "signed-encrypted.asnc"] {
+    for name in ["signed.asni", "encrypted.asni", "signed-encrypted.asni"] {
         let data = corpus(name);
 
         for size in 0..data.len() {
@@ -481,7 +481,7 @@ fn nesting_is_limited() {
     };
 
     assert_eq!(
-        container::read(&corpus("plain.asnc"), &checks).unwrap_err(),
+        container::read(&corpus("plain.asni"), &checks).unwrap_err(),
         Error::TooDeep
     );
 }

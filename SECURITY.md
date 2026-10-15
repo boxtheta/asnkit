@@ -60,10 +60,10 @@ against an application that uses it, for example:
 
 - decoding untrusted data (BER, DER, PER, JER, XER, GSER and so on)
   that crashes, hangs or uses unbounded time or memory,
-- loading an untrusted `.asnc` or `.asnst` file in a way that runs
+- loading an untrusted `.asni` or `.asnst` file in a way that runs
   code or goes beyond what the format says,
 - a way around the signature, the encryption or the binding of an
-  `.asnc` file,
+  `.asni` file,
 - the compiler or the command `asnkitcc` doing something unexpected
   with a crafted ASN.1 specification,
 - an implementation that disagrees with the file formats in
@@ -74,7 +74,7 @@ Out of scope are flaws only in a dependency or in the language runtime
 anything that needs an attacker to already control the machine or the
 keys.
 
-An application that loads `.asnc` files must treat an unsigned file
+An application that loads `.asni` files must treat an unsigned file
 as being as trusted as the place it came from. Use signing and
 verification keys to load files from anywhere else.
 

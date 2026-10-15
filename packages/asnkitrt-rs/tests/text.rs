@@ -20,7 +20,7 @@ fn compiled(name: &str, codec: Codec) -> Specification {
         .join("../../examples/compiled")
         .join(name);
 
-    Specification::from_asnc(
+    Specification::from_asni(
         &fs::read(path).unwrap(),
         &Checks::default(),
         Options::new(codec),
@@ -37,7 +37,7 @@ fn question(id: i128, text: &str) -> Value {
 
 #[test]
 fn json_is_written_as_python_writes_it() {
-    let foo = compiled("foo.asnc", Codec::Jer);
+    let foo = compiled("foo.asni", Codec::Jer);
     let value = question(1, "Is 1+1=3?");
     let encoded = foo.encode("Question", &value).unwrap();
 
@@ -63,7 +63,7 @@ fn json_is_written_as_python_writes_it() {
 
 #[test]
 fn xml_is_written_as_python_writes_it() {
-    let foo = compiled("foo.asnc", Codec::Xer);
+    let foo = compiled("foo.asni", Codec::Xer);
     let value = question(1, "a<b&c>é😀");
     let encoded = foo.encode("Question", &value).unwrap();
 
@@ -99,7 +99,7 @@ fn integers_of_any_size() {
             format!("<Question><id>{big}</id><question /></Question>"),
         ),
     ] {
-        let foo = compiled("foo.asnc", codec);
+        let foo = compiled("foo.asni", codec);
         let value = foo.decode("Question", written.as_bytes()).unwrap();
 
         assert!(
@@ -115,8 +115,8 @@ fn integers_of_any_size() {
 
     // Digits without end are refused, as Python does.
     let digits = "9".repeat(5000);
-    let jer = compiled("foo.asnc", Codec::Jer);
-    let xer = compiled("foo.asnc", Codec::Xer);
+    let jer = compiled("foo.asni", Codec::Jer);
+    let xer = compiled("foo.asni", Codec::Xer);
 
     assert!(
         jer.decode(
@@ -136,7 +136,7 @@ fn integers_of_any_size() {
 
 #[test]
 fn json_that_is_not_json_is_an_error() {
-    let foo = compiled("foo.asnc", Codec::Jer);
+    let foo = compiled("foo.asni", Codec::Jer);
 
     for bad in [
         &b""[..],
@@ -158,7 +158,7 @@ fn json_that_is_not_json_is_an_error() {
 
 #[test]
 fn xml_that_is_dangerous_is_an_error() {
-    let foo = compiled("foo.asnc", Codec::Xer);
+    let foo = compiled("foo.asni", Codec::Xer);
 
     // Entities that are defined by the document, or are somewhere else.
     let laughs = r#"<?xml version="1.0"?>

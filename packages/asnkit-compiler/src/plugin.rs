@@ -5,20 +5,20 @@
 //! Runs a plugin, a program that makes something from a specification
 //! (see `docs/plugins.md`).
 //!
-//! The plugin is run with `--asnc FILE --asnst FILE --out FOLDER` and
+//! The plugin is run with `--asni FILE --asnst FILE --out FOLDER` and
 //! an `--opt KEY=VALUE` for each option. The files are in a folder of
 //! their own that is removed once the plugin is done.
 //!
 //! ```no_run
 //! use asnkit_compiler::container::Protection;
-//! use asnkit_compiler::{Input, compile_to_asnc, parse_to_asnst, plugin};
+//! use asnkit_compiler::{Input, compile_to_asni, parse_to_asnst, plugin};
 //! use std::path::Path;
 //!
 //! let input = Input::String(std::fs::read_to_string("foo.asn")?);
-//! let asnc = compile_to_asnc(&input, None, None, &Protection::default())?;
+//! let asni = compile_to_asni(&input, None, None, &Protection::default())?;
 //! let asnst = parse_to_asnst(&input)?;
 //!
-//! plugin::run("rust", &[], Path::new("src"), &asnc, &asnst)?;
+//! plugin::run("rust", &[], Path::new("src"), &asni, &asnst)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
@@ -69,21 +69,21 @@ impl Drop for Scratch {
 }
 
 /// Runs the plugin, by name or by path, on a specification, which is
-/// given as the contents of its `.asnc` and `.asnst` files, to write to
+/// given as the contents of its `.asni` and `.asnst` files, to write to
 /// the folder `out`. What the plugin writes to its standard output and
 /// error goes to those of this process.
 pub fn run(
     plugin: &str,
     options: &[String],
     out: &Path,
-    asnc: &[u8],
+    asni: &[u8],
     asnst: &[u8],
 ) -> Result<(), Error> {
     let scratch = Scratch::new()?;
-    let asnc_path = scratch.0.join("specification.asnc");
+    let asni_path = scratch.0.join("specification.asni");
     let asnst_path = scratch.0.join("specification.asnst");
 
-    for (path, data) in [(&asnc_path, asnc), (&asnst_path, asnst)] {
+    for (path, data) in [(&asni_path, asni), (&asnst_path, asnst)] {
         std::fs::write(path, data)
             .map_err(|error| plugin_error(format!("{}: {error}", path.display())))?;
     }
@@ -94,8 +94,8 @@ pub fn run(
     let program = program(plugin);
     let mut command = Command::new(&program);
     command
-        .arg("--asnc")
-        .arg(&asnc_path)
+        .arg("--asni")
+        .arg(&asni_path)
         .arg("--asnst")
         .arg(&asnst_path)
         .arg("--out")

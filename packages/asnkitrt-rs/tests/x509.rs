@@ -26,10 +26,10 @@ fn root() -> PathBuf {
 /// The compiled specification of RFC 5280 that is tried: the one in the
 /// repository, or another, as when it is made by the compiler in Rust:
 ///
-///   ASNKIT_RFC5280_ASNC=/tmp/rfc5280.asnc cargo test --test x509
+///   ASNKIT_RFC5280_ASNI=/tmp/rfc5280.asni cargo test --test x509
 fn rfc5280_path() -> PathBuf {
-    std::env::var_os("ASNKIT_RFC5280_ASNC").map_or_else(
-        || root().join("../../examples/compiled/rfc5280.asnc"),
+    std::env::var_os("ASNKIT_RFC5280_ASNI").map_or_else(
+        || root().join("../../examples/compiled/rfc5280.asni"),
         PathBuf::from,
     )
 }
@@ -37,7 +37,7 @@ fn rfc5280_path() -> PathBuf {
 fn rfc5280(codec: Codec) -> Specification {
     let data = fs::read(rfc5280_path()).unwrap();
 
-    Specification::from_asnc(&data, &Checks::default(), Options::new(codec)).unwrap()
+    Specification::from_asni(&data, &Checks::default(), Options::new(codec)).unwrap()
 }
 
 fn certificates() -> Vec<(String, Vec<u8>)> {
@@ -273,7 +273,7 @@ fn not_der() {
 
         options.lenient = true;
 
-        Specification::from_asnc(&data, &Checks::default(), options).unwrap()
+        Specification::from_asni(&data, &Checks::default(), options).unwrap()
     };
 
     for (name, data) in certificates().into_iter().take(5) {

@@ -690,7 +690,7 @@ class CompiledModule(Node):
 @dataclass(frozen=True, kw_only=True)
 class CompiledSpecification(Node):
     """A specification resolved to what encoding and decoding its
-    types needs, which is what an ``.asnc`` file holds.
+    types needs, which is what an ``.asni`` file holds.
 
     Unlike in a syntax tree:
 

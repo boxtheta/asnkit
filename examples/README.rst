@@ -7,7 +7,7 @@ This folder contains executable example scripts.
    Dump an X.509 certificate, in PEM or DER, as JSON.
 
 ``compiled``
-   Compiled specifications (``.asnc``) and syntax trees (``.asnst``),
+   Compiled specifications (``.asni``) and syntax trees (``.asnst``),
    and how to make and load them.
 
 ``corpus``

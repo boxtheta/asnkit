@@ -359,13 +359,13 @@ pub fn spec_key(vector: &Json) -> SpecKey {
 pub fn load(
     (spec, codec, numeric_enums, lenient): &SpecKey,
 ) -> Result<Specification, asnkitrt::Error> {
-    let data = fs::read(folder().join("specs").join(format!("{spec}.asnc"))).unwrap();
+    let data = fs::read(folder().join("specs").join(format!("{spec}.asni"))).unwrap();
     let mut options = Options::new(codec_of(codec));
 
     options.numeric_enums = *numeric_enums;
     options.lenient = *lenient;
 
-    Specification::from_asnc(&data, &Checks::default(), options)
+    Specification::from_asni(&data, &Checks::default(), options)
 }
 
 /// What an operation of a vector gives.

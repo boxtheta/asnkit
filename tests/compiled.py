@@ -6,7 +6,7 @@
 
 The tests of the codecs need specifications to encode and decode with.
 They are compiled by the compiler in Rust, `asnkitcc`, once, and kept
-as `.asnc` files in `tests/fixtures`, named after the digest of what
+as `.asni` files in `tests/fixtures`, named after the digest of what
 they were made from. So the tests need no compiler: they load the
 files with `asnkitrt`, as an application does.
 
@@ -55,9 +55,9 @@ __all__ = [
     "Error",
     "ParseError",
     "compile_files",
-    "compile_files_to_asnc",
+    "compile_files_to_asni",
     "compile_string",
-    "compile_string_to_asnc",
+    "compile_string_to_asni",
     "parse_files_to_asnst",
     "parse_string_to_asnst",
 ]
@@ -128,7 +128,7 @@ def _make(sources: list[tuple[str, str]], path: str, command: str) -> None:
 def _plain(sources: list[tuple[str, str]], command: str = "compile") -> bytes:
     digest = hashlib.sha256(json.dumps(sources).encode("utf-8")).hexdigest()[:24]
     path = os.path.join(
-        FIXTURES, digest + (".asnc" if command == "compile" else ".asnst")
+        FIXTURES, digest + (".asni" if command == "compile" else ".asnst")
     )
 
     if not os.path.exists(path) and not os.path.exists(path + ".error"):
@@ -175,18 +175,18 @@ def _protected(
     if bound_to is not None:
         metadata = dataclasses.replace(metadata, bound_to=bound_to)
 
-    return asnkitrt.syntax.to_asnc(
-        asnkitrt.syntax.from_asnc(plain), metadata, nonce, signing_key, encryption_key
+    return asnkitrt.syntax.to_asni(
+        asnkitrt.syntax.from_asni(plain), metadata, nonce, signing_key, encryption_key
     )
 
 
-def compile_string_to_asnc(string: str, **options: Any) -> bytes:
-    """The contents of the `.asnc` file of the specification."""
+def compile_string_to_asni(string: str, **options: Any) -> bytes:
+    """The contents of the `.asni` file of the specification."""
 
     return _protected(_plain([("string.asn", string)]), **options)
 
 
-def compile_files_to_asnc(files: str | list[str], **options: Any) -> bytes:
+def compile_files_to_asni(files: str | list[str], **options: Any) -> bytes:
     return _protected(_plain(_sources(files)), **options)
 
 
@@ -205,7 +205,7 @@ def _dict_with_choices(
 ) -> Any:
     # What an ANY DEFINED BY can be is not something the compiler is told:
     # the choices are put in the dictionary of the compiled specification.
-    specification = asnkitrt.syntax.compiled_to_dict(asnkitrt.syntax.from_asnc(data))
+    specification = asnkitrt.syntax.compiled_to_dict(asnkitrt.syntax.from_asni(data))
 
     for location, choices in any_defined_by_choices.items():
         types = specification[location[0]]["types"]
@@ -232,7 +232,7 @@ def _with_choices(
     any_defined_by_choices: dict[tuple[str, ...], dict[Any, str]] | None,
 ) -> asnkitrt.Specification:
     if any_defined_by_choices is None:
-        return asnkitrt.load_asnc(
+        return asnkitrt.load_asni(
             data, codec, numeric_enums=numeric_enums, lenient=lenient
         )
 
@@ -247,7 +247,7 @@ def compiled_with_choices(
     """The compiled specification, with the choices of ANY DEFINED BY."""
 
     return asnkitrt.syntax.compiled_from_dict(
-        _dict_with_choices(compile_string_to_asnc(string), any_defined_by_choices)
+        _dict_with_choices(compile_string_to_asni(string), any_defined_by_choices)
     )
 
 
@@ -261,7 +261,7 @@ def compile_string(
     """The specification to encode and decode with."""
 
     return _with_choices(
-        compile_string_to_asnc(string),
+        compile_string_to_asni(string),
         codec,
         numeric_enums,
         lenient,
@@ -277,7 +277,7 @@ def compile_files(
     any_defined_by_choices: dict[tuple[str, ...], dict[Any, str]] | None = None,
 ) -> asnkitrt.Specification:
     return _with_choices(
-        compile_files_to_asnc(files),
+        compile_files_to_asni(files),
         codec,
         numeric_enums,
         lenient,
@@ -290,11 +290,11 @@ def dict_of_string(string: str) -> Any:
     of types and of constraints compile."""
 
     return asnkitrt.syntax.compiled_to_dict(
-        asnkitrt.syntax.from_asnc(compile_string_to_asnc(string))
+        asnkitrt.syntax.from_asni(compile_string_to_asni(string))
     )
 
 
 def dict_of_files(files: str | list[str]) -> Any:
     return asnkitrt.syntax.compiled_to_dict(
-        asnkitrt.syntax.from_asnc(compile_files_to_asnc(files))
+        asnkitrt.syntax.from_asni(compile_files_to_asni(files))
     )

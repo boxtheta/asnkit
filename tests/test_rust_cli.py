@@ -67,7 +67,7 @@ class RustCompilerProtectionTest(unittest.TestCase):
                 BINARY,
                 "compile",
                 "-o",
-                self.path("a.asnc"),
+                self.path("a.asni"),
                 *arguments,
                 self.path("a.asn"),
             ],
@@ -75,8 +75,8 @@ class RustCompilerProtectionTest(unittest.TestCase):
         )
 
     def read(self, **kwargs) -> bytes:  # type: ignore[no-untyped-def]
-        return asnkitrt.load_asnc_file(  # type: ignore[no-any-return]
-            self.path("a.asnc"), "der", **kwargs
+        return asnkitrt.load_asni_file(  # type: ignore[no-any-return]
+            self.path("a.asni"), "der", **kwargs
         ).encode("B", 5)
 
     def test_signed(self) -> None:
@@ -139,12 +139,12 @@ class RustCompilerProtectionTest(unittest.TestCase):
         arguments = ["--encryption-key-file", self.path("encryption.key")]
         self.compile(*arguments)
 
-        with open(self.path("a.asnc"), "rb") as fin:
+        with open(self.path("a.asni"), "rb") as fin:
             first = fin.read()
 
         self.compile(*arguments)
 
-        with open(self.path("a.asnc"), "rb") as fin:
+        with open(self.path("a.asni"), "rb") as fin:
             second = fin.read()
 
         # The initialization vector follows the header and the key id.
@@ -155,7 +155,7 @@ class RustCompilerProtectionTest(unittest.TestCase):
         self.assertEqual(quiet.returncode, 0)
         self.assertEqual(quiet.stderr, b"")
 
-        with open(self.path("a.asnc"), "rb") as fin:
+        with open(self.path("a.asni"), "rb") as fin:
             quiet_file = fin.read()
 
         result = self.compile(
@@ -173,7 +173,7 @@ class RustCompilerProtectionTest(unittest.TestCase):
 
         # What is written is not changed by telling of it.
         result = self.compile("-v")
-        with open(self.path("a.asnc"), "rb") as fin:
+        with open(self.path("a.asni"), "rb") as fin:
             self.assertEqual(fin.read(), quiet_file)
 
     def generate(self, *arguments: str) -> Any:
@@ -204,7 +204,7 @@ class RustCompilerProtectionTest(unittest.TestCase):
             "files = {a[i]: open(a[i + 1], 'rb').read() for i in (0, 2)}\n"
             "out = a[a.index('--out') + 1]\n"
             "info = {'args': [x for x in a if not x.startswith('/')],\n"
-            "        'asnc': files['--asnc'][:4].decode(),\n"
+            "        'asni': files['--asni'][:4].decode(),\n"
             "        'asnst': len(files['--asnst']) > 10,\n"
             "        'paths': [a[1], a[3]]}\n"
             "json.dump(info, open(os.path.join(out, 'info.json'), 'w'))\n"
@@ -228,9 +228,9 @@ class RustCompilerProtectionTest(unittest.TestCase):
 
         self.assertEqual(
             info["args"],
-            ["--asnc", "--asnst", "--out", "--opt", "one=1", "--opt", "two=2"],
+            ["--asni", "--asnst", "--out", "--opt", "one=1", "--opt", "two=2"],
         )
-        self.assertEqual(info["asnc"], "ASNC")
+        self.assertEqual(info["asni"], "ASNI")
         self.assertTrue(info["asnst"])
         # The files were removed once the plugin was done.
         for path in info["paths"]:

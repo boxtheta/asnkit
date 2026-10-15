@@ -1,12 +1,12 @@
-Corpus of ``.asnc`` files
+Corpus of ``.asni`` files
 =========================
 
-These files are licensed under the Creative Commons Attribution 4.0
-International License (CC-BY-4.0), but for ``make.sh`` and ``foo.asn``,
-which are code and are licensed under the MIT License. See
-``COPYING`` and ``LICENSE-DOCUMENTATION`` in the root of the repository.
+These files are licensed under the Apache License 2.0, but for
+``make.sh`` and ``foo.asn``, which are code and are licensed under the
+MIT License. See ``LICENSE-COMPILER`` and ``LICENSE-RUNTIMES`` in the
+root of the repository.
 
-The eight ``.asnc`` files here are ``foo.asn`` compiled with every
+The eight ``.asni`` files here are ``foo.asn`` compiled with every
 combination of being signed, encrypted and bound, for testing a reader
 of the format (see ``docs/file_formats.md``) in any language. None
 has a nonce. They have the types ``Question`` and ``Answer``, for any
@@ -15,14 +15,14 @@ codec.
 =================================  ======  =========  =====
 File                               Signed  Encrypted  Bound
 =================================  ======  =========  =====
-``plain.asnc``
-``signed.asnc``                    yes
-``encrypted.asnc``                         yes
-``bound.asnc``                                        yes
-``signed-encrypted.asnc``          yes     yes
-``signed-bound.asnc``              yes                yes
-``encrypted-bound.asnc``                   yes        yes
-``signed-encrypted-bound.asnc``    yes     yes        yes
+``plain.asni``
+``signed.asni``                    yes
+``encrypted.asni``                         yes
+``bound.asni``                                        yes
+``signed-encrypted.asni``          yes     yes
+``signed-bound.asni``              yes                yes
+``encrypted-bound.asni``                   yes        yes
+``signed-encrypted-bound.asni``    yes     yes        yes
 =================================  ======  =========  =====
 
 Bound files are bound to ``corpus``.

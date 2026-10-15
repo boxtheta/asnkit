@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-# To load signed and encrypted .asnc files. Nothing else needs it.
+# To load signed and encrypted .asni files. Nothing else needs it.
 signing = [
     "cryptography>=43",
 ]

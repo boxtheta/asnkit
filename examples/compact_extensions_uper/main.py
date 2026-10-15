@@ -17,14 +17,14 @@ def compile_files(paths, codec="ber"):
     programs are, and loads the result."""
 
     with tempfile.TemporaryDirectory() as directory:
-        output = os.path.join(directory, "out.asnc")
+        output = os.path.join(directory, "out.asni")
         subprocess.run(
             ["asnkitcc", "compile", "-o", output]
             + ([paths] if isinstance(paths, str) else list(paths)),
             check=True,
         )
 
-        return asnkitrt.load_asnc_file(output, codec)
+        return asnkitrt.load_asni_file(output, codec)
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))

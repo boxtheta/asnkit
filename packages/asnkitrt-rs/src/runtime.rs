@@ -53,8 +53,8 @@ impl Specification {
         })
     }
 
-    /// Loads the contents of an `.asnc` file, after `checks`.
-    pub fn from_asnc(data: &[u8], checks: &Checks<'_>, options: Options) -> Result<Specification> {
+    /// Loads the contents of an `.asni` file, after `checks`.
+    pub fn from_asni(data: &[u8], checks: &Checks<'_>, options: Options) -> Result<Specification> {
         Specification::from_nodes(&container::read(data, checks)?.nodes, options)
     }
 

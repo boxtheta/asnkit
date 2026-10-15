@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-//! Reads an `.asnc` file: its header, its signature, its nonce, its
+//! Reads an `.asni` file: its header, its signature, its nonce, its
 //! encryption, what it is bound to, its metadata and its nodes, in the
 //! order of `docs/file_formats.md`.
 
@@ -22,7 +22,7 @@ pub const TAG_SIZE: usize = 16;
 /// Of what a file is bound to, in bytes as UTF-8.
 pub const BOUND_TO_MAXIMUM_SIZE: usize = 255;
 
-const MAGIC: &[u8; 4] = b"ASNC";
+const MAGIC: &[u8; 4] = b"ASNI";
 const MAJOR_VERSION: u8 = 1;
 
 const FLAG_SIGNED: u16 = 0x0001;
@@ -137,7 +137,7 @@ pub struct Header {
 /// A file that is read: what it says about itself and its nodes in
 /// the compact form.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Asnc {
+pub struct Asni {
     pub header: Header,
     pub metadata: Metadata,
     pub nodes: Cbor,
@@ -158,7 +158,7 @@ struct Prefix<'a> {
 
 fn read_prefix(data: &[u8]) -> Result<Prefix<'_>> {
     if data.len() < HEADER_SIZE || &data[..4] != MAGIC {
-        return Err(Error::NotAsnc);
+        return Err(Error::NotAsni);
     }
 
     let flags = u16::from_be_bytes([data[6], data[7]]);
@@ -404,11 +404,11 @@ fn decrypt_with(_: &[u8], _: &Prefix<'_>, _: &Key, _: &[u8]) -> Result<Vec<u8>> 
     Err(Error::FeatureMissing)
 }
 
-/// Reads the `.asnc` file in `data`, after the checks.
+/// Reads the `.asni` file in `data`, after the checks.
 ///
 /// Nothing of the metadata or the nodes is read as CBOR before the
 /// signature, the nonce and the tag are checked.
-pub fn read(data: &[u8], checks: &Checks<'_>) -> Result<Asnc> {
+pub fn read(data: &[u8], checks: &Checks<'_>) -> Result<Asni> {
     let prefix = read_prefix(data)?;
 
     check_signature(data, &prefix, checks.signature)?;
@@ -426,7 +426,7 @@ pub fn read(data: &[u8], checks: &Checks<'_>) -> Result<Asnc> {
         return Err(Error::TrailingData);
     }
 
-    Ok(Asnc {
+    Ok(Asni {
         header: header_of(
             &prefix,
             prefix.encrypted_with.is_none().then(|| metadata.clone()),

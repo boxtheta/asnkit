@@ -23,8 +23,8 @@ import time
 
 import asnkitrt
 
-FOO = os.path.join("examples", "compiled", "foo.asnc")
-RFC5280 = os.path.join("examples", "compiled", "rfc5280.asnc")
+FOO = os.path.join("examples", "compiled", "foo.asni")
+RFC5280 = os.path.join("examples", "compiled", "rfc5280.asni")
 # A certificate with all the extensions OpenSSL makes.
 CERTIFICATE = os.path.join(
     "packages", "asnkitrt-rs", "tests", "fixtures", "x509", "extensions_all.der"
@@ -101,7 +101,7 @@ class Benches:
 
 
 def run_codec(benches, codec, foo_data, rfc5280_data, question, certificate):
-    foo = asnkitrt.load_asnc(foo_data, codec)
+    foo = asnkitrt.load_asni(foo_data, codec)
     encoded = foo.encode("Question", question)
 
     benches.run(f"{codec}/encode/Question", lambda: foo.encode("Question", question))
@@ -110,7 +110,7 @@ def run_codec(benches, codec, foo_data, rfc5280_data, question, certificate):
     if certificate is None:
         return
 
-    rfc5280 = asnkitrt.load_asnc(rfc5280_data, codec)
+    rfc5280 = asnkitrt.load_asni(rfc5280_data, codec)
     encoded = rfc5280.encode("Certificate", certificate)
 
     benches.run(
@@ -135,11 +135,11 @@ def main():
     with open(CERTIFICATE, "rb") as fin:
         certificate_data = fin.read()
 
-    benches.run("load/foo", lambda: asnkitrt.load_asnc(foo_data, "ber"))
-    benches.run("load/rfc5280", lambda: asnkitrt.load_asnc(rfc5280_data, "der"))
+    benches.run("load/foo", lambda: asnkitrt.load_asni(foo_data, "ber"))
+    benches.run("load/rfc5280", lambda: asnkitrt.load_asni(rfc5280_data, "der"))
 
     question = {"id": 1, "question": "Is 1+1=3?"}
-    rfc5280 = asnkitrt.load_asnc(rfc5280_data, "der")
+    rfc5280 = asnkitrt.load_asni(rfc5280_data, "der")
     certificate = rfc5280.decode("Certificate", certificate_data)
 
     for codec, does_certificate in CODECS:

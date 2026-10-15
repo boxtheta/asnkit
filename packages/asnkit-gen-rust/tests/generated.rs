@@ -34,8 +34,8 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn is_current(asnc: &str, generated: &str, options: Options) {
-    let data = fs::read(root().join(asnc)).unwrap();
+fn is_current(asni: &str, generated: &str, options: Options) {
+    let data = fs::read(root().join(asni)).unwrap();
     let (text, _) = generate(&data, options).unwrap();
     let path = root().join(generated);
 
@@ -52,12 +52,12 @@ fn is_current(asnc: &str, generated: &str, options: Options) {
 #[test]
 fn the_generated_files_are_current() {
     is_current(
-        "../../examples/compiled/foo.asnc",
+        "../../examples/compiled/foo.asni",
         "../../examples/generated/foo.rs",
         Options::default(),
     );
     is_current(
-        "../../examples/compiled/rfc5280.asnc",
+        "../../examples/compiled/rfc5280.asni",
         "tests/generated/rfc5280.rs",
         Options {
             integer: Integer::Big,
@@ -65,12 +65,12 @@ fn the_generated_files_are_current() {
         },
     );
     is_current(
-        "tests/generated/shapes.asnc",
+        "tests/generated/shapes.asni",
         "tests/generated/shapes.rs",
         Options::default(),
     );
     is_current(
-        "tests/generated/shapes.asnc",
+        "tests/generated/shapes.asni",
         "tests/generated/shapes_no_std.rs",
         Options {
             no_std: true,

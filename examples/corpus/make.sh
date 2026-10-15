@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Makes the .asnc files of every combination of signed, encrypted and
+# Makes the .asni files of every combination of signed, encrypted and
 # bound. Run it in this folder. The initialization vector of an
 # encrypted file is random, so those come out different every time.
 
@@ -18,7 +18,7 @@ for signed in "" signed; do
             [ -z "$signed" ] || options="$options --signing-key-file signing.key"
             [ -z "$encrypted" ] || options="$options --encryption-key-file encryption.key"
             [ -z "$bound" ] || options="$options --bound-to corpus"
-            asnkitcc compile -o "$name.asnc" $options foo.asn
+            asnkitcc compile -o "$name.asni" $options foo.asn
         done
     done
 done

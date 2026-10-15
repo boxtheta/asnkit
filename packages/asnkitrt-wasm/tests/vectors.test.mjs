@@ -155,7 +155,7 @@ test('the vectors', () => {
       try {
         specs.set(
           key,
-          new Specification(readFileSync(new URL(`specs/${vector.spec}.asnc`, VECTORS)), vector.codec, {
+          new Specification(readFileSync(new URL(`specs/${vector.spec}.asni`, VECTORS)), vector.codec, {
             numericEnums: vector.numeric_enums,
             lenient: vector.lenient,
           }),

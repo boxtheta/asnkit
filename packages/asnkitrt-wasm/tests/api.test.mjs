@@ -12,9 +12,9 @@ import { describe, test } from 'node:test';
 
 import { load, loadFile, ready, Specification } from '../js/node.js';
 
-const FOO = new URL('../../../examples/compiled/foo.asnc', import.meta.url);
+const FOO = new URL('../../../examples/compiled/foo.asni', import.meta.url);
 const CORPUS = new URL('../../../examples/corpus/', import.meta.url);
-const TYPES = readFileSync(new URL('fixtures/types.asnc', import.meta.url));
+const TYPES = readFileSync(new URL('fixtures/types.asni', import.meta.url));
 
 function hex(bytes) {
   return Buffer.from(bytes).toString('hex');
@@ -188,21 +188,21 @@ describe('files that are signed, encrypted or bound', () => {
   const question = { id: 1, question: 'Is 1+1=3?' };
 
   test('are only loaded when told what to expect', () => {
-    for (const name of ['signed.asnc', 'encrypted.asnc', 'bound.asnc']) {
+    for (const name of ['signed.asni', 'encrypted.asni', 'bound.asni']) {
       assert.throws(() => new Specification(read(name)), { name: 'LoadError' }, name);
     }
 
-    assert.throws(() => new Specification(read('plain.asnc'), 'ber', { verificationKeys }), {
+    assert.throws(() => new Specification(read('plain.asni'), 'ber', { verificationKeys }), {
       name: 'LoadError',
     });
   });
 
   test('are loaded with the keys and the binding', () => {
     const files = {
-      'signed.asnc': { verificationKeys },
-      'encrypted.asnc': { decryptionKeys },
-      'bound.asnc': { boundTo: 'corpus' },
-      'signed-encrypted-bound.asnc': { verificationKeys, decryptionKeys, boundTo: 'corpus' },
+      'signed.asni': { verificationKeys },
+      'encrypted.asni': { decryptionKeys },
+      'bound.asni': { boundTo: 'corpus' },
+      'signed-encrypted-bound.asni': { verificationKeys, decryptionKeys, boundTo: 'corpus' },
     };
 
     for (const [name, options] of Object.entries(files)) {
@@ -215,19 +215,19 @@ describe('files that are signed, encrypted or bound', () => {
   test('are refused with other keys or another binding', () => {
     const other = [[bytes('d543cae4811fc8b033704dc6e7896ff7'), new Uint8Array(32).fill(1)]];
 
-    assert.throws(() => new Specification(read('signed.asnc'), 'ber', { verificationKeys: other }), {
+    assert.throws(() => new Specification(read('signed.asni'), 'ber', { verificationKeys: other }), {
       name: 'LoadError',
     });
-    assert.throws(() => new Specification(read('bound.asnc'), 'ber', { boundTo: 'elsewhere' }), {
+    assert.throws(() => new Specification(read('bound.asni'), 'ber', { boundTo: 'elsewhere' }), {
       name: 'LoadError',
     });
-    new Specification(read('signed.asnc'), 'ber', { acceptAnySignature: true });
-    new Specification(read('bound.asnc'), 'ber', { acceptAnyBinding: true });
+    new Specification(read('signed.asni'), 'ber', { acceptAnySignature: true });
+    new Specification(read('bound.asni'), 'ber', { acceptAnyBinding: true });
   });
 
   test('take keys of the right sizes only', () => {
     assert.throws(
-      () => new Specification(read('signed.asnc'), 'ber', { verificationKeys: [[bytes('00'), bytes('00')]] }),
+      () => new Specification(read('signed.asni'), 'ber', { verificationKeys: [[bytes('00'), bytes('00')]] }),
       TypeError,
     );
   });

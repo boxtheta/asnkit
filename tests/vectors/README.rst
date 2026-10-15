@@ -11,10 +11,9 @@ BoxTheta does not license them, and none of the licenses of this
 repository applies to them. Check those terms before you use, copy or
 redistribute them.
 
-This file is licensed under the Creative Commons Attribution 4.0
-International License (CC-BY-4.0), and ``record.py`` and
-``values.py``, which are code, under the MIT License. See ``COPYING``,
-``LICENSE-DOCUMENTATION`` and ``LICENSE-RUNTIMES`` in the root of the
+This file is licensed under the Apache License 2.0, and ``record.py``
+and ``values.py``, which are code, under the MIT License. See
+``LICENSE-COMPILER`` and ``LICENSE-RUNTIMES`` in the root of the
 repository.
 
 What the runtime for Rust, the one of reference, encodes and decodes,
@@ -28,12 +27,12 @@ has the runtime for Rust do each of them
 not support is left out. ``values.py`` says how a value is written as
 JSON.
 
-``specs/`` holds the compiled specifications (``.asnc`` files, not
+``specs/`` holds the compiled specifications (``.asni`` files, not
 signed or encrypted) and ``vectors.jsonl.gz`` holds one JSON object
 per line with:
 
 ``spec``
-   The name of the file in ``specs``, without ``.asnc``.
+   The name of the file in ``specs``, without ``.asni``.
 
 ``codec``
    ``ber``, ``der``, ``oer``, ``per`` or ``uper``.

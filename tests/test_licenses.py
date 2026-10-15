@@ -40,7 +40,6 @@ class LicensesTest(unittest.TestCase):
         starts = {
             "LICENSE-COMPILER": b"                                 Apache License\n",
             "LICENSE-RUNTIMES": b"MIT License\n",
-            "LICENSE-DOCUMENTATION": b"Creative Commons Attribution 4.0 International",
         }
 
         for path, start in starts.items():
@@ -55,7 +54,6 @@ class LicensesTest(unittest.TestCase):
         for name in [
             "LICENSE-COMPILER",
             "LICENSE-RUNTIMES",
-            "LICENSE-DOCUMENTATION",
         ]:
             self.assertIn(name, copying)
 

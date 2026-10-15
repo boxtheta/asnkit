@@ -1,6 +1,6 @@
 # asnkitrt (Rust)
 
-The asnkit runtime for Rust. It loads the `.asnc` files produced by
+The asnkit runtime for Rust. It loads the `.asni` files produced by
 `asnkitcc` and uses them to encode and decode ASN.1. It contains no
 parser, needs `alloc` but not `std`, and builds for embedded targets.
 
@@ -13,8 +13,8 @@ use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 use asnkitrt::value::Value;
 
-let data = std::fs::read("foo.asnc")?;
-let foo = Specification::from_asnc(&data, &Checks::default(), Options::new(Codec::Der))?;
+let data = std::fs::read("foo.asni")?;
+let foo = Specification::from_asni(&data, &Checks::default(), Options::new(Codec::Der))?;
 let encoded = foo.encode("Question", &value)?;
 let decoded = foo.decode("Question", &encoded)?;
 ```
@@ -38,7 +38,7 @@ let decoded = foo.decode("Question", &encoded)?;
 | Feature | Purpose | Default |
 |---|---|---|
 | `std` | `std::error::Error` and similar | yes |
-| `signing`, `encryption` | Loading signed or encrypted `.asnc` files | yes |
+| `signing`, `encryption` | Loading signed or encrypted `.asni` files | yes |
 | `serde` | `serde_value::{to_value, from_value}` and related types | yes |
 | `jer` | JSON Encoding Rules, with no extra dependency | yes |
 | `xer` | XML Encoding Rules, using `quick-xml`; needs `std` | yes |

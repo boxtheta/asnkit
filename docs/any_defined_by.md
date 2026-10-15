@@ -91,7 +91,7 @@ of.
 A runtime can be given the same choices when loading a specification,
 so that a compiled specification can be used without compiling it
 again. They are given for each member, by its `type` and `member` as
-above, and replace what the `.asnc` file has for that member. The
+above, and replace what the `.asni` file has for that member. The
 values are those the runtime gives for the member that defines the
 type, as an OBJECT IDENTIFIER in text, and the types are named as
 above, with only the built-in types and the types the specification
@@ -101,7 +101,7 @@ In Python:
 
 ```python
 foo = asnkitrt.load(
-    "rfc5280.asnc",
+    "rfc5280.asni",
     "der",
     any_defined_by={
         ("PKIX1Explicit88.AlgorithmIdentifier", "parameters"): {
@@ -132,7 +132,7 @@ options.any_defined_by(
 In JavaScript, with the WebAssembly runtime, as an option of `load`:
 
 ```js
-const foo = await loadFile('rfc5280.asnc', 'der', {
+const foo = await loadFile('rfc5280.asni', 'der', {
   anyDefinedBy: [{
     type: 'PKIX1Explicit88.AlgorithmIdentifier',
     member: 'parameters',
@@ -152,5 +152,5 @@ The member has the type of the choice, which every codec encodes as
 `AnyDefinedByType` with choices. A choice of `OpenType` is encoded as
 an `ANY`, so JER and XER reject it.
 
-In the `.asnc` file, each choice is an `AnyDefinedByChoice`, and the
+In the `.asni` file, each choice is an `AnyDefinedByChoice`, and the
 default is the field `default` of the `AnyDefinedByType`.

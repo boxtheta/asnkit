@@ -79,12 +79,12 @@ fn changed_data_is_never_a_panic() {
             .entry((spec_name.clone(), codec.clone(), numeric))
             .or_insert_with(|| {
                 let data =
-                    fs::read(folder().join("specs").join(format!("{spec_name}.asnc"))).unwrap();
+                    fs::read(folder().join("specs").join(format!("{spec_name}.asni"))).unwrap();
                 let mut options = Options::new(codec_of(&codec));
 
                 options.numeric_enums = numeric;
 
-                Specification::from_asnc(&data, &Checks::default(), options).ok()
+                Specification::from_asni(&data, &Checks::default(), options).ok()
             });
         let Some(spec) = spec else { continue };
         let name = vector["type"].as_str().unwrap();

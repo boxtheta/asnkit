@@ -1,0 +1,298 @@
+-- The nodes of a compiled specification, as ASN.1.
+--
+-- This describes the tree an .asni file holds, the kinds of nodes 1 to
+-- 40 of docs/file_formats.md, and not the CBOR it is written as: a
+-- list is a SEQUENCE OF, a node is a SEQUENCE named after its kind, and
+-- a field that is null or left out is OPTIONAL or has a DEFAULT. The
+-- specification of the formats is the final say; this is a test for
+-- the compilers and the runtimes, which compile it and encode and
+-- decode the compiled specifications of the other files with it. See
+-- tests/test_asni_asn.py.
+--
+-- Not here, as an .asni file never has them: ComponentsOf, location,
+-- parameters and actual_parameters, and the kinds 41 and above of a
+-- syntax tree. OptionalGroup is the exception, as it is found in the
+-- syntax of an object class.
+
+Asni DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+CompiledSpecification ::= SEQUENCE {
+    modules SEQUENCE OF CompiledModule
+}
+
+CompiledModule ::= SEQUENCE {
+    name            UTF8String,
+    types           SEQUENCE OF TypeAssignment DEFAULT {},
+    object-classes  SEQUENCE OF ObjectClassAssignment DEFAULT {}
+}
+
+TypeAssignment ::= SEQUENCE {
+    name  UTF8String,
+    type  Type
+}
+
+Member ::= SEQUENCE {
+    name      UTF8String,
+    type      Type,
+    optional  BOOLEAN DEFAULT FALSE,
+    default   Value OPTIONAL
+}
+
+Tag ::= SEQUENCE {
+    number     INTEGER,
+    tag-class  UTF8String OPTIONAL,
+    mode       UTF8String OPTIONAL
+}
+
+Range ::= SEQUENCE {
+    lower  Bound,
+    upper  Bound
+}
+
+NamedNumber ::= SEQUENCE {
+    name    UTF8String,
+    number  INTEGER
+}
+
+ExtensionMarker ::= SEQUENCE {}
+
+ExtensionAdditionGroup ::= SEQUENCE {
+    members SEQUENCE OF MemberListItem
+}
+
+-- What every type has. The type of a node is the fields of its kind
+-- and these.
+TypeFields ::= SEQUENCE {
+    tag                 Tag OPTIONAL,
+    size                SEQUENCE OF ConstraintElement OPTIONAL,
+    restricted-to       SEQUENCE OF ConstraintElement OPTIONAL,
+    permitted-alphabet  SEQUENCE OF ConstraintElement OPTIONAL,
+    with-components     WithComponents OPTIONAL,
+    with-component      WithComponent OPTIONAL,
+    table               TableConstraint OPTIONAL,
+    module-name         UTF8String OPTIONAL
+}
+
+-- WITH COMPONENTS as the compiler has worked it out: the alternatives
+-- of which a value satisfies any, or an extension marker if it is
+-- extensible.
+WithComponents ::= SEQUENCE OF CHOICE {
+    alternative       SEQUENCE OF ComponentConstraint,
+    extension-marker  ExtensionMarker
+}
+
+-- WITH COMPONENT as the compiler has worked it out: the alternatives of
+-- which all the elements of a value satisfy the same one, or an
+-- extension marker if it is extensible.
+WithComponent ::= SEQUENCE OF CHOICE {
+    alternative       ElementConstraint,
+    extension-marker  ExtensionMarker
+}
+
+-- What a constraint has, and a constraint on a component.
+ConstraintFields ::= SEQUENCE {
+    size                SEQUENCE OF ConstraintElement OPTIONAL,
+    restricted-to       SEQUENCE OF ConstraintElement OPTIONAL,
+    permitted-alphabet  SEQUENCE OF ConstraintElement OPTIONAL,
+    with-components     WithComponents OPTIONAL,
+    with-component      WithComponent OPTIONAL,
+    containing          Type OPTIONAL
+}
+
+BuiltinType ::= SEQUENCE {
+    name  UTF8String,
+    COMPONENTS OF TypeFields
+}
+
+ReferencedType ::= SEQUENCE {
+    name  UTF8String,
+    COMPONENTS OF TypeFields
+}
+
+IntegerType ::= SEQUENCE {
+    named-numbers  SEQUENCE OF NamedNumber OPTIONAL,
+    COMPONENTS OF TypeFields
+}
+
+BitStringType ::= SEQUENCE {
+    named-bits  SEQUENCE OF NamedNumber OPTIONAL,
+    COMPONENTS OF TypeFields
+}
+
+EnumeratedType ::= SEQUENCE {
+    values  SEQUENCE OF CHOICE {
+                named-number      NamedNumber,
+                extension-marker  ExtensionMarker
+            },
+    COMPONENTS OF TypeFields
+}
+
+SequenceType ::= SEQUENCE {
+    members  SEQUENCE OF MemberListItem,
+    COMPONENTS OF TypeFields
+}
+
+SetType ::= SEQUENCE {
+    members  SEQUENCE OF MemberListItem,
+    COMPONENTS OF TypeFields
+}
+
+ChoiceType ::= SEQUENCE {
+    members  SEQUENCE OF MemberListItem,
+    COMPONENTS OF TypeFields
+}
+
+SequenceOfType ::= SEQUENCE {
+    element       Type,
+    element-name  UTF8String OPTIONAL,
+    COMPONENTS OF TypeFields
+}
+
+SetOfType ::= SEQUENCE {
+    element       Type,
+    element-name  UTF8String OPTIONAL,
+    COMPONENTS OF TypeFields
+}
+
+AnyDefinedByType ::= SEQUENCE {
+    value    UTF8String,
+    choices  SEQUENCE OF AnyDefinedByChoice DEFAULT {},
+    COMPONENTS OF TypeFields
+}
+
+AnyDefinedByChoice ::= SEQUENCE {
+    value  Value,
+    type   Type
+}
+
+Type ::= CHOICE {
+    builtin           BuiltinType,
+    referenced        ReferencedType,
+    integer           IntegerType,
+    bit-string        BitStringType,
+    enumerated        EnumeratedType,
+    sequence          SequenceType,
+    set               SetType,
+    choice            ChoiceType,
+    sequence-of       SequenceOfType,
+    set-of            SetOfType,
+    any-defined-by    AnyDefinedByType
+}
+
+MemberListItem ::= CHOICE {
+    member                  Member,
+    extension-marker        ExtensionMarker,
+    extension-addition-group  ExtensionAdditionGroup
+}
+
+ConstraintElement ::= CHOICE {
+    range             Range,
+    extension-marker  ExtensionMarker,
+    type              Type,
+    value             Value
+}
+
+ElementConstraint ::= SEQUENCE {
+    COMPONENTS OF ConstraintFields
+}
+
+ComponentConstraint ::= SEQUENCE {
+    name      UTF8String,
+    presence  UTF8String OPTIONAL,
+    COMPONENTS OF ConstraintFields
+}
+
+TableConstraint ::= SEQUENCE {
+    object-set     UTF8String,
+    component-ids  SEQUENCE OF UTF8String OPTIONAL
+}
+
+-- The bounds of a range.
+Bound ::= CHOICE {
+    value     Value,
+    min       Min,
+    max       Max,
+    excluded  Excluded
+}
+
+Min ::= SEQUENCE {}
+
+Max ::= SEQUENCE {}
+
+Excluded ::= SEQUENCE {
+    value Value
+}
+
+-- A value, as the default of a member or a bound of a range.
+Value ::= CHOICE {
+    integer           INTEGER,
+    real              REAL,
+    boolean           BOOLEAN,
+    text              UTF8String,
+    identifier        Identifier,
+    hex-string        HexString,
+    binary-string     BinaryString,
+    null              Null,
+    plus-infinity     PlusInfinity,
+    minus-infinity    MinusInfinity,
+    not-a-number      NotANumber,
+    named-value       NamedValue,
+    sequence-value    SequenceValue,
+    unsupported       UnsupportedValue,
+    list              SEQUENCE OF Value
+}
+
+Identifier ::= SEQUENCE {
+    name UTF8String
+}
+
+HexString ::= SEQUENCE {
+    digits UTF8String
+}
+
+BinaryString ::= SEQUENCE {
+    bits UTF8String
+}
+
+Null ::= SEQUENCE {}
+
+PlusInfinity ::= SEQUENCE {}
+
+MinusInfinity ::= SEQUENCE {}
+
+NotANumber ::= SEQUENCE {}
+
+UnsupportedValue ::= SEQUENCE {}
+
+NamedValue ::= SEQUENCE {
+    name   UTF8String,
+    value  Value
+}
+
+SequenceValue ::= SEQUENCE {
+    members SEQUENCE OF NamedValue
+}
+
+-- Object classes.
+ObjectClassAssignment ::= SEQUENCE {
+    name    UTF8String,
+    fields  SEQUENCE OF ObjectClassField,
+    syntax  SEQUENCE OF CHOICE {
+                token           UTF8String,
+                optional-group  OptionalGroup
+            } OPTIONAL
+}
+
+ObjectClassField ::= SEQUENCE {
+    name  UTF8String,
+    type  Type
+}
+
+OptionalGroup ::= SEQUENCE {
+    tokens SEQUENCE OF CHOICE {
+        token           UTF8String,
+        optional-group  OptionalGroup
+    }
+}
+
+END

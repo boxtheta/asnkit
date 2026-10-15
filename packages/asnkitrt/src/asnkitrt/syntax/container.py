@@ -4,10 +4,10 @@
 
 """Read and write syntax trees and compiled specifications as files.
 
-An ``.asnc`` file holds a compiled specification. It is what a
+An ``.asni`` file holds a compiled specification. It is what a
 runtime loads, also on small devices, so it is:
 
-- The four bytes ``ASNC``.
+- The four bytes ``ASNI``.
 
 - One byte with the major and one with the minor version of the
   layout of its nodes. A reader accepts any minor version of the
@@ -59,7 +59,7 @@ from .convert import ConvertError
 from .nodes import SCHEMA_VERSION, CompiledSpecification, SyntaxTree
 from .wire import from_compact, from_primitive, to_compact, to_primitive
 
-MAGIC_ASNC = b"ASNC"
+MAGIC_ASNI = b"ASNI"
 
 # What an .asnst file says it is.
 FORMAT_ASNST = "asnst"
@@ -136,7 +136,7 @@ class Metadata:
     anything else as strings, numbers, lists and dictionaries with
     strings as keys in `other`.
 
-    `bound_to` is what an ``.asnc`` file is only for, as any string of
+    `bound_to` is what an ``.asni`` file is only for, as any string of
     at most 255 bytes as UTF-8, or ``None`` for a file that is not
     bound. A reader only reads a bound file if told to expect that
     string. An ``.asnst`` file is never bound.
@@ -151,11 +151,11 @@ class Metadata:
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Header:
-    """The header of a file: what it holds as ``'asnc'`` or
+    """The header of a file: what it holds as ``'asni'`` or
     ``'asnst'``, the version of the layout of its nodes as (major,
     minor) and its metadata, which is ``None`` for an encrypted file.
 
-    Of an ``.asnc`` file it also has the nonce if there is one to
+    Of an ``.asni`` file it also has the nonce if there is one to
     check, the identifier of the key it is signed with if signed, and
     that of the key it is encrypted with if encrypted.
 
@@ -292,7 +292,7 @@ def _find_key(keys: Keys | None, key_id: bytes, what: str, to: str) -> bytes:
     )
 
 
-def _write_asnc(
+def _write_asni(
     metadata: Metadata | None,
     nodes: Any,
     nonce: int | None,
@@ -329,7 +329,7 @@ def _write_asnc(
 
     header = b"".join(
         [
-            MAGIC_ASNC,
+            MAGIC_ASNI,
             bytes(SCHEMA_VERSION),
             flags.to_bytes(2, "big"),
             nonce.to_bytes(NONCE_SIZE, "big"),
@@ -377,7 +377,7 @@ def _check_version(version: Tuple[int, int]) -> None:
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class _Prefix:
-    """What comes before the metadata in an .asnc file."""
+    """What comes before the metadata in an .asni file."""
 
     version: Tuple[int, int]
     flags: int
@@ -392,7 +392,7 @@ class _Prefix:
 
 def _read_prefix(data: bytes) -> _Prefix:
     if len(data) < HEADER_SIZE:
-        raise ConvertError("Expected an .asnc or .asnst file.")
+        raise ConvertError("Expected an .asni or .asnst file.")
 
     version = (data[4], data[5])
     flags = int.from_bytes(data[6:8], "big")
@@ -444,7 +444,7 @@ def _read_prefix(data: bytes) -> _Prefix:
     )
 
 
-def _read_asnc_header(data: bytes) -> Header:
+def _read_asni_header(data: bytes) -> Header:
     prefix = _read_prefix(data)
     metadata = None
 
@@ -455,7 +455,7 @@ def _read_asnc_header(data: bytes) -> Header:
         )
 
     return Header(
-        kind="asnc",
+        kind="asni",
         version=prefix.version,
         metadata=metadata,
         nonce=prefix.nonce,
@@ -476,7 +476,7 @@ def _read_asnst(data: bytes) -> Tuple[Header, Any]:
         contents = None
 
     if not isinstance(contents, dict) or contents.get("format") != FORMAT_ASNST:
-        raise ConvertError("Expected an .asnc or .asnst file.")
+        raise ConvertError("Expected an .asni or .asnst file.")
 
     version = contents.get("version")
 
@@ -556,7 +556,7 @@ def _check_binding(
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class _Checks:
-    """What an .asnc file has to be to be read."""
+    """What an .asni file has to be to be read."""
 
     nonce: NonceCheck = None
     accept_any_nonce: bool = False
@@ -630,14 +630,14 @@ def _decrypt(data: bytes, prefix: _Prefix, checks: _Checks) -> bytes:
         )
 
 
-def _read_asnc(data: bytes | bytearray, checks: _Checks) -> Any:
+def _read_asni(data: bytes | bytearray, checks: _Checks) -> Any:
     data = bytes(data)
 
-    if data[:4] != MAGIC_ASNC:
+    if data[:4] != MAGIC_ASNI:
         # Tell if it is the other file.
         _read_asnst(data)
 
-        raise ConvertError("Expected an .asnc file, but got an .asnst file.")
+        raise ConvertError("Expected an .asni file, but got an .asnst file.")
 
     prefix = _read_prefix(data)
 
@@ -659,8 +659,8 @@ def _read_asnc(data: bytes | bytearray, checks: _Checks) -> Any:
 
 
 def read_header(data: bytes | bytearray) -> Header:
-    """Returns the header of given contents of an ``.asnc`` or
-    ``.asnst`` file, with its metadata. Nothing of an ``.asnc`` file
+    """Returns the header of given contents of an ``.asni`` or
+    ``.asnst`` file, with its metadata. Nothing of an ``.asni`` file
     is checked: not its signature, not its nonce and not what it is
     bound to. The metadata of an encrypted file is ``None``, as it is
     not decrypted.
@@ -672,8 +672,8 @@ def read_header(data: bytes | bytearray) -> Header:
 
     data = bytes(data)
 
-    if data[:4] == MAGIC_ASNC:
-        return _read_asnc_header(data)
+    if data[:4] == MAGIC_ASNI:
+        return _read_asni_header(data)
 
     return _read_asnst(data)[0]
 
@@ -691,7 +691,7 @@ def to_asnst(tree: SyntaxTree, metadata: Metadata | None = None) -> bytes:
         metadata = Metadata()
 
     if metadata.bound_to is not None:
-        raise ConvertError("Only an .asnc file can be bound to something.")
+        raise ConvertError("Only an .asni file can be bound to something.")
 
     return cbor.dumps(
         {
@@ -713,8 +713,8 @@ def from_asnst(data: bytes | bytearray) -> SyntaxTree:
 
     data = bytes(data)
 
-    if data[:4] == MAGIC_ASNC:
-        raise ConvertError("Expected an .asnst file, but got an .asnc file.")
+    if data[:4] == MAGIC_ASNI:
+        raise ConvertError("Expected an .asnst file, but got an .asni file.")
 
     # Fields of a later minor version are not known.
     tree = from_primitive(_read_asnst(data)[1], is_strict=False)
@@ -737,7 +737,7 @@ def from_asnst_file(filename: str) -> SyntaxTree:
         return from_asnst(fin.read())
 
 
-def to_asnc(
+def to_asni(
     compiled: CompiledSpecification,
     metadata: Metadata | None = None,
     nonce: int | None = None,
@@ -745,7 +745,7 @@ def to_asnc(
     encryption_key: Key | None = None,
 ) -> bytes:
     """Encode given compiled specification as the contents of an
-    ``.asnc`` file, with given metadata.
+    ``.asni`` file, with given metadata.
 
     Give `nonce` as a number of at most 24 bits for a file with a
     nonce to check.
@@ -756,17 +756,17 @@ def to_asnc(
     key, of 16 bytes, and the AES-256 key, of 32 bytes. Both need the
     cryptography package.
 
-    >>> with open('foo.asnc', 'wb') as fout:
-    ...     fout.write(asnkitrt.syntax.to_asnc(compiled))
+    >>> with open('foo.asni', 'wb') as fout:
+    ...     fout.write(asnkitrt.syntax.to_asni(compiled))
 
     """
 
-    return _write_asnc(
+    return _write_asni(
         metadata, to_compact(compiled), nonce, signing_key, encryption_key
     )
 
 
-def from_asnc(
+def from_asni(
     data: bytes | bytearray,
     nonce: NonceCheck = None,
     accept_any_nonce: bool = False,
@@ -776,8 +776,8 @@ def from_asnc(
     accept_any_signature: bool = False,
     decryption_keys: Keys | None = None,
 ) -> CompiledSpecification:
-    """Decode given contents of an ``.asnc`` file, as returned by
-    :func:`to_asnc()`, to a compiled specification.
+    """Decode given contents of an ``.asni`` file, as returned by
+    :func:`to_asni()`, to a compiled specification.
 
     `nonce` is what the nonce of the file has to be: a number it has
     to be the same as, or a function that is given it and returns
@@ -812,12 +812,12 @@ def from_asnc(
 
     Signed and encrypted files need the cryptography package.
 
-    >>> compiled = asnkitrt.syntax.from_asnc(data)
+    >>> compiled = asnkitrt.syntax.from_asni(data)
 
     """
 
     compiled = from_compact(
-        _read_asnc(
+        _read_asni(
             data,
             _Checks(
                 nonce=nonce,
@@ -837,7 +837,7 @@ def from_asnc(
     return compiled
 
 
-def from_asnc_file(
+def from_asni_file(
     filename: str,
     nonce: NonceCheck = None,
     accept_any_nonce: bool = False,
@@ -847,15 +847,15 @@ def from_asnc_file(
     accept_any_signature: bool = False,
     decryption_keys: Keys | None = None,
 ) -> CompiledSpecification:
-    """Same as :func:`from_asnc()`, but for the ``.asnc`` file with
+    """Same as :func:`from_asni()`, but for the ``.asni`` file with
     given name.
 
-    >>> compiled = asnkitrt.syntax.from_asnc_file('foo.asnc')
+    >>> compiled = asnkitrt.syntax.from_asni_file('foo.asni')
 
     """
 
     with open(filename, "rb") as fin:
-        return from_asnc(
+        return from_asni(
             fin.read(),
             nonce,
             accept_any_nonce,

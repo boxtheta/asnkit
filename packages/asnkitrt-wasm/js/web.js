@@ -17,11 +17,11 @@ export function ready() {
   return initialized.then(() => undefined);
 }
 
-/** Loads the contents of an `.asnc` file for a codec. */
-export async function load(asnc, codec = 'ber', options = {}) {
+/** Loads the contents of an `.asni` file for a codec. */
+export async function load(asni, codec = 'ber', options = {}) {
   await ready();
 
-  return new Specification(asnc, codec, options);
+  return new Specification(asni, codec, options);
 }
 
 export { Specification };

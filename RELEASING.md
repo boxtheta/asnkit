@@ -56,7 +56,7 @@ and passes its tests.
      cp /tmp/fixtures/* tests/fixtures/
      ```
 
-   - `examples/compiled`: the `.asnc` and `.asnst` files next to each
+   - `examples/compiled`: the `.asni` and `.asnst` files next to each
      `.asn`, which `test_examples` in `tests/test_files.py` holds to
      what the compiler makes.
    - `examples/generated/foo.py`, as `tests/test_gen_python.py` tells

@@ -45,7 +45,7 @@ class Specification(object):
     ASN.1 specification.
 
     Instances of this class are created by the functions `load()`,
-    `load_asnc()` and `load_asnc_file()`.
+    `load_asni()` and `load_asni_file()`.
 
     """
 
@@ -293,7 +293,7 @@ def load(
     `'uper'` and `'xer'`.
 
     `compiled` is a `CompiledSpecification`
-    or the contents of an `.asnc` file as bytes. Nothing else is
+    or the contents of an `.asni` file as bytes. Nothing else is
     loaded. A syntax tree, or an `.asnst` file, has to be compiled
     first.
 
@@ -316,19 +316,19 @@ def load(
     `nonce`, `accept_any_nonce`, `bound_to`, `accept_any_binding`,
     `verification_keys`, `accept_any_signature` and `decryption_keys`
     tell which files to read, as for
-    `from_asnc()`. A file that is signed,
+    `from_asni()`. A file that is signed,
     encrypted, bound to something or has a nonce to check is not read
     unless told what to expect.
 
     ```python
-    >>> with open('foo.asnc', 'rb') as fin:
+    >>> with open('foo.asni', 'rb') as fin:
     ...     foo = asnkitrt.runtime.load(fin.read())
     ```
 
     """
 
     if isinstance(compiled, (bytes, bytearray)):
-        compiled = syntax.from_asnc(
+        compiled = syntax.from_asni(
             compiled,
             nonce,
             accept_any_nonce,
@@ -345,7 +345,7 @@ def load(
     return load_dict(syntax.compiled_to_dict(compiled), codec, numeric_enums, lenient)
 
 
-def load_asnc(
+def load_asni(
     data: bytes | bytearray,
     codec: CodecType = "ber",
     numeric_enums: bool = False,
@@ -358,17 +358,17 @@ def load_asnc(
     decryption_keys: syntax.Keys | None = None,
     lenient: bool = False,
 ) -> Specification:
-    """Same as `load()`, but for given contents of an `.asnc`
+    """Same as `load()`, but for given contents of an `.asni`
     file only.
 
     ```python
-    >>> foo = asnkitrt.runtime.load_asnc(data)
+    >>> foo = asnkitrt.runtime.load_asni(data)
     ```
 
     """
 
     return load(
-        syntax.from_asnc(
+        syntax.from_asni(
             data,
             nonce,
             accept_any_nonce,
@@ -384,7 +384,7 @@ def load_asnc(
     )
 
 
-def load_asnc_file(
+def load_asni_file(
     filename: str,
     codec: CodecType = "ber",
     numeric_enums: bool = False,
@@ -397,17 +397,17 @@ def load_asnc_file(
     decryption_keys: syntax.Keys | None = None,
     lenient: bool = False,
 ) -> Specification:
-    """Same as `load()`, but for the `.asnc` file with given
+    """Same as `load()`, but for the `.asni` file with given
     name.
 
     ```python
-    >>> foo = asnkitrt.runtime.load_asnc_file('foo.asnc')
+    >>> foo = asnkitrt.runtime.load_asni_file('foo.asni')
     ```
 
     """
 
     return load(
-        syntax.from_asnc_file(
+        syntax.from_asni_file(
             filename,
             nonce,
             accept_any_nonce,

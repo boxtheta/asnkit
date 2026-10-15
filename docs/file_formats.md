@@ -4,13 +4,13 @@ This is the specification of the two files a parsed ASN.1
 specification is stored in. It is written for those reading or
 writing them without this package, in C, Rust or anything else.
 
-> **Note:** This document is licensed under the Creative Commons Attribution 4.0 International License (CC-BY-4.0), but for its code blocks, which are licensed under the MIT License. See `COPYING` and `LICENSE-DOCUMENTATION` in the root of the repository.
+> **Note:** This document, with its code blocks, is licensed under the Apache License 2.0. See `LICENSE-COMPILER` in the root of the repository.
 
 > **Note:** This is a draft of version 1.0 of the formats. Nothing has been released with them yet, so anything in here may still change without a new major version. [Not yet specified](#not-yet-specified) lists what is missing.
 
 ## The two files
 
-- `.asnc` — A compiled specification: all that is needed to encode and decode
+- `.asni` — A compiled specification: all that is needed to encode and decode
   its types, with nothing left to look up or work out. It is what a
   runtime loads, and it is made to be small and simple to read.
 
@@ -18,25 +18,25 @@ writing them without this package, in C, Rust or anything else.
   written. It is what plugins are given, with the text of the ASN.1
   files it was made from and where in them things are found. Its
   size matters less than how easy it is to look at. A runtime never
-  loads one. It is compiled to an `.asnc` file first.
+  loads one. It is compiled to an `.asni` file first.
 
 Both hold nodes of the same kinds. They differ in which kinds are
 found in them, in how a node is written and in what is around the
-nodes: an `.asnc` file has a header a small device can check, and
+nodes: an `.asni` file has a header a small device can check, and
 an `.asnst` file is [nothing but CBOR](#syntax-tree-files).
 
 ## Media types
 
 | File | Media type | Extension |
 |---|---|---|
-| Compiled specification | `application/vnd.asnkit.asnc` | `.asnc` |
+| Compiled specification | `application/vnd.asnkit.asni` | `.asni` |
 | Syntax tree | `application/vnd.asnkit.asnst+cbor` | `.asnst` |
 
 These are claimed for the two files, in the vendor tree of RFC 6838,
 and are not registered with IANA yet. Neither takes parameters.
 
 An `.asnst` file has the suffix `+cbor`, as it is nothing but CBOR
-and anything that reads CBOR can read it. An `.asnc` file has no
+and anything that reads CBOR can read it. An `.asni` file has no
 suffix: its header comes before the CBOR, and the CBOR is not
 readable at all when the file is encrypted.
 
@@ -44,18 +44,18 @@ A file has the same media type whatever its version, and whether or
 not it is signed, encrypted, bound or has a nonce: the header tells
 all of that. One that sends a file, as over HTTP, gives its media
 type. One that receives it does not rely on the media type, nor on
-the extension, but on what is in the file: an `.asnc` file begins
-with the four bytes `41 53 4E 43` (`ASNC` in ASCII), and an `.asnst`
+the extension, but on what is in the file: an `.asni` file begins
+with the four bytes `41 53 4E 49` (`ASNI` in ASCII), and an `.asnst`
 file is a CBOR map whose `format` is `asnst`.
 
 ## Layout
 
-This is the layout of an `.asnc` file. All numbers of more than one
+This is the layout of an `.asni` file. All numbers of more than one
 byte have the most significant byte first.
 
 | Offset | Bytes | What |
 |---|---|---|
-| 0 | 4 | `ASNC` in ASCII. |
+| 0 | 4 | `ASNI` in ASCII. |
 | 4 | 1 | Major version, currently 1. |
 | 5 | 1 | Minor version, currently 0. |
 | 6 | 2 | [Flags](#flags). |
@@ -84,7 +84,7 @@ encrypted has the flags `00 01`.
 A reader rejects a file with a flag set that it does not know of or
 does not support. It never ignores one.
 
-Only an `.asnc` file has flags, as it is the one sent to devices.
+Only an `.asni` file has flags, as it is the one sent to devices.
 An `.asnst` file is never signed, encrypted or bound, and has no
 nonce.
 
@@ -315,10 +315,10 @@ optional, and a reader ignores those it does not know of.
     lowercase hexadecimal digits.
 
   - `text` — Its text. An `.asnst` file has it unless told otherwise. An
-    `.asnc` file never does.
+    `.asni` file never does.
 
 - `bound_to` — What the file is bound to, as a text string of at most 255 bytes
-  as UTF-8. Only looked at in a bound `.asnc` file. See [Bound files](#bound-files).
+  as UTF-8. Only looked at in a bound `.asni` file. See [Bound files](#bound-files).
 
 - `other` — A map of anything else those making the file want it to tell.
 
@@ -350,14 +350,14 @@ What a file holds is a tree of nodes. A node is of a kind and has
 fields, which hold text strings, numbers, booleans, other nodes and
 lists of any of those. [Kinds of nodes](#kinds-of-nodes) lists them.
 
-The top node of an `.asnc` file is a `CompiledSpecification` and
+The top node of an `.asni` file is a `CompiledSpecification` and
 that of an `.asnst` file is a `SyntaxTree`.
 
 A node is written in one of two forms.
 
 ### The compact form
 
-This is the form of an `.asnc` file.
+This is the form of an `.asni` file.
 
 - A node is an array of the number of its kind followed by its
   fields, in the order of [Kinds of nodes](#kinds-of-nodes).
@@ -605,7 +605,7 @@ A value, as the default of a member or a bound of a range, is one of:
 
 ## Compiled specifications
 
-An `.asnc` file only has the kinds of nodes numbered 1 to 40, and of
+An `.asni` file only has the kinds of nodes numbered 1 to 40, and of
 those `ComponentsOf`, `location`, `parameters`,
 `actual_parameters` and `constraints` are never found in one. Unlike in a syntax
 tree:

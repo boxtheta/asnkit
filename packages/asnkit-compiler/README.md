@@ -1,7 +1,7 @@
 # asnkit-compiler (Rust)
 
 The asnkit compiler as a library, for an application to compile ASN.1
-itself. It parses ASN.1 and writes `.asnc` files, which a runtime loads
+itself. It parses ASN.1 and writes `.asni` files, which a runtime loads
 to encode and decode without parsing anything itself, and `.asnst`
 files, the syntax tree that plugins generate code from, and it runs
 plugins. Its output is checked against the cases in `tests/golden`
@@ -9,12 +9,12 @@ of the [repository](https://github.com/boxtheta/asnkit).
 
 ```rust
 use asnkit_compiler::container::Protection;
-use asnkit_compiler::{Input, compile_to_asnc};
+use asnkit_compiler::{Input, compile_to_asni};
 
 let input = Input::String(std::fs::read_to_string("foo.asn")?);
-let asnc = compile_to_asnc(&input, None, None, &Protection::default())?;
+let asni = compile_to_asni(&input, None, None, &Protection::default())?;
 
-std::fs::write("foo.asnc", asnc)?;
+std::fs::write("foo.asni", asni)?;
 ```
 
 The command [`asnkitcc`](https://crates.io/crates/asnkitcc) is made

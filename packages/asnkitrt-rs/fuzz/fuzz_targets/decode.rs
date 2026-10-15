@@ -11,7 +11,7 @@ use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 use libfuzzer_sys::fuzz_target;
 
-const RFC5280: &[u8] = include_bytes!("../../../../examples/compiled/rfc5280.asnc");
+const RFC5280: &[u8] = include_bytes!("../../../../examples/compiled/rfc5280.asni");
 
 fn specifications() -> &'static Vec<Specification> {
     static SPECIFICATIONS: OnceLock<Vec<Specification>> = OnceLock::new();
@@ -19,7 +19,7 @@ fn specifications() -> &'static Vec<Specification> {
     SPECIFICATIONS.get_or_init(|| {
         [Codec::Ber, Codec::Der, Codec::Oer, Codec::Per, Codec::Uper, Codec::Jer, Codec::Xer]
             .into_iter()
-            .filter_map(|codec| Specification::from_asnc(RFC5280, &Checks::default(), Options::new(codec)).ok())
+            .filter_map(|codec| Specification::from_asni(RFC5280, &Checks::default(), Options::new(codec)).ok())
             .collect()
     })
 }

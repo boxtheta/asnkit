@@ -21,7 +21,7 @@ exclude = ["tests/", "fuzz/", "benches/", "examples/"]
 [features]
 default = ["std", "signing", "encryption", "serde", "jer", "xer", "bigint"]
 std = ["sha2?/std", "ed25519-dalek?/std", "aes-gcm?/std", "serde?/std"]
-# To load signed and encrypted .asnc files. Nothing else needs them.
+# To load signed and encrypted .asni files. Nothing else needs them.
 signing = ["dep:sha2", "dep:ed25519-dalek"]
 encryption = ["dep:aes-gcm"]
 # Values to and from the types of serde, see `serde_value`.

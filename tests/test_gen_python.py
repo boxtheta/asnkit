@@ -17,7 +17,7 @@ from asnkitrt import syntax
 from asnkitrt.errors import CompileError
 from asnkit_gen_python import GenerateError, generate
 
-from tests.test_asnc_asn import convert_node, golden_cases, without_defaults
+from tests.test_asni_asn import convert_node, golden_cases, without_defaults
 from tests.test_openssl_x509 import (
     EXTENSIONS,
     OPENSSL,
@@ -25,8 +25,8 @@ from tests.test_openssl_x509 import (
     make_certificate,
 )
 
-FOO_ASNC = os.path.join("examples", "compiled", "foo.asnc")
-RFC5280_ASNC = os.path.join("examples", "compiled", "rfc5280.asnc")
+FOO_ASNI = os.path.join("examples", "compiled", "foo.asni")
+RFC5280_ASNI = os.path.join("examples", "compiled", "rfc5280.asni")
 GENERATED_FOO = os.path.join("examples", "generated", "foo.py")
 
 counter = 0
@@ -49,13 +49,13 @@ def load_module(text: str) -> Any:
     return module
 
 
-def asnc_of(case: dict[str, Any]) -> bytes:
-    return syntax.to_asnc(syntax.from_compact(case["compile"]["nodes"]))
+def asni_of(case: dict[str, Any]) -> bytes:
+    return syntax.to_asni(syntax.from_compact(case["compile"]["nodes"]))
 
 
-def runtime_can_load(asnc: bytes) -> bool:
+def runtime_can_load(asni: bytes) -> bool:
     try:
-        asnkitrt.load_asnc(asnc, "ber")
+        asnkitrt.load_asni(asni, "ber")
     except CompileError:
         return False
 
@@ -65,8 +65,8 @@ def runtime_can_load(asnc: bytes) -> bool:
 class GeneratedFooTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.foo = load_module(generate(read(FOO_ASNC), ["foo.asn"], "uper"))
-        cls.runtime = asnkitrt.load_asnc_file(FOO_ASNC, "uper")
+        cls.foo = load_module(generate(read(FOO_ASNI), ["foo.asn"], "uper"))
+        cls.runtime = asnkitrt.load_asni_file(FOO_ASNI, "uper")
 
     def test_encode_and_decode_are_those_of_the_runtime(self) -> None:
         question = self.foo.Question(id=1, question="Is 1+1=3?")
@@ -94,17 +94,17 @@ class GeneratedFooTest(unittest.TestCase):
             self.foo.Question.decode(b"\xff")
 
     def test_embedded_specification_is_the_file(self) -> None:
-        self.assertEqual(self.foo._ASNC, read(FOO_ASNC))
+        self.assertEqual(self.foo._ASNI, read(FOO_ASNI))
 
     def test_what_is_committed_is_what_is_generated(self) -> None:
-        text = generate(read(FOO_ASNC), ["foo.asn"])
+        text = generate(read(FOO_ASNI), ["foo.asn"])
 
         with open(GENERATED_FOO, encoding="utf-8") as fin:
             self.assertEqual(
                 fin.read(),
                 text,
-                "Make it again with: uv run asnkit-gen-python --asnc {} "
-                "--out examples/generated".format(FOO_ASNC),
+                "Make it again with: uv run asnkit-gen-python --asni {} "
+                "--out examples/generated".format(FOO_ASNI),
             )
 
 
@@ -142,8 +142,8 @@ class GeneratedShapesTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         from tests import compiled as fixtures
 
-        asnc = fixtures.compile_string_to_asnc(SHAPES)
-        cls.shapes = load_module(generate(asnc, ["shapes.asn"]))
+        asni = fixtures.compile_string_to_asni(SHAPES)
+        cls.shapes = load_module(generate(asni, ["shapes.asn"]))
 
     def drawing(self) -> Any:
         m = self.shapes
@@ -242,13 +242,13 @@ class GeneratedFromGoldenCasesTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
 
         for case_id, case in golden_cases():
-            asnc = asnc_of(case)
+            asni = asni_of(case)
 
-            if not runtime_can_load(asnc):
+            if not runtime_can_load(asni):
                 continue
 
             with self.subTest(case=case_id):
-                text = generate(asnc, [case_id])
+                text = generate(asni, [case_id])
                 load_module(text).spec()
                 name = "case_" + case_id.replace("-", "_")
 
@@ -274,17 +274,17 @@ class GeneratedFromGoldenCasesTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout[-3000:])
 
-    def test_asnc_asn_values_go_through_the_classes(self) -> None:
+    def test_asni_asn_values_go_through_the_classes(self) -> None:
         """The compiled specification of every golden case is a value of
-        examples/asnc.asn, whose classes make it and give it back.
+        examples/asni.asn, whose classes make it and give it back.
 
         """
 
-        asnc_asn = [
-            c for _, c in golden_cases() if c.get("files") == ["examples/asnc.asn"]
+        asni_asn = [
+            c for _, c in golden_cases() if c.get("files") == ["examples/asni.asn"]
         ]
-        module = load_module(generate(asnc_of(asnc_asn[0]), ["asnc.asn"], "der"))
-        runtime = asnkitrt.load_asnc(asnc_of(asnc_asn[0]), "der")
+        module = load_module(generate(asni_of(asni_asn[0]), ["asni.asn"], "der"))
+        runtime = asnkitrt.load_asni(asni_of(asni_asn[0]), "der")
         count = 0
 
         for case_id, case in golden_cases():
@@ -313,7 +313,7 @@ class GeneratedFromGoldenCasesTest(unittest.TestCase):
 @unittest.skipIf(OPENSSL is None, "openssl is not installed")
 class GeneratedX509Test(unittest.TestCase):
     def test_certificates_of_openssl_go_through_the_classes_unchanged(self) -> None:
-        rfc5280 = load_module(generate(read(RFC5280_ASNC), ["rfc5280.asn"], "der"))
+        rfc5280 = load_module(generate(read(RFC5280_ASNI), ["rfc5280.asn"], "der"))
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         keys = {
@@ -344,26 +344,26 @@ class GenerateErrorsTest(unittest.TestCase):
         from tests import compiled as fixtures
 
         with self.assertRaises(GenerateError):
-            generate(fixtures.compile_string_to_asnc(SHAPES, nonce=1))
+            generate(fixtures.compile_string_to_asni(SHAPES, nonce=1))
 
     def test_two_things_with_one_name_in_python_is_an_error(self) -> None:
         from tests import compiled as fixtures
 
-        asnc = fixtures.compile_string_to_asnc(
+        asni = fixtures.compile_string_to_asni(
             "A DEFINITIONS ::= BEGIN Foo-Bar ::= INTEGER FooBar ::= INTEGER END"
         )
 
         with self.assertRaisesRegex(GenerateError, "FooBar"):
-            generate(asnc)
+            generate(asni)
 
     def test_the_same_type_name_in_two_modules(self) -> None:
         from tests import compiled as fixtures
 
-        asnc = fixtures.compile_string_to_asnc(
+        asni = fixtures.compile_string_to_asni(
             "A DEFINITIONS ::= BEGIN T ::= SEQUENCE { a INTEGER } END "
             "B DEFINITIONS ::= BEGIN T ::= SEQUENCE { b BOOLEAN } END"
         )
-        module = load_module(generate(asnc))
+        module = load_module(generate(asni))
         a = module.AT(a=1)
         b = module.BT(b=True)
 

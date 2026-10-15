@@ -6,7 +6,7 @@
 
 .. code-block:: text
 
-   asnkit-gen-python --asnc FILE --asnst FILE --out FOLDER [--opt KEY=VALUE ...]
+   asnkit-gen-python --asni FILE --asnst FILE --out FOLDER [--opt KEY=VALUE ...]
 
 It writes one Python module to the folder. The options are ``name``,
 which is the name of the module without ``.py`` (default: that of
@@ -50,8 +50,8 @@ def read_options(items: list[str]) -> dict[str, str]:
 def run(args: argparse.Namespace) -> str:
     options = read_options(args.opt)
 
-    with open(args.asnc, "rb") as fin:
-        asnc = fin.read()
+    with open(args.asni, "rb") as fin:
+        asni = fin.read()
 
     # The names of the files it was made from are in the .asnst file.
     sources: list[str] = []
@@ -71,7 +71,7 @@ def run(args: argparse.Namespace) -> str:
     if not name.isidentifier():
         raise GenerateError("Expected a name of a module, but got '{}'.".format(name))
 
-    text = generate(asnc, sources, options.get("codec", DEFAULT_CODEC))
+    text = generate(asni, sources, options.get("codec", DEFAULT_CODEC))
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, name + ".py")
 
@@ -88,7 +88,7 @@ def main() -> None:
         "specification. Run by `asnkitcc generate`.",
     )
     parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument("--asnc", required=True, help="The compiled specification.")
+    parser.add_argument("--asni", required=True, help="The compiled specification.")
     parser.add_argument("--asnst", help="The syntax tree of the specification.")
     parser.add_argument("--out", required=True, help="The folder to write to.")
     parser.add_argument(

@@ -9,13 +9,13 @@
 An [ASN.1](https://en.wikipedia.org/wiki/Abstract_Syntax_Notation_One)
 toolkit that parses a specification once, so that encoding and decoding
 can happen anywhere. A compiler turns ASN.1 into a compiled
-specification, an `.asnc` file. A runtime loads that file to encode and
+specification IR, an `.asni` file. A runtime loads that file to encode and
 decode. It never parses ASN.1 itself, which keeps it small enough for
 embedded devices and makes it behave the same in every language. Plugins
 generate code, such as data classes, from the same file.
 
 ```text
-foo.asn --> compiler --> foo.asnc --> runtime: encode, decode
+foo.asn --> compiler --> foo.asni --> runtime: encode, decode
                             |
                             +-------> plugin: Python or Rust code
 ```
@@ -28,11 +28,11 @@ with an error rather than encoded wrongly.
 
 | Package | What it does | Location | Registry | License |
 |---|---|---|---|---|
-| **Runtimes** | Encode and decode with an `.asnc` file. | | | |
+| **Runtimes** | Encode and decode with an `.asni` file. | | | |
 | `asnkitrt` | Runtime for Python. | [`packages/asnkitrt`](packages/asnkitrt) | [PyPI](https://pypi.org/project/asnkitrt/) | MIT |
 | `asnkitrt` | Runtime for Rust. Needs `alloc` but not `std`, so it builds for embedded targets. | [`packages/asnkitrt-rs`](packages/asnkitrt-rs) | [crates.io](https://crates.io/crates/asnkitrt) | MIT |
 | `asnkitrt` | Runtime for browsers and Node.js: the Rust runtime as WebAssembly. | [`packages/asnkitrt-wasm`](packages/asnkitrt-wasm) | [npm](https://www.npmjs.com/package/asnkitrt) | MIT |
-| **Compiler** | Parses ASN.1 and writes `.asnc` files. | | | |
+| **Compiler** | Parses ASN.1 and writes `.asni` files. | | | |
 | `asnkit-compiler` | The compiler as a Rust library, which also runs the plugins, for an application to compile ASN.1 itself. | [`packages/asnkit-compiler`](packages/asnkit-compiler) | [crates.io](https://crates.io/crates/asnkit-compiler) | Apache-2.0 |
 | `asnkitcc` | The command, made with the library. | [`packages/asnkitcc`](packages/asnkitcc) | [crates.io](https://crates.io/crates/asnkitcc) | Apache-2.0 |
 | **Plugins** | Generate code from a compiled specification. | | | |
@@ -40,12 +40,12 @@ with an error rather than encoded wrongly.
 | `asnkit-gen-rust` | Rust structs and enums with `serde`. | [`packages/asnkit-gen-rust`](packages/asnkit-gen-rust) | [crates.io](https://crates.io/crates/asnkit-gen-rust) | Apache-2.0 |
 
 All the packages are released together, with one version; see
-[CHANGELOG.md](CHANGELOG.md). Within a major version, the `.asnc` and
+[CHANGELOG.md](CHANGELOG.md). Within a major version, the `.asni` and
 `.asnst` formats, the runtime APIs and the command line keep working.
 
 Also in the repository:
 
-- [`docs/file_formats.md`](docs/file_formats.md): the `.asnc` and
+- [`docs/file_formats.md`](docs/file_formats.md): the `.asni` and
   `.asnst` file formats.
 - [`docs/third_party_runtimes.md`](docs/third_party_runtimes.md):
   guidelines for writing a runtime in another language.
@@ -55,7 +55,7 @@ Also in the repository:
   to tell which types an `ANY DEFINED BY` can hold.
 - `tests/vectors`: encodings and decodings recorded from the Rust
   runtime, the one of reference, for testing a runtime in any language.
-- `examples/corpus`: `.asnc` files for testing a reader of the format.
+- `examples/corpus`: `.asni` files for testing a reader of the format.
 
 ## Codecs
 
@@ -125,7 +125,7 @@ pip install asnkitrt           # Encode and decode.
 pip install asnkit-gen-python  # Generate Python code from ASN.1 with asnkitcc.
 ```
 
-Signed and encrypted `.asnc` files need the
+Signed and encrypted `.asni` files need the
 [cryptography](https://cryptography.io) package. `asnkitrt` installs it
 only as an extra, and does not import it until such a file is loaded:
 
@@ -165,7 +165,7 @@ Foo DEFINITIONS ::= BEGIN
 END
 ```
 
-Compile it to `foo.asnc` in the current directory (the file is
+Compile it to `foo.asni` in the current directory (the file is
 `tests/files/foo.asn` in this repository):
 
 ```text
@@ -178,7 +178,7 @@ Load the file and encode and decode with it. Only `asnkitrt` is needed:
 
 ```python
 >>> import asnkitrt
->>> foo = asnkitrt.load_asnc_file('foo.asnc')
+>>> foo = asnkitrt.load_asni_file('foo.asni')
 >>> encoded = foo.encode('Question', {'id': 1, 'question': 'Is 1+1=3?'})
 >>> encoded
 b'0\x0e\x02\x01\x01\x16\tIs 1+1=3?'
@@ -189,7 +189,7 @@ b'0\x0e\x02\x01\x01\x16\tIs 1+1=3?'
 BER is the default codec. The same with PER:
 
 ```python
->>> foo = asnkitrt.load_asnc_file('foo.asnc', 'per')
+>>> foo = asnkitrt.load_asni_file('foo.asni', 'per')
 >>> foo.encode('Question', {'id': 1, 'question': 'Is 1+1=3?'})
 b'\x01\x01\tIs 1+1=3?'
 ```
@@ -205,8 +205,8 @@ use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 use asnkitrt::value::Value;
 
-let data = std::fs::read("foo.asnc")?;
-let foo = Specification::from_asnc(&data, &Checks::default(), Options::new(Codec::Uper))?;
+let data = std::fs::read("foo.asni")?;
+let foo = Specification::from_asni(&data, &Checks::default(), Options::new(Codec::Uper))?;
 
 let question = Value::Map(vec![
     ("id".into(), Value::Integer(1)),
@@ -225,7 +225,7 @@ Node.js, with the same values as in Python, in JavaScript types:
 ```js
 import { loadFile } from 'asnkitrt';
 
-const foo = await loadFile('foo.asnc', 'uper');
+const foo = await loadFile('foo.asni', 'uper');
 const encoded = foo.encode('Question', { id: 1, question: 'Is 1+1=3?' });
 
 foo.decode('Question', encoded); // { id: 1, question: 'Is 1+1=3?' }
@@ -258,17 +258,17 @@ assert_eq!(Question::decode(&specification, &encoded)?.id, 1);
 
 See the `examples` folder for more, [`docs/plugins.md`](docs/plugins.md)
 for how plugins work and how to write one, and
-[`docs/file_formats.md`](docs/file_formats.md) for what an `.asnc` file
+[`docs/file_formats.md`](docs/file_formats.md) for what an `.asni` file
 contains.
 
 ## Command line
 
 ```text
-asnkitcc compile foo.asn    # Writes foo.asnc, for a runtime to load.
+asnkitcc compile foo.asn    # Writes foo.asni, for a runtime to load.
 asnkitcc parse foo.asn      # Writes foo.asnst, a syntax tree for plugins.
 asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] foo.asn
 
-python -m asnkitrt.syntax foo.asnc    # Prints a file as JSON.
+python -m asnkitrt.syntax foo.asni    # Prints a file as JSON.
 ```
 
 `asnkitcc` prints nothing on success. Its output is checked against the
@@ -321,11 +321,11 @@ license (see `NOTICE`).
 ## License
 
 The runtimes, such as `asnkitrt`, are licensed under the MIT License
-(`LICENSE-RUNTIMES`). The documentation of the formats and the corpus
-are licensed under CC-BY-4.0 (`LICENSE-DOCUMENTATION`). The test vectors
-are made from ASN.1 modules written by others, and keep their authors'
-licenses. The compiler, the plugins and everything else are licensed
-under the Apache License 2.0 (`LICENSE-COMPILER`). What the compiler and
-the plugins produce, compiled specifications and generated code, is
-yours to use under terms of your choice. See `COPYING` for details; it
-is not legal advice.
+(`LICENSE-RUNTIMES`). The compiler, the plugins, the documentation and
+everything else are licensed under the Apache License 2.0
+(`LICENSE-COMPILER`). The test vectors are made from ASN.1 modules
+written by others, and keep their authors' licenses. What the compiler
+and the plugins produce, compiler and first party plugins output is subject
+to no licensing claims from us and you may use it under your own terms.
+
+THIS PROJECT IS PROVIDED AS IS WITH NO WARRANTY AS PER THE LICENSE.

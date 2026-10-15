@@ -31,10 +31,10 @@ OPENSSL = shutil.which("openssl")
 # compiler can be given, and what made it expected, to tell it was that
 # file that was tried:
 #
-#   ASNKIT_RFC5280_ASNC=/tmp/rfc5280.asnc ASNKIT_EXPECT_GENERATOR=Rust \
+#   ASNKIT_RFC5280_ASNI=/tmp/rfc5280.asni ASNKIT_EXPECT_GENERATOR=Rust \
 #       python -m unittest tests.test_openssl_x509
-RFC5280_ASNC_PATH = os.environ.get(
-    "ASNKIT_RFC5280_ASNC", os.path.join("examples", "compiled", "rfc5280.asnc")
+RFC5280_ASNI_PATH = os.environ.get(
+    "ASNKIT_RFC5280_ASNI", os.path.join("examples", "compiled", "rfc5280.asni")
 )
 EXPECT_GENERATOR = os.environ.get("ASNKIT_EXPECT_GENERATOR")
 
@@ -140,7 +140,7 @@ def make_certificate(
 @unittest.skipIf(OPENSSL is None, "openssl is not installed")
 class CompiledSpecificationTest(unittest.TestCase):
     def test_the_file_tried_is_the_one_asked_for(self):
-        with open(RFC5280_ASNC_PATH, "rb") as fin:
+        with open(RFC5280_ASNI_PATH, "rb") as fin:
             header = asnkitrt.syntax.read_header(fin.read())
 
         if EXPECT_GENERATOR is not None:
@@ -152,7 +152,7 @@ class OpenSslX509Test(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory()
-        cls.rfc5280 = asnkitrt.load_asnc_file(RFC5280_ASNC_PATH, "der")
+        cls.rfc5280 = asnkitrt.load_asni_file(RFC5280_ASNI_PATH, "der")
         cls.certificates = {}
 
         keys = {
@@ -599,7 +599,7 @@ class OpenSslCrlTest(unittest.TestCase):
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory()
         directory = cls.directory.name
-        cls.rfc5280 = asnkitrt.load_asnc_file(RFC5280_ASNC_PATH, "der")
+        cls.rfc5280 = asnkitrt.load_asni_file(RFC5280_ASNI_PATH, "der")
         configuration = os.path.join(directory, "ca.cnf")
 
         with open(configuration, "w") as fout:

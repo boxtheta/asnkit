@@ -38,7 +38,7 @@ def find_codecs():
 # A codec is not imported until used.
 assert find_codecs() == [], find_codecs()
 
-foo = asnkitrt.load_asnc(sys.stdin.buffer.read())
+foo = asnkitrt.load_asni(sys.stdin.buffer.read())
 encoded = foo.encode("Question", {"id": 1, "question": "Is 1+1=3?"})
 assert foo.decode("Question", encoded) == {"id": 1, "question": "Is 1+1=3?"}
 assert find_codecs() == ["ber"], find_codecs()
@@ -54,7 +54,7 @@ sys.stdout.write(encoded.hex())
 
 class RuntimeTest(unittest.TestCase):
     def compile(self, path):
-        return syntax.from_asnc(fixtures.compile_files_to_asnc(path))
+        return syntax.from_asni(fixtures.compile_files_to_asni(path))
 
     def test_load_compiled(self):
         compiled = self.compile("tests/files/foo.asn")
@@ -72,8 +72,8 @@ class RuntimeTest(unittest.TestCase):
         )
 
     def test_load_numeric_enums(self):
-        compiled = syntax.from_asnc(
-            fixtures.compile_string_to_asnc(
+        compiled = syntax.from_asni(
+            fixtures.compile_string_to_asni(
                 "A DEFINITIONS ::= BEGIN B ::= ENUMERATED { c, d } END"
             )
         )
@@ -122,19 +122,19 @@ class RuntimeTest(unittest.TestCase):
 
             self.assertEqual(str(cm.exception), "Expected a compiled specification.")
 
-        for function in [runtime.load, runtime.load_asnc]:
+        for function in [runtime.load, runtime.load_asni]:
             with self.assertRaises(syntax.ConvertError) as cm:
                 function(asnst)
 
             self.assertEqual(
-                str(cm.exception), "Expected an .asnc file, but got an .asnst file."
+                str(cm.exception), "Expected an .asni file, but got an .asnst file."
             )
 
-    def test_load_asnc_without_compiler(self):
+    def test_load_asni_without_compiler(self):
         environment = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
         result = subprocess.run(
             [sys.executable, "-c", WITHOUT_COMPILER],
-            input=fixtures.compile_files_to_asnc("tests/files/foo.asn"),
+            input=fixtures.compile_files_to_asni("tests/files/foo.asn"),
             capture_output=True,
             env=environment,
         )

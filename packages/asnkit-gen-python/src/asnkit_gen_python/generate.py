@@ -4,7 +4,7 @@
 
 """Makes the text of a Python module from a compiled ASN.1 specification.
 
-The module imports asnkit, has the ``.asnc`` file in it as bytes and has
+The module imports asnkit, has the ``.asni`` file in it as bytes and has
 a data class for each SEQUENCE and SET, an enumeration for each
 ENUMERATED and a class for each alternative of a CHOICE, with methods
 to encode and decode them and to turn them into and from what asnkitrt
@@ -136,9 +136,9 @@ from asnkitrt.runtime import CodecType
 
 DEFAULT_CODEC: CodecType = "{codec}"
 
-# The compiled specification, as the contents of an .asnc file.
-_ASNC = (
-{asnc}
+# The compiled specification, as the contents of an .asni file.
+_ASNI = (
+{asni}
 )
 
 
@@ -146,7 +146,7 @@ _ASNC = (
 def spec(codec: CodecType = DEFAULT_CODEC) -> asnkitrt.Specification:
     """The specification, loaded for the given codec."""
 
-    return asnkitrt.load_asnc(_ASNC, codec)
+    return asnkitrt.load_asni(_ASNI, codec)
 
 
 def _type(codec: CodecType, asn1_type: tuple[str, str]) -> Any:
@@ -335,7 +335,7 @@ class Generator:
     def __init__(
         self,
         compiled: syntax.CompiledSpecification,
-        asnc: bytes,
+        asni: bytes,
         sources: list[str],
         codec: str,
     ) -> None:
@@ -344,7 +344,7 @@ class Generator:
         from .version import __version__
 
         self.version = __version__
-        self.asnc = asnc
+        self.asni = asni
         self.sources = sources
         self.codec = codec
         self.modules: dict[str, Any] = syntax.compiled_to_dict(compiled)
@@ -728,7 +728,7 @@ class Generator:
             version=self.version,
             sources=", ".join(self.sources) or "a specification",
             codec=self.codec,
-            asnc=format_bytes(self.asnc),
+            asni=format_bytes(self.asni),
         )
         parts = [
             header,
@@ -766,12 +766,12 @@ def format_bytes(data: bytes) -> str:
 
 
 def generate(
-    asnc: bytes,
+    asni: bytes,
     sources: list[str] | None = None,
     codec: str = DEFAULT_CODEC,
 ) -> str:
     """Returns the text of a Python module for given contents of an
-    ``.asnc`` file, which must not be signed, encrypted, bound to
+    ``.asni`` file, which must not be signed, encrypted, bound to
     something or have a nonce to check, as it is embedded in the module
     and loaded without any of those. `sources` are the names of the
     files it was made from, and `codec` is what the module encodes and
@@ -780,11 +780,11 @@ def generate(
     """
 
     try:
-        compiled = syntax.from_asnc(asnc)
+        compiled = syntax.from_asni(asni)
     except Exception as error:
         raise GenerateError(
             "Expected a compiled specification that is not signed, encrypted, "
             "bound to something or has a nonce, but: {}".format(error)
         )
 
-    return Generator(compiled, asnc, sources or [], codec).run()
+    return Generator(compiled, asni, sources or [], codec).run()

@@ -17,7 +17,7 @@ fn specs() -> Vec<(String, Vec<u8>)> {
         .map(|entry| entry.unwrap().path())
         .filter(|path| {
             path.extension()
-                .is_some_and(|extension| extension == "asnc")
+                .is_some_and(|extension| extension == "asni")
         })
         .map(|path| {
             (
@@ -38,9 +38,9 @@ fn every_specification_is_read() {
     assert!(specs.len() > 100);
 
     for (name, data) in specs {
-        let asnc =
+        let asni =
             container::read(&data, &Checks::default()).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let spec = Spec::from_nodes(&asnc.nodes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let spec = Spec::from_nodes(&asni.nodes).unwrap_or_else(|e| panic!("{name}: {e}"));
 
         assert!(!spec.modules.is_empty(), "{name}");
     }
@@ -53,8 +53,8 @@ fn every_specification_is_lowered() {
     let mut failed = Vec::new();
 
     for (name, data) in specs() {
-        let asnc = container::read(&data, &Checks::default()).unwrap();
-        let spec = Spec::from_nodes(&asnc.nodes).unwrap();
+        let asni = container::read(&data, &Checks::default()).unwrap();
+        let spec = Spec::from_nodes(&asni.nodes).unwrap();
 
         for codec in [Codec::Ber, Codec::Der, Codec::Oer, Codec::Per, Codec::Uper] {
             if let Err(error) = lower(&spec, codec, false, false) {

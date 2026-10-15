@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! Writes the `.asnc` and `.asnst` files (see `docs/file_formats.md`) as
+//! Writes the `.asni` and `.asnst` files (see `docs/file_formats.md`) as
 //! `asnkitrt.syntax.container` does: the part of CBOR (RFC 8949) they use,
-//! in the shortest form, and the header of an `.asnc` file.
+//! in the shortest form, and the header of an `.asni` file.
 
 use aes_gcm::aead::{AeadInPlace, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -247,8 +247,8 @@ fn encode_metadata(metadata: &Metadata, out: &mut Vec<u8>) -> Result<(), String>
     Ok(())
 }
 
-/// The contents of an `.asnc` file that is not signed or encrypted.
-pub fn write_asnc(
+/// The contents of an `.asni` file that is not signed or encrypted.
+pub fn write_asni(
     metadata: &Metadata,
     nodes: &Json,
     nonce: Option<u32>,
@@ -282,7 +282,7 @@ pub fn write_asnc(
         }
     };
 
-    let mut out = b"ASNC".to_vec();
+    let mut out = b"ASNI".to_vec();
     out.push(SCHEMA_VERSION.0);
     out.push(SCHEMA_VERSION.1);
     out.extend_from_slice(&flags.to_be_bytes());
@@ -344,7 +344,7 @@ pub fn write_asnc(
 /// The contents of an `.asnst` file.
 pub fn write_asnst(metadata: &Metadata, tree: &Json) -> Result<Vec<u8>, String> {
     if metadata.bound_to.is_some() {
-        return Err("Only an .asnc file can be bound to something.".to_string());
+        return Err("Only an .asni file can be bound to something.".to_string());
     }
 
     let mut out = Vec::new();
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn the_header_of_a_file_is_the_magic_the_version_the_flags_and_the_nonce() {
-        let file = write_asnc(
+        let file = write_asni(
             &Metadata::default(),
             &Json::Null,
             None,
@@ -428,15 +428,15 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(&file[..12], b"ASNC\x01\x00\x00\x00\x00\x00\x00\xa0");
+        assert_eq!(&file[..12], b"ASNI\x01\x00\x00\x00\x00\x00\x00\xa0");
 
         let metadata = Metadata {
             bound_to: Some("corpus".to_string()),
             ..Metadata::default()
         };
-        let file = write_asnc(&metadata, &Json::Null, Some(5), &Protection::default()).unwrap();
+        let file = write_asni(&metadata, &Json::Null, Some(5), &Protection::default()).unwrap();
 
-        assert_eq!(&file[..11], b"ASNC\x01\x00\x00\x0c\x00\x00\x05");
+        assert_eq!(&file[..11], b"ASNI\x01\x00\x00\x0c\x00\x00\x05");
     }
 
     fn from_hex(text: &str) -> Vec<u8> {
@@ -469,9 +469,9 @@ mod tests {
         let nodes: Json = serde_json::from_str("[1, 2, 3]").unwrap();
 
         assert_eq!(
-            write_asnc(&metadata, &nodes, Some(9), &protection).unwrap(),
+            write_asni(&metadata, &nodes, Some(9), &protection).unwrap(),
             from_hex(
-                "41534e430100000f0000090000000000000000000000000000000027d9b7896fcbbacfb96d88a51a6331a3d1fe71fed2ef6bef2f1ab9a3765c7d2e0222c003946048aea3ad45997024e3a87cd8ba619e5c04962c4ed1427bfc920b010101010101010101010101010101010102030405060708090a0b0cd24fa64fb8a5a51296ee216e551ca5058204e02bc60b2cc31799248e27dab76a5812e7f93b6b0dce76d21659285768d6b33a15e8487448"
+                "41534e490100000f00000900000000000000000000000000000000338dce481fcdf988acfd58f932745d4b587da000b74293acb40f530fc9e991c3788be8300d1a4fda3bfc474ab59b7cc59f2a3065956929b453e0f1ec63a9f50a010101010101010101010101010101010102030405060708090a0b0c82e1043d8ea383a3ef4968b92f3907058204e02bc60b2cc31799248e27dab76a5812e7f93b6b0dce76d21659285768d6b33a15e8487448"
             )
         );
     }
@@ -485,7 +485,7 @@ mod tests {
             }),
             ..Protection::default()
         };
-        let write = || write_asnc(&Metadata::default(), &Json::Null, None, &protection).unwrap();
+        let write = || write_asni(&Metadata::default(), &Json::Null, None, &protection).unwrap();
 
         assert_ne!(
             write()[11 + KEY_ID_SIZE..][..IV_SIZE],

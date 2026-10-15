@@ -21,8 +21,8 @@ pub enum Error {
     BadText,
     /// There is data after the nodes.
     TrailingData,
-    /// Not an `.asnc` file.
-    NotAsnc,
+    /// Not an `.asni` file.
+    NotAsni,
     /// A major version that is not known.
     UnsupportedVersion,
     /// A flag that is not known.
@@ -75,7 +75,7 @@ impl fmt::Display for Error {
             Error::UnsupportedCbor => "Unsupported CBOR.",
             Error::BadText => "Bad CBOR text string.",
             Error::TrailingData => "Unexpected data after the nodes.",
-            Error::NotAsnc => "Expected an .asnc file.",
+            Error::NotAsni => "Expected an .asni file.",
             Error::UnsupportedVersion => "Unsupported major version.",
             Error::UnsupportedFlags => "Unsupported flags.",
             Error::FeatureMissing => {

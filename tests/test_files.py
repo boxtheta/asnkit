@@ -120,18 +120,18 @@ class FilesTest(unittest.TestCase):
                 )
                 self.assertEqual(syntax.from_asnst(syntax.to_asnst(tree)), tree)
 
-    def test_to_asnc_from_asnc(self):
+    def test_to_asni_from_asni(self):
         for name in ["all_types", "parameterization", "3gpp/rrc_8_6_0", "ietf/rfc5280"]:
             with self.subTest(name=name):
-                compiled = syntax.from_asnc(
-                    fixtures.compile_files_to_asnc("tests/files/{}.asn".format(name))
+                compiled = syntax.from_asni(
+                    fixtures.compile_files_to_asni("tests/files/{}.asn".format(name))
                 )
-                self.assertEqual(syntax.from_asnc(syntax.to_asnc(compiled)), compiled)
+                self.assertEqual(syntax.from_asni(syntax.to_asni(compiled)), compiled)
 
-    def test_asnc_contents(self):
-        data = syntax.to_asnc(
-            syntax.from_asnc(
-                fixtures.compile_string_to_asnc(
+    def test_asni_contents(self):
+        data = syntax.to_asni(
+            syntax.from_asni(
+                fixtures.compile_string_to_asni(
                     "Foo DEFINITIONS ::= BEGIN "
                     "A ::= SEQUENCE { a INTEGER (1..max), b BOOLEAN OPTIONAL } "
                     "max INTEGER ::= 5 "
@@ -143,7 +143,7 @@ class FilesTest(unittest.TestCase):
 
         # The magic, the version, no flags, a nonce not in use and no
         # metadata.
-        self.assertEqual(data[:12], b"ASNC\x01\x00\x00\x00\x00\x00\x00\xa0")
+        self.assertEqual(data[:12], b"ASNI\x01\x00\x00\x00\x00\x00\x00\xa0")
         self.assertEqual(
             cbor.loads(data[12:]),
             # CompiledSpecification, modules.
@@ -235,16 +235,16 @@ class FilesTest(unittest.TestCase):
 
     def test_later_minor_version(self):
         # Fields added to nodes by a later minor version are ignored.
-        asnc = fixtures.compile_files_to_asnc("examples/compiled/foo.asn")
-        header_size = len(asnc) - len(
-            cbor.dumps(syntax.to_compact(syntax.from_asnc(asnc)))
+        asni = fixtures.compile_files_to_asni("examples/compiled/foo.asn")
+        header_size = len(asni) - len(
+            cbor.dumps(syntax.to_compact(syntax.from_asni(asni)))
         )
-        compact = cbor.loads(asnc[header_size:])
+        compact = cbor.loads(asni[header_size:])
         # CompiledModule and the first Member of the first type.
         compact[1][1].extend([None, None, "later"])
         compact[1][1][2][1][2][1][1].extend([None, None, [0, "later"]])
-        later = asnc[:5] + b"\x01" + asnc[6:header_size] + cbor.dumps(compact)
-        self.assertEqual(syntax.from_asnc(later), syntax.from_asnc(asnc))
+        later = asni[:5] + b"\x01" + asni[6:header_size] + cbor.dumps(compact)
+        self.assertEqual(syntax.from_asni(later), syntax.from_asni(asni))
         self.assertEqual(syntax.read_header(later).version, (1, 1))
 
         asnst = fixtures.parse_files_to_asnst("examples/compiled/foo.asn")
@@ -283,55 +283,55 @@ class FilesTest(unittest.TestCase):
             self.assertEqual(str(cm.exception), message)
 
     def test_file_errors(self):
-        asnc = fixtures.compile_files_to_asnc("examples/compiled/foo.asn")
+        asni = fixtures.compile_files_to_asni("examples/compiled/foo.asn")
         asnst = fixtures.parse_files_to_asnst("examples/compiled/foo.asn")
         datas = [
-            (syntax.from_asnc, b"", "Expected an .asnc or .asnst file."),
-            (syntax.from_asnc, b"ASN1" + asnc[4:], "Expected an .asnc or .asnst file."),
-            (syntax.from_asnc, asnc[:7], "Expected an .asnc or .asnst file."),
+            (syntax.from_asni, b"", "Expected an .asni or .asnst file."),
+            (syntax.from_asni, b"ASN1" + asni[4:], "Expected an .asni or .asnst file."),
+            (syntax.from_asni, asni[:7], "Expected an .asni or .asnst file."),
             (
-                syntax.from_asnc,
-                asnc[:4] + b"\x02" + asnc[5:],
+                syntax.from_asni,
+                asni[:4] + b"\x02" + asni[5:],
                 "Unsupported version 2.0, expected 1.x.",
             ),
             # A flag that is not known.
             (
-                syntax.from_asnc,
-                asnc[:7] + b"\x10" + asnc[8:],
+                syntax.from_asni,
+                asni[:7] + b"\x10" + asni[8:],
                 "Unsupported flags 0x0010.",
             ),
             # Bound without telling to what.
             (
-                syntax.from_asnc,
-                asnc[:7] + b"\x08" + asnc[8:],
+                syntax.from_asni,
+                asni[:7] + b"\x08" + asni[8:],
                 "Expected a bound file to tell what it is bound to.",
             ),
-            (syntax.from_asnc, asnc[:10], "Expected an .asnc or .asnst file."),
-            (syntax.from_asnc, asnc[:11], "Out of CBOR data."),
-            (syntax.from_asnc, asnc[:-1], "Out of CBOR data."),
+            (syntax.from_asni, asni[:10], "Expected an .asni or .asnst file."),
+            (syntax.from_asni, asni[:11], "Out of CBOR data."),
+            (syntax.from_asni, asni[:-1], "Out of CBOR data."),
             (
-                syntax.from_asnc,
-                asnc + b"\x00",
-                "Unexpected data after the nodes at offset {}.".format(len(asnc)),
+                syntax.from_asni,
+                asni + b"\x00",
+                "Unexpected data after the nodes at offset {}.".format(len(asni)),
             ),
             (
-                syntax.from_asnc,
+                syntax.from_asni,
                 asnst,
-                "Expected an .asnc file, but got an .asnst file.",
+                "Expected an .asni file, but got an .asnst file.",
             ),
             (
                 syntax.from_asnst,
-                asnc,
-                "Expected an .asnst file, but got an .asnc file.",
+                asni,
+                "Expected an .asnst file, but got an .asni file.",
             ),
             (
-                syntax.from_asnc,
-                asnc[:11] + b"\x00" + cbor.dumps([20]),
+                syntax.from_asni,
+                asni[:11] + b"\x00" + cbor.dumps([20]),
                 "Expected the metadata as a map.",
             ),
             (
-                syntax.from_asnc,
-                asnc[:11] + b"\xa0" + cbor.dumps([20]),
+                syntax.from_asni,
+                asni[:11] + b"\xa0" + cbor.dumps([20]),
                 "Expected a compiled specification.",
             ),
             (
@@ -349,10 +349,10 @@ class FilesTest(unittest.TestCase):
                 self.assertEqual(str(cm.exception), message)
 
         # The nonce is not looked at without its flag.
-        self.assertEqual(asnc[8:11], b"\x00\x00\x00")
+        self.assertEqual(asni[8:11], b"\x00\x00\x00")
         self.assertEqual(
-            syntax.from_asnc(asnc[:8] + b"\x12\x34\x56" + asnc[11:]),
-            syntax.from_asnc(asnc),
+            syntax.from_asni(asni[:8] + b"\x12\x34\x56" + asni[11:]),
+            syntax.from_asni(asni),
         )
 
         # An .asnst file is CBOR and nothing else.
@@ -363,7 +363,7 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(contents["tree"]["kind"], "SyntaxTree")
 
         for changes, message in [
-            ({"format": "asnc"}, "Expected an .asnc or .asnst file."),
+            ({"format": "asni"}, "Expected an .asni or .asnst file."),
             ({"version": [2, 0]}, "Unsupported version 2.0, expected 1.x."),
             ({"version": 1}, "Expected the version of an .asnst file as two numbers."),
             ({"metadata": []}, "Expected the metadata as a map."),
@@ -377,11 +377,11 @@ class FilesTest(unittest.TestCase):
             with self.assertRaises(syntax.ConvertError) as cm:
                 syntax.from_asnst(data)
 
-            self.assertEqual(str(cm.exception), "Expected an .asnc or .asnst file.")
+            self.assertEqual(str(cm.exception), "Expected an .asni or .asnst file.")
 
         # Any minor version of the major version is read.
         self.assertEqual(
-            syntax.from_asnc(asnc[:5] + b"\x07" + asnc[6:]), syntax.from_asnc(asnc)
+            syntax.from_asni(asni[:5] + b"\x07" + asni[6:]), syntax.from_asni(asni)
         )
 
     def test_documented_kinds(self):
@@ -464,9 +464,9 @@ class FilesTest(unittest.TestCase):
 
     def test_nonce(self):
         string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
-        plain = fixtures.compile_string_to_asnc(string)
-        data = fixtures.compile_string_to_asnc(string, nonce=0x123456)
-        compiled = syntax.from_asnc(plain)
+        plain = fixtures.compile_string_to_asni(string)
+        data = fixtures.compile_string_to_asni(string, nonce=0x123456)
+        compiled = syntax.from_asni(plain)
 
         # The flag and the number, and nothing else.
         self.assertEqual(data[6:11], b"\x00\x04\x12\x34\x56")
@@ -484,9 +484,9 @@ class FilesTest(unittest.TestCase):
             return nonce > 0x123455
 
         for nonce in [0x123456, is_greater_than_last]:
-            self.assertEqual(syntax.from_asnc(data, nonce), compiled)
+            self.assertEqual(syntax.from_asni(data, nonce), compiled)
             self.assertEqual(
-                repr(runtime.load_asnc(data, nonce=nonce).types),
+                repr(runtime.load_asni(data, nonce=nonce).types),
                 repr(runtime.load(compiled).types),
             )
             self.assertEqual(
@@ -497,10 +497,10 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(seen, [0x123456] * 3)
 
         # Zero is a nonce as any other.
-        zero = fixtures.compile_string_to_asnc(string, nonce=0)
+        zero = fixtures.compile_string_to_asni(string, nonce=0)
         self.assertEqual(zero[6:11], b"\x00\x04\x00\x00\x00")
         self.assertEqual(syntax.read_header(zero).nonce, 0)
-        self.assertEqual(syntax.from_asnc(zero, 0), compiled)
+        self.assertEqual(syntax.from_asni(zero, 0), compiled)
 
         # Not read otherwise, unless any nonce will do, which is not
         # so by default.
@@ -527,38 +527,38 @@ class FilesTest(unittest.TestCase):
 
         for encoded, arguments, message in datas:
             with self.subTest(message=message):
-                for function in [syntax.from_asnc, runtime.load_asnc, runtime.load]:
+                for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
                     with self.assertRaises(syntax.ConvertError) as cm:
                         function(encoded, **arguments)
 
                     self.assertEqual(str(cm.exception), message)
 
                 self.assertEqual(
-                    syntax.from_asnc(encoded, accept_any_nonce=True, **arguments),
+                    syntax.from_asni(encoded, accept_any_nonce=True, **arguments),
                     compiled,
                 )
 
         # From files, too.
-        encoded = fixtures.compile_files_to_asnc(
+        encoded = fixtures.compile_files_to_asni(
             "examples/compiled/foo.asn", nonce=0xFFFFFF
         )
         self.assertEqual(syntax.read_header(encoded).nonce, 0xFFFFFF)
         self.assertEqual(
-            syntax.from_asnc(encoded, 0xFFFFFF),
-            syntax.from_asnc_file("examples/compiled/foo.asnc"),
+            syntax.from_asni(encoded, 0xFFFFFF),
+            syntax.from_asni_file("examples/compiled/foo.asni"),
         )
 
         with tempfile.TemporaryDirectory() as directory:
-            filename = os.path.join(directory, "a.asnc")
+            filename = os.path.join(directory, "a.asni")
 
             with open(filename, "wb") as fout:
                 fout.write(data)
 
-            self.assertEqual(syntax.from_asnc_file(filename, 0x123456), compiled)
-            runtime.load_asnc_file(filename, nonce=0x123456)
+            self.assertEqual(syntax.from_asni_file(filename, 0x123456), compiled)
+            runtime.load_asni_file(filename, nonce=0x123456)
 
             with self.assertRaises(syntax.ConvertError):
-                runtime.load_asnc_file(filename)
+                runtime.load_asni_file(filename)
 
         # A nonce is a number of 24 bits.
         for nonce, message in [
@@ -568,18 +568,18 @@ class FilesTest(unittest.TestCase):
             (True, "Expected a nonce as an integer, but got True."),
         ]:
             with self.assertRaises(syntax.ConvertError) as cm:
-                fixtures.compile_string_to_asnc(string, nonce=nonce)
+                fixtures.compile_string_to_asni(string, nonce=nonce)
 
             self.assertEqual(str(cm.exception), message)
 
     def test_bound_to(self):
         string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
         metadata = syntax.Metadata(generator=None)
-        plain = fixtures.compile_string_to_asnc(string, metadata=metadata)
-        data = fixtures.compile_string_to_asnc(
+        plain = fixtures.compile_string_to_asni(string, metadata=metadata)
+        data = fixtures.compile_string_to_asni(
             string, metadata=metadata, bound_to="Thing 2"
         )
-        compiled = syntax.from_asnc(plain)
+        compiled = syntax.from_asni(plain)
 
         # The flag, and what it is bound to in the metadata.
         self.assertEqual(data[6:8], b"\x00\x08")
@@ -587,16 +587,16 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(syntax.read_header(data).metadata.bound_to, "Thing 2")
         self.assertIsNone(syntax.read_header(plain).metadata.bound_to)
         self.assertEqual(
-            syntax.to_asnc(
+            syntax.to_asni(
                 compiled, syntax.Metadata(generator=None, bound_to="Thing 2")
             ),
             data,
         )
 
         # Read if bound to what is expected.
-        self.assertEqual(syntax.from_asnc(data, bound_to="Thing 2"), compiled)
+        self.assertEqual(syntax.from_asni(data, bound_to="Thing 2"), compiled)
         self.assertEqual(
-            repr(runtime.load_asnc(data, bound_to="Thing 2").types),
+            repr(runtime.load_asni(data, bound_to="Thing 2").types),
             repr(runtime.load(compiled).types),
         )
         self.assertEqual(
@@ -628,14 +628,14 @@ class FilesTest(unittest.TestCase):
 
         for encoded, arguments, message in datas:
             with self.subTest(message=message):
-                for function in [syntax.from_asnc, runtime.load_asnc, runtime.load]:
+                for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
                     with self.assertRaises(syntax.ConvertError) as cm:
                         function(encoded, **arguments)
 
                     self.assertEqual(str(cm.exception), message)
 
                 self.assertEqual(
-                    syntax.from_asnc(encoded, accept_any_binding=True, **arguments),
+                    syntax.from_asni(encoded, accept_any_binding=True, **arguments),
                     compiled,
                 )
 
@@ -643,23 +643,23 @@ class FilesTest(unittest.TestCase):
         # looked at.
         unbound = data[:6] + b"\x00\x00" + data[8:]
         self.assertIsNone(syntax.read_header(unbound).metadata.bound_to)
-        self.assertEqual(syntax.from_asnc(unbound), compiled)
+        self.assertEqual(syntax.from_asni(unbound), compiled)
 
         # At most 255 bytes, which is not as many characters.
         longest = "\u00e9" * 127 + "e"
-        encoded = fixtures.compile_string_to_asnc(string, bound_to=longest)
-        self.assertEqual(syntax.from_asnc(encoded, bound_to=longest), compiled)
+        encoded = fixtures.compile_string_to_asni(string, bound_to=longest)
+        self.assertEqual(syntax.from_asni(encoded, bound_to=longest), compiled)
         message = "Expected what the file is bound to as at most 255 bytes as UTF-8."
 
         with self.assertRaises(syntax.ConvertError) as cm:
-            fixtures.compile_string_to_asnc(string, bound_to="\u00e9" * 128)
+            fixtures.compile_string_to_asni(string, bound_to="\u00e9" * 128)
 
         self.assertEqual(str(cm.exception), message)
 
         # Also when found in a file, whatever is expected.
         for arguments in [{}, {"bound_to": "a" * 256}, {"accept_any_binding": True}]:
             with self.assertRaises(syntax.ConvertError) as cm:
-                syntax.from_asnc(
+                syntax.from_asni(
                     data[:11]
                     + cbor.dumps({"bound_to": "a" * 256})
                     + data[11 + len(cbor.dumps({"bound_to": "Thing 2"})) :],
@@ -669,11 +669,11 @@ class FilesTest(unittest.TestCase):
             self.assertEqual(str(cm.exception), message)
 
         # With a nonce as well, both are checked.
-        both = fixtures.compile_string_to_asnc(string, nonce=5, bound_to="Thing 2")
+        both = fixtures.compile_string_to_asni(string, nonce=5, bound_to="Thing 2")
         self.assertEqual(both[6:11], b"\x00\x0c\x00\x00\x05")
-        self.assertEqual(syntax.from_asnc(both, nonce=5, bound_to="Thing 2"), compiled)
+        self.assertEqual(syntax.from_asni(both, nonce=5, bound_to="Thing 2"), compiled)
         self.assertEqual(
-            syntax.from_asnc(both, accept_any_nonce=True, accept_any_binding=True),
+            syntax.from_asni(both, accept_any_nonce=True, accept_any_binding=True),
             compiled,
         )
 
@@ -684,7 +684,7 @@ class FilesTest(unittest.TestCase):
             {"bound_to": "Thing 2", "accept_any_binding": True},
         ]:
             with self.assertRaises(syntax.ConvertError):
-                syntax.from_asnc(both, **arguments)
+                syntax.from_asni(both, **arguments)
 
         # A syntax tree is for plugins, and has neither.
         with self.assertRaises(syntax.ConvertError) as cm:
@@ -694,11 +694,11 @@ class FilesTest(unittest.TestCase):
             )
 
         self.assertEqual(
-            str(cm.exception), "Only an .asnc file can be bound to something."
+            str(cm.exception), "Only an .asni file can be bound to something."
         )
 
         with self.assertRaises(syntax.ConvertError) as cm:
-            fixtures.compile_string_to_asnc(string, bound_to=5)
+            fixtures.compile_string_to_asni(string, bound_to=5)
 
         self.assertEqual(
             str(cm.exception),
@@ -734,9 +734,9 @@ class FilesTest(unittest.TestCase):
 
         string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
         signing_key, verification_keys, _ = self.make_keys()
-        plain = fixtures.compile_string_to_asnc(string)
-        data = fixtures.compile_string_to_asnc(string, signing_key=signing_key)
-        compiled = syntax.from_asnc(plain)
+        plain = fixtures.compile_string_to_asni(string)
+        data = fixtures.compile_string_to_asni(string, signing_key=signing_key)
+        compiled = syntax.from_asni(plain)
 
         # The flag, the key and the signature, and nothing else.
         self.assertEqual(data[6:8], b"\x00\x01")
@@ -756,10 +756,10 @@ class FilesTest(unittest.TestCase):
 
         # Read if signed by a key that is trusted.
         self.assertEqual(
-            syntax.from_asnc(data, verification_keys=verification_keys), compiled
+            syntax.from_asni(data, verification_keys=verification_keys), compiled
         )
 
-        for function in [runtime.load_asnc, runtime.load]:
+        for function in [runtime.load_asni, runtime.load]:
             self.assertEqual(
                 repr(function(data, verification_keys=verification_keys).types),
                 repr(runtime.load(compiled).types),
@@ -802,7 +802,7 @@ class FilesTest(unittest.TestCase):
 
         for encoded, arguments, message in datas:
             with self.subTest(message=message):
-                for function in [syntax.from_asnc, runtime.load_asnc, runtime.load]:
+                for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
                     with self.assertRaises(syntax.ConvertError) as cm:
                         function(encoded, **arguments)
 
@@ -814,29 +814,29 @@ class FilesTest(unittest.TestCase):
             changed[offset] ^= 0x10
 
             with self.assertRaises(syntax.ConvertError):
-                syntax.from_asnc(bytes(changed), verification_keys=verification_keys)
+                syntax.from_asni(bytes(changed), verification_keys=verification_keys)
 
         for changed in [data[:-1], data + b"\x00", data[:60]]:
             with self.assertRaises(syntax.ConvertError):
-                syntax.from_asnc(changed, verification_keys=verification_keys)
+                syntax.from_asni(changed, verification_keys=verification_keys)
 
-        # Without the flag it is no .asnc file at all, as the
+        # Without the flag it is no .asni file at all, as the
         # signature is where the metadata is expected.
         with self.assertRaises(syntax.ConvertError):
-            syntax.from_asnc(data[:6] + b"\x00\x00" + data[8:])
+            syntax.from_asni(data[:6] + b"\x00\x00" + data[8:])
 
         # Only looked at, the signature is not checked.
-        self.assertEqual(syntax.from_asnc(data, accept_any_signature=True), compiled)
-        self.assertEqual(syntax.from_asnc(plain, accept_any_signature=True), compiled)
+        self.assertEqual(syntax.from_asni(data, accept_any_signature=True), compiled)
+        self.assertEqual(syntax.from_asni(plain, accept_any_signature=True), compiled)
         self.assertEqual(
-            syntax.from_asnc(
+            syntax.from_asni(
                 data, verification_keys=wrong_keys, accept_any_signature=True
             ),
             compiled,
         )
 
         # The nonce and what the file is bound to are signed.
-        data = fixtures.compile_string_to_asnc(
+        data = fixtures.compile_string_to_asni(
             string, nonce=7, bound_to="Thing 2", signing_key=signing_key
         )
         self.assertEqual(data[6:11], b"\x00\x0d\x00\x00\x07")
@@ -845,11 +845,11 @@ class FilesTest(unittest.TestCase):
             "bound_to": "Thing 2",
             "verification_keys": verification_keys,
         }
-        self.assertEqual(syntax.from_asnc(data, **arguments), compiled)
+        self.assertEqual(syntax.from_asni(data, **arguments), compiled)
         changed = data[:10] + b"\x08" + data[11:]
 
         with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asnc(changed, **dict(arguments, nonce=8))
+            syntax.from_asni(changed, **dict(arguments, nonce=8))
 
         self.assertEqual(str(cm.exception), "The signature of the file is wrong.")
 
@@ -863,7 +863,7 @@ class FilesTest(unittest.TestCase):
             bytes(48),
         ]:
             with self.assertRaises(syntax.ConvertError) as cm:
-                fixtures.compile_string_to_asnc(string, signing_key=key)
+                fixtures.compile_string_to_asni(string, signing_key=key)
 
             self.assertEqual(
                 str(cm.exception),
@@ -877,9 +877,9 @@ class FilesTest(unittest.TestCase):
         string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
         signing_key, verification_keys, encryption_key = self.make_keys()
         decryption_keys = {encryption_key[0]: encryption_key[1]}
-        plain = fixtures.compile_string_to_asnc(string)
-        data = fixtures.compile_string_to_asnc(string, encryption_key=encryption_key)
-        compiled = syntax.from_asnc(plain)
+        plain = fixtures.compile_string_to_asni(string)
+        data = fixtures.compile_string_to_asni(string, encryption_key=encryption_key)
+        compiled = syntax.from_asni(plain)
 
         # The flag, the key, 12 bytes that are never the same twice
         # and the tag, before the metadata and the nodes encrypted.
@@ -889,7 +889,7 @@ class FilesTest(unittest.TestCase):
         self.assertNotIn(b"generator", data)
         self.assertNotEqual(
             data[27:39],
-            fixtures.compile_string_to_asnc(string, encryption_key=encryption_key)[
+            fixtures.compile_string_to_asni(string, encryption_key=encryption_key)[
                 27:39
             ],
         )
@@ -911,10 +911,10 @@ class FilesTest(unittest.TestCase):
 
         # Read with the key.
         self.assertEqual(
-            syntax.from_asnc(data, decryption_keys=decryption_keys), compiled
+            syntax.from_asni(data, decryption_keys=decryption_keys), compiled
         )
 
-        for function in [runtime.load_asnc, runtime.load]:
+        for function in [runtime.load_asni, runtime.load]:
             self.assertEqual(
                 repr(function(data, decryption_keys=decryption_keys).types),
                 repr(runtime.load(compiled).types),
@@ -949,7 +949,7 @@ class FilesTest(unittest.TestCase):
 
         for encoded, arguments, message in datas:
             with self.subTest(arguments=arguments):
-                for function in [syntax.from_asnc, runtime.load_asnc, runtime.load]:
+                for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
                     with self.assertRaises(syntax.ConvertError) as cm:
                         function(encoded, **arguments)
 
@@ -962,16 +962,16 @@ class FilesTest(unittest.TestCase):
             changed[offset] ^= 0x10
 
             with self.assertRaises(syntax.ConvertError):
-                syntax.from_asnc(bytes(changed), decryption_keys=decryption_keys)
+                syntax.from_asni(bytes(changed), decryption_keys=decryption_keys)
 
         with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asnc(data[:-1], decryption_keys=decryption_keys)
+            syntax.from_asni(data[:-1], decryption_keys=decryption_keys)
 
         self.assertEqual(str(cm.exception), failed)
 
         # Signed as well, with a nonce and bound to something: what
         # it is bound to is not seen without the key.
-        data = fixtures.compile_string_to_asnc(
+        data = fixtures.compile_string_to_asni(
             string,
             nonce=7,
             bound_to="Thing 2",
@@ -992,16 +992,16 @@ class FilesTest(unittest.TestCase):
             "verification_keys": verification_keys,
             "decryption_keys": decryption_keys,
         }
-        self.assertEqual(syntax.from_asnc(data, **arguments), compiled)
+        self.assertEqual(syntax.from_asni(data, **arguments), compiled)
 
         for name in arguments:
             with self.assertRaises(syntax.ConvertError):
-                syntax.from_asnc(
+                syntax.from_asni(
                     data, **{key: arguments[key] for key in arguments if key != name}
                 )
 
         with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asnc(data, **dict(arguments, bound_to="Thing 1"))
+            syntax.from_asni(data, **dict(arguments, bound_to="Thing 1"))
 
         self.assertEqual(
             str(cm.exception),
@@ -1013,12 +1013,12 @@ class FilesTest(unittest.TestCase):
         changed = data[:-1] + bytes([data[-1] ^ 1])
 
         with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asnc(changed, verification_keys=verification_keys)
+            syntax.from_asni(changed, verification_keys=verification_keys)
 
         self.assertEqual(str(cm.exception), "The signature of the file is wrong.")
 
         with self.assertRaises(syntax.ConvertError) as cm:
-            fixtures.compile_string_to_asnc(string, encryption_key=(b"k", bytes(32)))
+            fixtures.compile_string_to_asni(string, encryption_key=(b"k", bytes(32)))
 
         self.assertEqual(
             str(cm.exception),
@@ -1043,18 +1043,18 @@ from tests import compiled as fixtures
 from asnkitrt import runtime, syntax
 
 string = sys.argv[1]
-plain = fixtures.compile_string_to_asnc(string, nonce=1, bound_to="a")
-runtime.load_asnc(plain, nonce=1, bound_to="a")
+plain = fixtures.compile_string_to_asni(string, nonce=1, bound_to="a")
+runtime.load_asni(plain, nonce=1, bound_to="a")
 files = dict(zip(["signed", "encrypted"], sys.stdin.buffer.read().split(b"\\n--\\n")))
 key = (bytes(16), bytes(32))
 keys = {b"signing key 0001": bytes(32), b"encrypt key 0001": bytes(32)}
 messages = []
 
 for function in [
-    lambda: fixtures.compile_string_to_asnc(string, signing_key=key),
-    lambda: fixtures.compile_string_to_asnc(string, encryption_key=key),
-    lambda: runtime.load_asnc(files["signed"], verification_keys=keys),
-    lambda: runtime.load_asnc(files["encrypted"], decryption_keys=keys),
+    lambda: fixtures.compile_string_to_asni(string, signing_key=key),
+    lambda: fixtures.compile_string_to_asni(string, encryption_key=key),
+    lambda: runtime.load_asni(files["signed"], verification_keys=keys),
+    lambda: runtime.load_asni(files["encrypted"], decryption_keys=keys),
 ]:
     try:
         function()
@@ -1065,8 +1065,8 @@ print("\\n".join(messages))
 print(syntax.read_header(files["signed"]).signed_by.decode())
 print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
 """
-        signed = fixtures.compile_string_to_asnc(string, signing_key=signing_key)
-        encrypted = fixtures.compile_string_to_asnc(
+        signed = fixtures.compile_string_to_asni(string, signing_key=signing_key)
+        encrypted = fixtures.compile_string_to_asni(
             string, encryption_key=encryption_key
         )
         self.assertNotIn(b"\n--\n", signed + encrypted)
@@ -1113,25 +1113,25 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
 
                 self.assertEqual(fixtures.parse_files_to_asnst(path + ".asn"), encoded)
 
-            with self.subTest(name=name, kind="asnc"):
-                with open(path + ".asnc", "rb") as fin:
+            with self.subTest(name=name, kind="asni"):
+                with open(path + ".asni", "rb") as fin:
                     encoded = fin.read()
 
-                self.assertEqual(fixtures.compile_files_to_asnc(path + ".asn"), encoded)
+                self.assertEqual(fixtures.compile_files_to_asni(path + ".asn"), encoded)
 
     def test_load_examples(self):
         decoded = {"id": 1, "question": "Is 1+1=3?"}
         encoded = b"\x01\x01\x09\x93\xcd\x03\x15\x6c\x5e\xb3\x7e"
 
-        with open("examples/compiled/foo.asnc", "rb") as fin:
-            asnc = fin.read()
+        with open("examples/compiled/foo.asni", "rb") as fin:
+            asni = fin.read()
 
         for foo in [
-            runtime.load_asnc_file("examples/compiled/foo.asnc", "uper"),
-            runtime.load_asnc(asnc, "uper"),
-            runtime.load_asnc(bytearray(asnc), "uper"),
-            runtime.load(asnc, "uper"),
-            runtime.load(syntax.from_asnc_file("examples/compiled/foo.asnc"), "uper"),
+            runtime.load_asni_file("examples/compiled/foo.asni", "uper"),
+            runtime.load_asni(asni, "uper"),
+            runtime.load_asni(bytearray(asni), "uper"),
+            runtime.load(asni, "uper"),
+            runtime.load(syntax.from_asni_file("examples/compiled/foo.asni"), "uper"),
             fixtures.compile_files("examples/compiled/foo.asn", "uper"),
         ]:
             self.assertEqual(foo.encode("Question", decoded), encoded)
@@ -1169,7 +1169,7 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
                     names.append(name)
 
                     with self.subTest(name=name):
-                        path = "examples/corpus/{}.asnc".format(name)
+                        path = "examples/corpus/{}.asni".format(name)
 
                         with open(path, "rb") as fin:
                             header = syntax.read_header(fin.read())
@@ -1177,7 +1177,7 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
                         self.assertEqual(header.signed_by is not None, signed)
                         self.assertEqual(header.encrypted_with is not None, encrypted)
 
-                        foo = runtime.load_asnc_file(
+                        foo = runtime.load_asni_file(
                             path,
                             "ber",
                             bound_to="corpus" if bound else None,
@@ -1196,7 +1196,7 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
             sorted(
                 os.path.splitext(name)[0]
                 for name in os.listdir("examples/corpus")
-                if name.endswith(".asnc")
+                if name.endswith(".asni")
             ),
         )
 
@@ -1208,7 +1208,7 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
         }
 
         for loaded in [
-            runtime.load_asnc_file("examples/compiled/rfc5280.asnc", "der"),
+            runtime.load_asni_file("examples/compiled/rfc5280.asni", "der"),
         ]:
             self.assertEqual(repr(loaded.types), repr(compiled.types))
             encoded = loaded.encode("AlgorithmIdentifier", decoded)
@@ -1225,22 +1225,22 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
             return stdout.getvalue()
 
         tree = syntax.from_asnst_file("examples/compiled/foo.asnst")
-        compiled = syntax.from_asnc_file("examples/compiled/foo.asnc")
+        compiled = syntax.from_asni_file("examples/compiled/foo.asni")
 
         path = "examples/compiled/foo.asnst"
         self.assertEqual(run([path]), syntax.to_json(tree) + "\n")
         self.assertEqual(syntax.from_primitive(json.loads(run([path]))), tree)
 
         self.assertEqual(
-            run(["examples/compiled/foo.asnc"]), syntax.to_json(compiled) + "\n"
+            run(["examples/compiled/foo.asni"]), syntax.to_json(compiled) + "\n"
         )
         self.assertEqual(
-            run(["--indent", "1", "examples/compiled/foo.asnc"]),
+            run(["--indent", "1", "examples/compiled/foo.asni"]),
             syntax.to_json(compiled, 1) + "\n",
         )
 
-        header = json.loads(run(["--header", "examples/compiled/foo.asnc"]))
-        self.assertEqual(header["kind"], "asnc")
+        header = json.loads(run(["--header", "examples/compiled/foo.asni"]))
+        self.assertEqual(header["kind"], "asni")
         self.assertEqual(header["version"], [1, 0])
         self.assertEqual(header["metadata"]["sources"][0]["name"], "foo.asn")
 

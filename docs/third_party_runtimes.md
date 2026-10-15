@@ -9,12 +9,12 @@ Rust.
 
 ## What a runtime is
 
-A runtime loads a compiled specification, an `.asnc` file, and
+A runtime loads a compiled specification, an `.asni` file, and
 encodes and decodes the types in it. It does not parse ASN.1. That is
 what the compiler, `asnkitcc`, does once, so that a runtime
 can be small and run where a parser can not.
 
-A runtime reads `.asnc` files. It never needs to read `.asnst`
+A runtime reads `.asni` files. It never needs to read `.asnst`
 files, which are for plugins of the compiler.
 
 ## What to implement
@@ -24,7 +24,7 @@ The parts of a runtime, in the order they are best made:
 1. The container: the header, the flags, the signature, the nonce,
    the encryption and the binding, as told in [file formats](file_formats.md), with the checks in the order given there.
 
-2. The nodes of an `.asnc` file, in the compact form, and the
+2. The nodes of an `.asni` file, in the compact form, and the
    types they make.
 
 3. The codecs. Which ones a runtime has is for its implementers to
@@ -73,7 +73,7 @@ keep it small and well tested.
 
 ## Testing a runtime
 
-`examples/corpus` has eight `.asnc` files, one for every
+`examples/corpus` has eight `.asni` files, one for every
 combination of being signed, encrypted and bound, with the keys to
 read them. A runtime has to load them, and has to reject each of them
 when it is set up with the wrong key, the wrong binding or the wrong
@@ -115,10 +115,11 @@ things to know:
   translating any code, does not need any of this.
 
 - The documentation of the formats and the corpus are licensed under
-  CC-BY-4.0, and the code in them under MIT, so that you can copy
-  them into your runtime, its documentation and its tests, under any
-  license, as long as you give credit as those licenses say. The rest
-  of this repository, such as the test files in `tests`, is Apache-2.0.
+  Apache-2.0, and the code in the corpus under MIT, so that you can
+  copy them into your runtime, its documentation and its tests, under
+  any license, as long as you keep the notices those licenses ask for.
+  The rest of this repository, such as the test files in `tests`, is
+  Apache-2.0 too.
   `COPYING` in the root of the repository tells which is which. It is
   not legal advice.
 

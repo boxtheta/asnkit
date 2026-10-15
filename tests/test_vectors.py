@@ -25,8 +25,8 @@ def read_vectors():
 
 
 def load(spec, codec, numeric_enums, lenient):
-    with open(os.path.join(FOLDER, "specs", spec + ".asnc"), "rb") as fin:
-        return asnkitrt.load_asnc(
+    with open(os.path.join(FOLDER, "specs", spec + ".asni"), "rb") as fin:
+        return asnkitrt.load_asni(
             fin.read(), codec, numeric_enums=numeric_enums, lenient=lenient
         )
 

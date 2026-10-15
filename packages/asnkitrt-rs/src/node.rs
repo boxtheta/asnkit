@@ -850,7 +850,7 @@ pub struct Spec {
 }
 
 impl Spec {
-    /// Reads the nodes of an `.asnc` file, as the container gives them.
+    /// Reads the nodes of an `.asni` file, as the container gives them.
     pub fn from_nodes(nodes: &Cbor) -> Result<Spec> {
         let top = Node::of(nodes)?;
 

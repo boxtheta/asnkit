@@ -36,8 +36,8 @@ fn main() {
         benches.run(&format!("compile/{name}"), || {
             asnkit_compiler::compile(&input).unwrap()
         });
-        benches.run(&format!("asnc/{name}"), || {
-            asnkit_compiler::compile_to_asnc(&input, Some(0), None, &Protection::default()).unwrap()
+        benches.run(&format!("asni/{name}"), || {
+            asnkit_compiler::compile_to_asni(&input, Some(0), None, &Protection::default()).unwrap()
         });
     }
 }

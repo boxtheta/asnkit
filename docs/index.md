@@ -4,18 +4,18 @@ This is the documentation of the Python runtime and of the formats of the
 files. For the repository as a whole (the runtimes in Python and in Rust,
 the compiler, the plugins, the codecs, the commands and the known
 limitations) see the [README](https://github.com/boxtheta/asnkit#readme).
-The Rust crates are documented by `cargo doc`. ASN.1 is compiled to `.asnc`
+The Rust crates are documented by `cargo doc`. ASN.1 is compiled to `.asni`
 files by the compiler `asnkitcc`, which has no Python API.
 
-- [File formats](file_formats.md): the `.asnc` and `.asnst` files.
+- [File formats](file_formats.md): the `.asni` and `.asnst` files.
 - [Guidelines for third-party runtimes](third_party_runtimes.md).
 - [Plugins](plugins.md): how they are run, and the two there are.
 
 ## Basic usage
 
-::: asnkitrt.load_asnc_file
+::: asnkitrt.load_asni_file
 
-::: asnkitrt.load_asnc
+::: asnkitrt.load_asni
 
 ::: asnkitrt.runtime.Specification
     options:
@@ -72,10 +72,10 @@ ASN.1 types are mapped to Python types as shown in the table below.
 
 ## Reading and writing the files
 
-::: asnkitrt.syntax.from_asnc
+::: asnkitrt.syntax.from_asni
 
 ::: asnkitrt.syntax.from_asnst
 
-::: asnkitrt.syntax.to_asnc
+::: asnkitrt.syntax.to_asni
 
 ::: asnkitrt.syntax.to_asnst
