@@ -1,0 +1,55 @@
+# Copyright (c) 2025 BoxTheta
+# Copyright (c) 2017-2019 Erik Moqvist
+#
+# SPDX-License-Identifier: Apache-2.0
+
+EXPECTED = {
+    "Bar": {
+        "extensibility-implied": False,
+        "imports": {},
+        "object-classes": {},
+        "object-sets": {},
+        "tags": "EXPLICIT",
+        "types": {
+            "AcceptTypes": {
+                "members": [
+                    {
+                        "element": {
+                            "named-bits": [
+                                ("html", "0"),
+                                ("plain-text", "1"),
+                                ("gif", "2"),
+                                ("jpeg", "3"),
+                            ],
+                            "type": "BIT STRING",
+                        },
+                        "name": "standardTypes",
+                        "optional": True,
+                        "tag": {"kind": "IMPLICIT", "number": 0},
+                        "type": "SEQUENCE OF",
+                    },
+                    {
+                        "element": {"type": "OCTET STRING"},
+                        "name": "otherTypes",
+                        "optional": True,
+                        "tag": {"kind": "IMPLICIT", "number": 1},
+                        "type": "SEQUENCE OF",
+                    },
+                ],
+                "tag": {"class": "APPLICATION", "kind": "IMPLICIT", "number": 1},
+                "type": "SEQUENCE",
+            },
+            "GetRequest": {
+                "members": [
+                    {"name": "headerOnly", "type": "BOOLEAN"},
+                    {"name": "lock", "type": "BOOLEAN"},
+                    {"name": "acceptTypes", "optional": True, "type": "AcceptTypes"},
+                    {"name": "url", "type": "OCTET STRING"},
+                ],
+                "tag": {"class": "APPLICATION", "kind": "IMPLICIT", "number": 0},
+                "type": "SEQUENCE",
+            },
+        },
+        "values": {},
+    }
+}

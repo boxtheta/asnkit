@@ -1,0 +1,47 @@
+asnkit-gen-python
+=================
+
+A plugin for `asnkitcc`_ that generates Python code from ASN.1. The
+generated module imports `asnkitrt`_ and embeds the compiled
+specification as bytes. It has a data class for each ``SEQUENCE`` and
+``SET``, an enumeration for each ``ENUMERATED`` and a class for each
+alternative of a ``CHOICE``, all with methods to encode and decode.
+
+.. code-block:: text
+
+   $ pip install asnkit-gen-python
+   $ asnkitcc generate --plugin python -o out foo.asn    # Writes out/foo.py.
+
+.. code-block:: python
+
+   >>> from foo import Question
+   >>> encoded = Question(id=1, question='Is 1+1=3?').encode('uper')
+   >>> Question.decode(encoded, 'uper')
+   Question(id=1, question='Is 1+1=3?')
+
+Options, given with ``--plugin-opt KEY=VALUE``:
+
+``name``
+   The name of the module, without ``.py``. Default: the name of the
+   first ASN.1 file.
+
+``codec``
+   The codec used when none is given. Default: ``ber``.
+
+Names are converted to Python style: ``fooBar`` becomes ``foo_bar`` and
+a type ``Foo-Bar`` becomes ``FooBar``. If two names end up the same in
+Python, generation fails with an error.
+
+.. _asnkitcc: https://crates.io/crates/asnkitcc
+
+.. _asnkitrt: https://pypi.org/project/asnkitrt/
+
+.. _COPYING: https://github.com/boxtheta/asnkit/blob/main/COPYING
+
+License
+-------
+
+Apache License 2.0 (``LICENSE-COMPILER``). The generated code, with the
+helper code copied into it, is yours to use under terms of your choice;
+see `COPYING`_. The generated code depends on ``asnkitrt``,
+which is MIT licensed.

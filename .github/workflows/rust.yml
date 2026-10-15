@@ -1,0 +1,210 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  test-rust:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Format
+      run: |
+        cargo fmt --all -- --check
+    - name: Lint
+      run: |
+        cargo clippy --locked --workspace --all-targets -- -D warnings
+    - name: Test
+      run: |
+        cargo test --locked --workspace
+    - name: Test the runtime with as little as it can be built with
+      run: |
+        cargo clippy --locked -p asnkitrt --all-targets --no-default-features -- -D warnings
+        cargo test --locked -p asnkitrt --no-default-features
+        cargo clippy --locked -p asnkitrt --all-targets --no-default-features --features serde -- -D warnings
+        cargo clippy --locked -p asnkitrt --all-targets --no-default-features --features jer -- -D warnings
+        cargo test --locked -p asnkitrt --no-default-features --features jer
+        cargo clippy --locked -p asnkitrt --all-targets --no-default-features --features xer -- -D warnings
+        cargo test --locked -p asnkitrt --no-default-features --features xer
+
+  # The runtime in Rust is the one of reference, and the others are held
+  # to what it does now, so the vectors must be that.
+  vectors-are-current:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+    - name: Install dependencies
+      run: |
+        uv sync
+    - name: Record the vectors again
+      run: |
+        uv run python tests/vectors/record.py
+    - name: Check that they are the same
+      run: |
+        git diff --exit-code -- tests/vectors
+        test -z "$(git status --porcelain -- tests/vectors)"
+
+  # The runtime for the web: the runtime in Rust as WebAssembly, held to
+  # the vectors through its JavaScript.
+  runtime-wasm:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Install wasm-bindgen, of the version of the crate
+      run: |
+        cargo install wasm-bindgen-cli --version 0.2.129 --locked
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Lint
+      run: |
+        cargo clippy --locked -p asnkitrt-wasm --target wasm32-unknown-unknown -- -D warnings
+    - name: Build and test
+      working-directory: packages/asnkitrt-wasm
+      run: |
+        npm run build
+        npm test
+
+  # The oldest Rust the runtime says it builds with.
+  runtime-oldest-rust:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@1.88.0
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Test
+      run: |
+        cargo test --locked -p asnkitrt
+        cargo test --locked -p asnkitrt --no-default-features
+
+  # The runtime is for devices: it has to build where there is no std.
+  runtime-no-std:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv7em-none-eabi
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Build for a device
+      run: |
+        cargo build --locked -p asnkitrt --no-default-features --target thumbv7em-none-eabi
+        cargo build --locked -p asnkitrt --no-default-features --features signing,encryption,serde --target thumbv7em-none-eabi
+
+  # What the plugin makes with `no_std=true` has to build where there is no std.
+  plugin-no-std:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv7em-none-eabi
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: packages/asnkit-gen-rust/tests/no_std
+    - name: Build for a device
+      run: |
+        cargo build --locked --manifest-path packages/asnkit-gen-rust/tests/no_std/Cargo.toml --target thumbv7em-none-eabi
+
+  # The Python tests encode and decode with the specifications in
+  # tests/fixtures, which this compiler made. They must be what it
+  # makes now, and none may be left over.
+  fixtures-are-current:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+    - name: Install dependencies
+      run: |
+        uv sync
+    - name: Build the compiler
+      run: |
+        cargo build --locked --bin asnkitcc
+    - name: Make the fixtures again
+      run: |
+        ASNKITCC="$PWD/target/debug/asnkitcc" ASNKIT_FIXTURES="$RUNNER_TEMP/fixtures" \
+          uv run python -m unittest
+    - name: Check that they are the same
+      run: |
+        diff -r tests/fixtures "$RUNNER_TEMP/fixtures"
+
+  # What the Rust compiler makes is what asnkitrt, the runtime for Python,
+  # loads, and encodes and decodes X.509 with as OpenSSL does.
+  openssl:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+    - name: Install dependencies
+      run: |
+        uv sync
+    - name: Compile rfc5280 with the Rust compiler
+      run: |
+        cargo build --locked --release --bin asnkitcc
+        ./target/release/asnkitcc compile -o "$RUNNER_TEMP/rfc5280.asnc" examples/compiled/rfc5280.asn
+    - name: Try it with OpenSSL
+      run: |
+        ASNKIT_RFC5280_ASNC="$RUNNER_TEMP/rfc5280.asnc" ASNKIT_EXPECT_GENERATOR="(Rust)" \
+            uv run python -m unittest tests.test_openssl_x509
+    - name: Try X.509 with the runtime in Rust and what the Rust compiler makes
+      run: |
+        ASNKIT_RFC5280_ASNC="$RUNNER_TEMP/rfc5280.asnc" cargo test --locked -p asnkitrt --test x509
+    - name: Read signed and encrypted files with the runtime of Python
+      run: |
+        ASNKIT_RUST_BINARY="$PWD/target/release/asnkitcc" \
+            uv run python -m unittest tests.test_rust_cli

@@ -1,0 +1,177 @@
+name: Release
+
+# A tag v1.2.3 releases every package at version 1.2.3: the Python
+# packages to PyPI, the crates to crates.io, the WebAssembly runtime to
+# npm, and makes a release on GitHub with the notes of CHANGELOG.md.
+# RELEASING.md tells how to make one, and what has to be set up first.
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: read
+
+jobs:
+
+  # Nothing is published unless all of it is built and tested.
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+    - name: Install wasm-bindgen, of the version of the crate
+      run: |
+        cargo install wasm-bindgen-cli --version 0.2.129 --locked
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: The tag is the version of every package
+      run: |
+        uv sync
+        uv run python -m unittest tests.test_versions
+        version=$(uv run python -c "import tomllib; print(tomllib.load(open('packages/asnkitrt/pyproject.toml', 'rb'))['project']['version'])")
+        test "$GITHUB_REF_NAME" = "v$version"
+    - name: The changelog has the version, with its date
+      run: |
+        grep -qE "^## \[${GITHUB_REF_NAME#v}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md
+    - name: Test
+      run: |
+        cargo test --locked --workspace --exclude asnkitrt-wasm
+        cargo build --locked --release --bin asnkitcc
+        uv run python -m unittest
+    - name: Build the Python packages
+      run: |
+        uv build --all-packages
+        uvx twine check --strict dist/*
+    - name: Package the crates that need none of the others
+      run: |
+        cargo publish --dry-run --locked -p asnkitrt
+        cargo publish --dry-run --locked -p asnkit-compiler
+    - name: Build and test the npm package
+      working-directory: packages/asnkitrt-wasm
+      run: |
+        npm run build
+        npm test
+        mkdir ../../npm
+        npm pack --pack-destination ../../npm
+    - uses: actions/upload-artifact@v4
+      with:
+        name: python
+        path: dist/
+    - uses: actions/upload-artifact@v4
+      with:
+        name: npm
+        path: npm/
+
+  pypi:
+
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # Trusted publishing.
+      id-token: write
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: python
+        path: dist/
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        # So that the job can be run again after a failure.
+        skip-existing: true
+
+  crates:
+
+    needs: build
+    runs-on: ubuntu-latest
+    environment: crates-io
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Publish to crates.io
+      env:
+        CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      # In the order they need each other. cargo waits for each to be in
+      # the index before it goes on. One that is already there is left
+      # out, so that the job can be run again after a failure.
+      run: |
+        version=${GITHUB_REF_NAME#v}
+        for crate in asnkitrt asnkit-compiler asnkit-gen-rust asnkitcc; do
+          if curl -sf -A "asnkit release (github.com/boxtheta/asnkit)" \
+              "https://crates.io/api/v1/crates/$crate/$version" > /dev/null; then
+            echo "$crate $version is already published."
+          else
+            cargo publish --locked -p "$crate"
+          fi
+        done
+
+  npm:
+
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      # Provenance.
+      id-token: write
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: npm
+        path: npm/
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        registry-url: https://registry.npmjs.org
+    - name: Publish to npm
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Left out if it is already there, so that the job can be run again.
+      run: |
+        if npm view "asnkitrt@${GITHUB_REF_NAME#v}" version | grep -q .; then
+          echo "asnkitrt ${GITHUB_REF_NAME#v} is already published."
+        else
+          npm publish --provenance --access public npm/asnkitrt-*.tgz
+        fi
+
+  github:
+
+    needs: [pypi, crates, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        path: dist/
+        merge-multiple: true
+    - name: Make the release on GitHub
+      env:
+        GH_TOKEN: ${{ github.token }}
+      # The notes are the section of the version in CHANGELOG.md.
+      run: |
+        version=${GITHUB_REF_NAME#v}
+        awk -v heading="## [$version]" '
+          index($0, heading) == 1 { found = 1; next }
+          found && /^## \[/ { exit }
+          found { print }
+        ' CHANGELOG.md > notes.md
+        gh release create "$GITHUB_REF_NAME" --title "asnkit $version" --notes-file notes.md --verify-tag dist/*

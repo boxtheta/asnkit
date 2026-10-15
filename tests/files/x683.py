@@ -1,0 +1,67 @@
+# Copyright (c) 2025 BoxTheta
+# Copyright (c) 2017-2019 Erik Moqvist
+#
+# SPDX-License-Identifier: Apache-2.0
+
+EXPECTED = {
+    "X683": {
+        "extensibility-implied": False,
+        "imports": {},
+        "object-classes": {},
+        "object-sets": {},
+        "types": {
+            "ErrorCodeString": {"size": [4], "type": "IA5String"},
+            "IntegerList1": {
+                "actual-parameters": [{"type": "INTEGER"}],
+                "type": "List1",
+            },
+            "List1": {
+                "members": [
+                    {"name": "elem", "type": "ElementTypeParam"},
+                    {
+                        "actual-parameters": [{"type": "ElementTypeParam"}],
+                        "name": "next",
+                        "optional": True,
+                        "type": "List1",
+                    },
+                ],
+                "parameters": ["ElementTypeParam"],
+                "type": "SEQUENCE",
+            },
+            "OPTIONALLY-SIGNED": {
+                "members": [
+                    {
+                        "name": "unsigned-data",
+                        "tag": {"number": 0},
+                        "type": "ToBeSigned",
+                    },
+                    {
+                        "actual-parameters": [{"type": "ToBeSigned"}],
+                        "name": "signed-data",
+                        "tag": {"number": 1},
+                        "type": "SIGNED",
+                    },
+                ],
+                "parameters": ["ToBeSigned"],
+                "type": "CHOICE",
+            },
+            "OptionallySignedUTF8String": {
+                "actual-parameters": [{"type": "UTF8String"}],
+                "type": "OPTIONALLY-SIGNED",
+            },
+            "SIGNED": {
+                "members": [
+                    {"name": "authenticated-data", "type": "ToBeSigned"},
+                    {"name": "authenticator", "type": "BIT STRING"},
+                ],
+                "parameters": ["ToBeSigned"],
+                "type": "SEQUENCE",
+            },
+            "SignedUTF8String": {
+                "actual-parameters": [{"type": "UTF8String"}],
+                "type": "SIGNED",
+            },
+        },
+        "values": {},
+    }
+}

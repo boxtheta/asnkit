@@ -1,0 +1,39 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "asnkit-compiler"
+version = "1.0.0"
+edition = "2024"
+description = "ASN.1 parser and compiler making the files asnkit loads, as a library"
+rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/boxtheta/asnkit"
+readme = "README.md"
+keywords = ["asn1", "compiler", "parser"]
+categories = ["encoding", "parser-implementations"]
+# The tests and benchmarks are held to files of the repository that are
+# not in the package.
+exclude = ["tests/", "benches/", "examples/"]
+
+[dependencies]
+aes-gcm = "0.10"
+ed25519-dalek = "2"
+getrandom = "0.3"
+num-bigint = "0.4"
+serde = { version = "1", features = ["derive"] }
+# Numbers keep their digits, as the integers of a specification may not
+# fit in 64 bits, and a float is told apart from an integer by them.
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+sha2 = "0.10"
+winnow = "1"
+
+[dev-dependencies]
+flate2 = "1"
+tempfile = "3"
+
+# See packages/asnkitrt-rs/benches/harness/mod.rs.
+[[bench]]
+name = "compiler"
+harness = false

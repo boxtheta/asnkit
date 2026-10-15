@@ -1,0 +1,112 @@
+-- A made-up vector drawing format, used to test implicit tagging,
+-- application tags, implied extensibility and recursive types.
+--
+-- This module is original work written for the asn1tools-ext test
+-- suite and is covered by the project's MIT license.
+
+Sketch-Pad {2 999 7}
+DEFINITIONS
+IMPLICIT TAGS
+EXTENSIBILITY IMPLIED ::=
+
+BEGIN
+
+gridSize INTEGER ::= 4096
+
+Coordinate ::= INTEGER (0..gridSize)
+
+Text ::= OCTET STRING -- UTF-8 encoded
+
+LayerName ::= Text
+
+Colour ::= [APPLICATION 7] OCTET STRING (SIZE (3)) -- red, green, blue
+
+Eraser ::= [APPLICATION 12] NULL
+
+Point ::= SEQUENCE {
+    x  Coordinate,
+    y  Coordinate
+}
+
+Stroke ::= SEQUENCE {
+    colour  Colour,
+    width   INTEGER (1..64) DEFAULT 1,
+    dashed  BOOLEAN DEFAULT FALSE
+}
+
+Shape ::= CHOICE {
+    dot       [0] Point,
+    path      [1] SEQUENCE SIZE (2..MAX) OF vertex Point,
+    box       [3] Box,
+    label     [4] Label,
+    group     [8] SET SIZE (1..MAX) OF member Shape,
+    mirrored  [9] Shape,
+    ...
+}
+
+Box ::= SEQUENCE {
+    corner    Point,
+    opposite  Point,
+    COMPONENTS OF Stroke,
+    fill      [2] Colour OPTIONAL
+}
+
+Label ::= SEQUENCE {
+    anchor  Point,
+    runs    SEQUENCE SIZE (1..MAX) OF run CHOICE {
+        plain [0] Text,
+        bold  [1] Text,
+        glyph [2] INTEGER (0..gridSize)
+    },
+    align   ENUMERATED {
+        left      (0),
+        centre    (1),
+        right     (2),
+        justified (5),
+        ...
+    }
+}
+
+Layer ::= SEQUENCE {
+    name     LayerName,
+    hidden   [0] BOOLEAN DEFAULT FALSE,
+    opacity  [1] INTEGER (0..100) OPTIONAL,
+    shapes   SEQUENCE OF shape Shape
+}
+
+LockedLayer ::= Layer (WITH COMPONENTS {
+    ...,
+    shapes (SIZE (1..MAX))})
+
+Drawing ::= [APPLICATION 1] SEQUENCE {
+    title   Text,
+    units   ENUMERATED {
+        millimetre (1),
+        point      (3),
+        pixel      (10),
+        ...
+    },
+    layers  SEQUENCE OF layer Layer
+}
+
+Undo ::= [APPLICATION 30] SEQUENCE {
+    steps   INTEGER (1..64),
+    reason  Text OPTIONAL
+}
+
+Edit ::= CHOICE {
+    snapshot  Drawing,
+    addLayer  [0] Layer,
+    lock      [1] LockedLayer,
+    paint     Colour,
+    erase     Eraser,
+    ...,
+    undo      Undo
+}
+
+Journal ::= SEQUENCE {
+    revision  INTEGER (0..MAX),
+    edits     SEQUENCE OF edit Edit
+}
+
+END

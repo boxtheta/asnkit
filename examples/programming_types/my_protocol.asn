@@ -1,0 +1,28 @@
+--
+-- Same as the fictitious Foo protocol of the asnkit README.md,
+-- but using programming types instead of the built-in ASN.1
+-- types.
+--
+
+MyProtocol DEFINITIONS AUTOMATIC TAGS ::=
+
+BEGIN
+
+IMPORTS
+
+    Int32,
+    Bool,
+    String
+FROM ProgrammingTypes;
+
+Question ::= SEQUENCE {
+    id        Int32,
+    question  String
+}
+
+Answer ::= SEQUENCE {
+    id        Int32,
+    answer    Bool
+}
+
+END

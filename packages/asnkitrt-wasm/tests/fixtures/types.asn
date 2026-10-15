@@ -1,0 +1,40 @@
+-- The types the tests of the runtime for JavaScript convert values of.
+
+Types DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+    Big ::= INTEGER
+
+    Real ::= REAL
+
+    Bits ::= BIT STRING
+
+    Choice ::= CHOICE {
+        a  INTEGER,
+        b  SEQUENCE OF BOOLEAN
+    }
+
+    -- An array of two strings, and not a CHOICE.
+    Pair ::= SEQUENCE OF UTF8String
+
+    When ::= GeneralizedTime
+
+    Day ::= DATE
+
+    Small ::= INTEGER (0..7)
+
+    Color ::= ENUMERATED { red, green }
+
+    Record ::= SEQUENCE {
+        id    INTEGER,
+        name  UTF8String OPTIONAL
+    }
+
+    Twice ::= INTEGER
+
+END
+
+Other DEFINITIONS ::= BEGIN
+
+    Twice ::= BOOLEAN
+
+END

@@ -1,0 +1,18 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# The Rust crates of this repository. The Python packages are in the
+# workspace of pyproject.toml.
+[workspace]
+resolver = "3"
+members = ["packages/asnkit-compiler", "packages/asnkit-gen-rust", "packages/asnkitcc", "packages/asnkitrt-rs", "packages/asnkitrt-wasm"]
+
+# The runtime for the web, as WebAssembly, which is to be small to send.
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

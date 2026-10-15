@@ -1,0 +1,80 @@
+# Copyright (c) 2025 BoxTheta
+# Copyright (c) 2017-2019 Erik Moqvist
+#
+# SPDX-License-Identifier: Apache-2.0
+
+EXPECTED = {
+    "AllTypes": {
+        "extensibility-implied": False,
+        "imports": {},
+        "object-classes": {},
+        "object-sets": {},
+        "tags": "AUTOMATIC",
+        "types": {
+            "Sequence2": {
+                "members": [
+                    {
+                        "name": "a",
+                        "tag": {"kind": "IMPLICIT", "number": 0},
+                        "type": "INTEGER",
+                    },
+                    {
+                        "name": "b",
+                        "optional": True,
+                        "tag": {"kind": "IMPLICIT", "number": 1},
+                        "type": "BOOLEAN",
+                    },
+                    {
+                        "name": "c",
+                        "tag": {"kind": "IMPLICIT", "number": 2},
+                        "type": "INTEGER",
+                    },
+                ],
+                "type": "SEQUENCE",
+            },
+            "Sequence3": {
+                "members": [
+                    {
+                        "name": "a",
+                        "tag": {"kind": "IMPLICIT", "number": 0},
+                        "type": "INTEGER",
+                    },
+                    {
+                        "name": "b",
+                        "optional": True,
+                        "tag": {"kind": "IMPLICIT", "number": 1},
+                        "type": "BOOLEAN",
+                    },
+                    {
+                        "name": "c",
+                        "tag": {"kind": "IMPLICIT", "number": 2},
+                        "type": "INTEGER",
+                    },
+                    {
+                        "name": "d",
+                        "tag": {"kind": "IMPLICIT", "number": 3},
+                        "type": "BOOLEAN",
+                    },
+                ],
+                "type": "SEQUENCE",
+            },
+            "Sequence9": {
+                "members": [
+                    {
+                        "name": "a",
+                        "tag": {"kind": "IMPLICIT", "number": 0},
+                        "type": "INTEGER",
+                    },
+                    {
+                        "name": "b",
+                        "optional": True,
+                        "tag": {"kind": "IMPLICIT", "number": 1},
+                        "type": "BOOLEAN",
+                    },
+                ],
+                "type": "SEQUENCE",
+            },
+        },
+        "values": {},
+    }
+}

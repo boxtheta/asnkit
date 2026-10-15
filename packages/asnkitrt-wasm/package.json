@@ -1,0 +1,32 @@
+{
+  "name": "asnkitrt",
+  "version": "1.0.0",
+  "description": "Encode and decode ASN.1 with compiled specifications, in the browser and Node.js",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boxtheta/asnkit"
+  },
+  "exports": {
+    ".": {
+      "types": "./js/index.d.ts",
+      "node": "./js/node.js",
+      "default": "./js/web.js"
+    }
+  },
+  "files": [
+    "js",
+    "pkg/asnkitrt_wasm.js",
+    "pkg/asnkitrt_wasm_bg.wasm",
+    "LICENSE-RUNTIMES",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "cargo build --locked --profile wasm --target wasm32-unknown-unknown -p asnkitrt-wasm && wasm-bindgen --target web --no-typescript --out-dir pkg ../../target/wasm32-unknown-unknown/wasm/asnkitrt_wasm.wasm",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

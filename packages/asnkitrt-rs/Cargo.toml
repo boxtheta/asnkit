@@ -1,0 +1,63 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "asnkitrt"
+version = "1.0.0"
+edition = "2024"
+# The oldest that builds it: let chains are stable from 1.88.
+rust-version = "1.88"
+description = "Encode and decode ASN.1 with compiled specifications, also without std"
+license = "MIT"
+repository = "https://github.com/boxtheta/asnkit"
+readme = "README.md"
+keywords = ["asn1", "ber", "der", "per", "no_std"]
+categories = ["encoding", "no-std", "parser-implementations"]
+# The tests and benchmarks are held to files of the repository that are
+# not in the package.
+exclude = ["tests/", "fuzz/", "benches/", "examples/"]
+
+[features]
+default = ["std", "signing", "encryption", "serde", "jer", "xer", "bigint"]
+std = ["sha2?/std", "ed25519-dalek?/std", "aes-gcm?/std", "serde?/std"]
+# To load signed and encrypted .asnc files. Nothing else needs them.
+signing = ["dep:sha2", "dep:ed25519-dalek"]
+encryption = ["dep:aes-gcm"]
+# Values to and from the types of serde, see `serde_value`.
+serde = ["dep:serde"]
+# The text codecs: JER (JSON) and XER (XML).
+jer = []
+# XML is read with quick-xml, which needs std.
+xer = ["std", "dep:quick-xml"]
+# Bounds of constraints of more than 128 bits, and time elements of a
+# DURATION of more than 128 bits in PER and OER, with num-bigint.
+bigint = ["std", "dep:num-bigint"]
+
+[dependencies]
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"], optional = true }
+ed25519-dalek = { version = "2", default-features = false, optional = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
+serde = { version = "1", default-features = false, features = ["alloc"], optional = true }
+quick-xml = { version = "0.42", default-features = false, optional = true }
+num-bigint = { version = "0.4", optional = true }
+
+[[test]]
+name = "serde"
+required-features = ["serde"]
+
+[[test]]
+name = "corpus"
+required-features = ["signing", "encryption"]
+
+# See benches/harness/mod.rs.
+[[bench]]
+name = "runtime"
+harness = false
+required-features = ["std", "jer", "xer"]
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+flate2 = "1"
+# Numbers keep their digits, as the vectors have integers of any size.
+serde_json = { version = "1", features = ["arbitrary_precision"] }

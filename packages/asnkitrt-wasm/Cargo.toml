@@ -1,0 +1,23 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "asnkitrt-wasm"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.88"
+description = "The runtime of asnkit for the web and JavaScript, as WebAssembly"
+license = "MIT"
+repository = "https://github.com/boxtheta/asnkit"
+readme = "README.md"
+# It is published on npm, as packages/asnkitrt-wasm/package.json says.
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+asnkitrt = { path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "bigint"] }
+js-sys = "0.3"
+wasm-bindgen = "=0.2.129"

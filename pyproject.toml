@@ -1,0 +1,49 @@
+# The Python packages of this repository are found in packages/. This is
+# what they are developed and tested with, and is not a package.
+[project]
+name = "asnkit-workspace"
+version = "0"
+requires-python = ">=3.13"
+dependencies = [
+    "asnkitrt",
+    "asnkit-gen-python",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/asnkitrt", "packages/asnkit-gen-python"]
+
+[tool.uv.sources]
+asnkitrt = { workspace = true }
+asnkit-gen-python = { workspace = true }
+
+[tool.mypy]
+files = ["packages/asnkitrt/src", "packages/asnkit-gen-python/src"]
+python_version = "3.13"
+check_untyped_defs = true
+
+[tool.ruff]
+target-version = "py313"
+# What the plugin for Python makes is held to the plugin, not to this.
+extend-exclude = ["examples/generated"]
+
+[tool.ruff.lint]
+# Pyflakes, the errors of pycodestyle and the likely bugs of flake8-bugbear.
+select = ["E4", "E7", "E9", "F", "B"]
+# `raise ... from` and `zip(strict=...)` everywhere would change much and
+# fix little.
+ignore = ["B904", "B905"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "cryptography>=43",
+    "ruff>=0.17.0",
+]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.27",
+]

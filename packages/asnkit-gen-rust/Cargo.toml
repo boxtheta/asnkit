@@ -1,0 +1,33 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "asnkit-gen-rust"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.88"
+description = "asnkit plugin that makes Rust code with structs and enums from ASN.1"
+license = "Apache-2.0"
+repository = "https://github.com/boxtheta/asnkit"
+readme = "README.md"
+keywords = ["asn1", "codegen", "serde"]
+categories = ["development-tools", "encoding"]
+# The tests are held to files of the repository that are not in the
+# package.
+exclude = ["tests/"]
+
+[lib]
+name = "asnkit_gen_rust"
+path = "src/lib.rs"
+
+[[bin]]
+name = "asnkit-gen-rust"
+path = "src/main.rs"
+
+[dependencies]
+asnkitrt = { version = "1.0.0", path = "../asnkitrt-rs", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+asnkitrt = { path = "../asnkitrt-rs" }
+serde = { version = "1", features = ["derive"] }

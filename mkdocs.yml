@@ -1,0 +1,27 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+site_name: asnkit
+site_description: ASN.1 compiled once, encoded and decoded anywhere
+repo_url: https://github.com/boxtheta/asnkit
+docs_dir: docs
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - File formats: file_formats.md
+  - ANY DEFINED BY: any_defined_by.md
+  - Third-party runtimes: third_party_runtimes.md
+  - Plugins: plugins.md
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - packages/asnkitrt/src
+          options:
+            docstring_style: sphinx
+            show_source: false
+            show_root_heading: true

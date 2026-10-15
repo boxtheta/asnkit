@@ -1,0 +1,45 @@
+# Copyright (c) 2025 BoxTheta
+# Copyright (c) 2017-2019 Erik Moqvist
+#
+# SPDX-License-Identifier: Apache-2.0
+
+EXPECTED = {
+    "X691-A4": {
+        "extensibility-implied": False,
+        "imports": {},
+        "object-classes": {},
+        "object-sets": {},
+        "tags": "AUTOMATIC",
+        "types": {
+            "Ax": {
+                "members": [
+                    {"name": "a", "restricted-to": [(250, 253)], "type": "INTEGER"},
+                    {"name": "b", "type": "BOOLEAN"},
+                    {
+                        "members": [
+                            {"name": "d", "type": "INTEGER"},
+                            None,
+                            [
+                                {"name": "e", "type": "BOOLEAN"},
+                                {"name": "f", "type": "IA5String"},
+                            ],
+                            None,
+                        ],
+                        "name": "c",
+                        "type": "CHOICE",
+                    },
+                    None,
+                    [
+                        {"name": "g", "size": [3], "type": "NumericString"},
+                        {"name": "h", "optional": True, "type": "BOOLEAN"},
+                    ],
+                    None,
+                    {"name": "i", "optional": True, "type": "BMPString"},
+                    {"name": "j", "optional": True, "type": "PrintableString"},
+                ],
+                "type": "SEQUENCE",
+            }
+        },
+        "values": {},
+    }
+}

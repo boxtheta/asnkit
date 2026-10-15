@@ -1,0 +1,103 @@
+-- Shapes of types the plugin has to make Rust of, for tests/generated.rs.
+
+Shapes DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+    -- Words Rust has, names it makes, and a name that is two.
+    Keywords ::= SEQUENCE {
+        type    INTEGER (0..255),
+        self    BOOLEAN,
+        match   UTF8String OPTIONAL,
+        fooBar  INTEGER (-100..100),
+        foo-bar INTEGER (0..65535),
+        crate   NULL
+    }
+
+    -- Integers by their bounds.
+    Sizes ::= SEQUENCE {
+        a INTEGER (0..1),
+        b INTEGER (0..70000),
+        c INTEGER (0..5000000000),
+        d INTEGER (-1..1),
+        e INTEGER (-30000..30000),
+        f INTEGER (-3000000000..3000000000),
+        g INTEGER,
+        h INTEGER (0..MAX)
+    }
+
+    -- Everything else that is built in.
+    Builtins ::= SEQUENCE {
+        flag      BOOLEAN,
+        real      REAL,
+        nothing   NULL,
+        octets    OCTET STRING,
+        bits      BIT STRING,
+        oid       OBJECT IDENTIFIER,
+        text      UTF8String,
+        printable PrintableString (SIZE (1..8)),
+        utc       UTCTime,
+        general   GeneralizedTime,
+        day       DATE,
+        clock     TIME-OF-DAY,
+        both      DATE-TIME
+    }
+
+    Color ::= ENUMERATED { red, green(5), dark-blue, ... , violet }
+
+    Shape ::= CHOICE {
+        circle    INTEGER (1..100),
+        square    SEQUENCE { side INTEGER (1..100), color Color OPTIONAL },
+        nothing   NULL,
+        many      SEQUENCE OF Shape,
+        octets    OCTET STRING,
+        named     Name
+    }
+
+    Name ::= UTF8String (SIZE (1..20))
+
+    -- A type that holds itself, directly and by a CHOICE.
+    Tree ::= SEQUENCE {
+        value INTEGER (0..255),
+        left  Tree OPTIONAL,
+        right Node OPTIONAL
+    }
+
+    Node ::= CHOICE {
+        leaf  INTEGER (0..255),
+        tree  Tree
+    }
+
+    Defaults ::= SEQUENCE {
+        count   INTEGER (0..10) DEFAULT 3,
+        enabled BOOLEAN DEFAULT TRUE,
+        color   Color DEFAULT green,
+        list    SEQUENCE OF INTEGER (0..9) DEFAULT {},
+        anything Any OPTIONAL
+    }
+
+    Any ::= SEQUENCE { x INTEGER (0..1) }
+
+    Extensible ::= SEQUENCE {
+        first  INTEGER (0..255),
+        ...,
+        second INTEGER (0..255) OPTIONAL,
+        [[ third  INTEGER (0..255), fourth UTF8String ]]
+    }
+
+    Matrix ::= SEQUENCE OF SEQUENCE OF INTEGER (0..255)
+
+    Pairs ::= SET OF SET { a INTEGER (0..255), b BOOLEAN }
+
+    Alias ::= Name
+
+    Small ::= INTEGER (0..3)
+
+    -- Names the types inside others get, and a clash among them.
+    Outer ::= SEQUENCE {
+        inner SEQUENCE { value INTEGER (0..1) },
+        list  SEQUENCE OF SEQUENCE { value INTEGER (0..2) },
+        choice CHOICE { a NULL, b SEQUENCE { value INTEGER (0..3) } }
+    }
+
+    OuterInner ::= SEQUENCE { clash BOOLEAN }
+
+END

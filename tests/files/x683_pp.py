@@ -1,0 +1,49 @@
+# Copyright (c) 2025 BoxTheta
+# Copyright (c) 2017-2019 Erik Moqvist
+#
+# SPDX-License-Identifier: Apache-2.0
+
+EXPECTED = {
+    "X683": {
+        "extensibility-implied": False,
+        "imports": {},
+        "object-classes": {},
+        "object-sets": {},
+        "types": {
+            "IntegerList1": {
+                "members": [
+                    {"name": "elem", "type": "INTEGER"},
+                    {"name": "next", "optional": True, "type": "IntegerList1"},
+                ],
+                "type": "SEQUENCE",
+            },
+            "OptionallySignedUTF8String": {
+                "members": [
+                    {
+                        "name": "unsigned-data",
+                        "tag": {"number": 0},
+                        "type": "UTF8String",
+                    },
+                    {
+                        "name": "signed-data",
+                        "tag": {"number": 1},
+                        "type": "SEQUENCE",
+                        "members": [
+                            {"name": "authenticated-data", "type": "UTF8String"},
+                            {"name": "authenticator", "type": "BIT STRING"},
+                        ],
+                    },
+                ],
+                "type": "CHOICE",
+            },
+            "SignedUTF8String": {
+                "members": [
+                    {"name": "authenticated-data", "type": "UTF8String"},
+                    {"name": "authenticator", "type": "BIT STRING"},
+                ],
+                "type": "SEQUENCE",
+            },
+        },
+        "values": {},
+    }
+}

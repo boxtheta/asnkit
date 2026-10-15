@@ -1,0 +1,33 @@
+[project]
+name = "asnkit-gen-python"
+version = "1.0.0"
+description = "asnkit plugin that makes Python code with data classes from ASN.1"
+readme = "README.rst"
+authors = [
+    { name = "xadaemon", email = "mxavier@boxtheta.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "asnkitrt==1.0.0",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE-COMPILER", "NOTICE"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Code Generators",
+]
+
+[project.scripts]
+asnkit-gen-python = "asnkit_gen_python.cli:main"
+
+[project.urls]
+source = "https://github.com/boxtheta/asnkit"
+
+[tool.uv.sources]
+asnkitrt = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9.10,<0.13.0"]
+build-backend = "uv_build"

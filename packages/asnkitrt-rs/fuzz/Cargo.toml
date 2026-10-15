@@ -1,0 +1,39 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "asnkitrt-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.asnkitrt]
+path = ".."
+
+# Not part of the workspace of the repository: it needs a nightly Rust.
+[workspace]
+
+[[bin]]
+name = "container"
+path = "fuzz_targets/container.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "cbor"
+path = "fuzz_targets/cbor.rs"
+test = false
+doc = false

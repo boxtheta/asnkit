@@ -1,0 +1,22 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "asnkitcc"
+version = "1.0.0"
+edition = "2024"
+description = "The command that compiles ASN.1 to the files asnkit loads, and runs its plugins"
+rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/boxtheta/asnkit"
+readme = "README.md"
+keywords = ["asn1", "compiler", "ber", "der", "per"]
+categories = ["command-line-utilities", "encoding"]
+
+[[bin]]
+name = "asnkitcc"
+path = "src/main.rs"
+
+[dependencies]
+asnkit-compiler = { version = "1.0.0", path = "../asnkit-compiler" }
