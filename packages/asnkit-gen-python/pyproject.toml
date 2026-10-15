@@ -11,7 +11,7 @@ dependencies = [
     "asnkitrt==1.0.0",
 ]
 license = "Apache-2.0"
-license-files = ["LICENSE-COMPILER", "NOTICE"]
+license-files = ["LICENSE-COMPILER"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",

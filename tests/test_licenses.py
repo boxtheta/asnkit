@@ -21,13 +21,6 @@ class LicensesTest(unittest.TestCase):
             ("LICENSE-COMPILER", "asnkitcc"),
             ("LICENSE-COMPILER", "asnkit-gen-python"),
             ("LICENSE-COMPILER", "asnkit-gen-rust"),
-            ("NOTICE", "asnkitrt"),
-            ("NOTICE", "asnkitrt-rs"),
-            ("NOTICE", "asnkitrt-wasm"),
-            ("NOTICE", "asnkit-compiler"),
-            ("NOTICE", "asnkitcc"),
-            ("NOTICE", "asnkit-gen-python"),
-            ("NOTICE", "asnkit-gen-rust"),
         ]:
             with self.subTest(path=path, package=package):
                 self.assertEqual(
@@ -46,16 +39,17 @@ class LicensesTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(read(path).startswith(start))
 
-    def test_copying_says_it_is_not_legal_advice(self):
-        copying = read("COPYING").decode()
+    def test_notice_is_with_the_code_of_asn1tools(self):
+        """The MIT license of asn1tools stays with the codecs of the runtime
+        for Python, which derive from it, and is built into its package.
 
-        self.assertIn("NOT LEGAL ADVICE", copying)
+        """
 
-        for name in [
-            "LICENSE-COMPILER",
-            "LICENSE-RUNTIMES",
-        ]:
-            self.assertIn(name, copying)
+        notice = read("packages/asnkitrt/NOTICE").decode()
+
+        self.assertIn("asn1tools", notice)
+        self.assertIn("Copyright (c) 2017-2019 Erik Moqvist", notice)
+        self.assertIn('"NOTICE"', read("packages/asnkitrt/pyproject.toml").decode())
 
 
 if __name__ == "__main__":

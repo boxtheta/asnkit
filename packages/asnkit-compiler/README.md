@@ -21,5 +21,4 @@ The command [`asnkitcc`](https://crates.io/crates/asnkitcc) is made
 with it.
 
 Licensed under the Apache License 2.0 (`LICENSE-COMPILER`). What it
-produces is yours to use under terms of your choice; see
-[`COPYING`](https://github.com/boxtheta/asnkit/blob/trunk/COPYING).
+produces is yours to use under terms of your choice.

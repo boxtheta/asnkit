@@ -316,7 +316,7 @@ asnkit began as a fork of [asn1tools](https://github.com/eerimoq/asn1tools)
 by Erik Moqvist, and has since become a different project, with its own
 compiler, file formats and runtimes. What is left of asn1tools is in
 the codecs of the Python runtime, which keep its copyright and its MIT
-license (see `NOTICE`).
+license (see `packages/asnkitrt/NOTICE`).
 
 ## License
 

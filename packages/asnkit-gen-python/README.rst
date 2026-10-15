@@ -36,12 +36,11 @@ Python, generation fails with an error.
 
 .. _asnkitrt: https://pypi.org/project/asnkitrt/
 
-.. _COPYING: https://github.com/boxtheta/asnkit/blob/trunk/COPYING
-
 License
 -------
 
 Apache License 2.0 (``LICENSE-COMPILER``). The generated code, with the
-helper code copied into it, is yours to use under terms of your choice;
-see `COPYING`_. The generated code depends on ``asnkitrt``,
+helper code copied into it, is yours to use under terms of your choice,
+as the header of each file it writes says. The generated code depends on
+``asnkitrt``,
 which is MIT licensed.

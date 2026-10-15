@@ -51,8 +51,7 @@ the order of the members as the specification gives it.
 What a plugin makes is under the license its author gives it. What
 the plugins of this repository make, with the helper code they copy
 into it, may be used under terms of your choice, as the header of each
-file they write says (see `COPYING`, a draft until counsel has
-reviewed it).
+file they write says.
 
 The formats are in [file formats](file_formats.md).
 

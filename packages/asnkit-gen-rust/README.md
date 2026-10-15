@@ -72,5 +72,5 @@ does not know returns an error.
 ## License
 
 Apache License 2.0 (`LICENSE-COMPILER`). The generated code, with the
-helper code copied into it, is yours to use under terms of your choice;
-see [`COPYING`](https://github.com/boxtheta/asnkit/blob/trunk/COPYING).
+helper code copied into it, is yours to use under terms of your choice,
+as the header of each file it writes says.

@@ -3,7 +3,7 @@
 // This file is made from the specification it names, and needs the asnkitrt
 // crate (MIT) and serde to run. It may be used under terms of your choice:
 // the code that asnkit-gen-rust copies into it is not under the Apache
-// License of the plugin. See COPYING at https://github.com/boxtheta/asnkit
+// License of the plugin.
 
 /// The compiled specification, as the contents of an .asni file.
 const ASNI: &[u8] = &[

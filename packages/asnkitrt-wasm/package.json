@@ -19,8 +19,7 @@
     "js",
     "pkg/asnkitrt_wasm.js",
     "pkg/asnkitrt_wasm_bg.wasm",
-    "LICENSE-RUNTIMES",
-    "NOTICE"
+    "LICENSE-RUNTIMES"
   ],
   "engines": {
     "node": ">=18"

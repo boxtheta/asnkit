@@ -109,8 +109,9 @@ things to know:
 
 - The first-party runtimes are MIT. A port that is derived
   from one, by translating its code, has to keep its copyright
-  notices and the license text, and so has to keep `NOTICE`, which
-  holds the MIT license of asn1tools that the code derives from.
+  notices and the license text. A port of the codecs of the runtime
+  for Python also has to keep `packages/asnkitrt/NOTICE`, which holds
+  the MIT license of asn1tools that they derive from.
 
 - Writing a runtime from the format and the standards, without
   translating any code, does not need any of this.
@@ -121,8 +122,8 @@ things to know:
   any license, as long as you keep the notices those licenses ask for.
   The rest of this repository, such as the test files in `tests`, is
   Apache-2.0 too.
-  `COPYING` in the root of the repository tells which is which. It is
-  not legal advice.
+  The section License of `README.md` in the root of the repository
+  tells which is which. It is not legal advice.
 
 - The test vectors in `tests/vectors` are not under any of these
   licenses. They are made from ASN.1 modules by other parties (3GPP,
@@ -133,8 +134,7 @@ things to know:
 
 - The compiler, `asnkitcc`, is Apache-2.0. A runtime does not need
   it to run, and does not link to it. Code copied from it into a
-  runtime keeps the Apache License, with its copyright notices and
-  `NOTICE`.
+  runtime keeps the Apache License, with its copyright notices.
 
 ## Name
 

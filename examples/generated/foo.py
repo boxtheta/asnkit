@@ -3,7 +3,7 @@
 # This file is made from the specification it names, and needs the asnkitrt
 # package (MIT) to run. It may be used under terms of your choice: the code
 # that asnkit-gen-python copies into it is not under the Apache License of
-# the plugin. See COPYING at https://github.com/boxtheta/asnkit
+# the plugin.
 
 from __future__ import annotations
 
