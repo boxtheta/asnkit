@@ -17,6 +17,7 @@ from asnkitrt.codecs.codec import Codec
 
 from ..constants import EXTENSION_MARKER
 from . import (
+    check_local_time,
     NamedNumbersMixin,
     BaseType,
     DecodeError,
@@ -1938,6 +1939,8 @@ class TimeOfDay(Type):
         self._inner = Sequence("TIME-OF-DAY-ENCODING", [hours, minutes, seconds], None)
 
     def encode(self, data, encoder):
+        check_local_time(data)
+
         data = {"hours": data.hour, "minutes": data.minute, "seconds": data.second}
 
         return self._inner.encode(data, encoder)
@@ -2024,6 +2027,8 @@ class DateTime(Type):
         )
 
     def encode(self, data, encoder):
+        check_local_time(data)
+
         data = {"date": data, "time": data}
 
         return self._inner.encode(data, encoder)

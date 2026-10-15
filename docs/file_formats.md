@@ -119,6 +119,13 @@ This is plain Ed25519 with the 32 bytes of the digest as its message.
 It is not Ed25519ph, which hashes with SHA-512. The digest can be
 computed as a file is read, without keeping all of it in memory.
 
+A reader verifies the signature as RFC 8032 (5.1.7) says, with the
+equation without the cofactor, `[S]B = R + [k]A`, and also rejects a
+public key `A` or an `R` of small order, as `verify_strict` of the
+Rust crate `ed25519-dalek` does. Libraries of Ed25519 differ in what
+they accept beyond RFC 8032, so a reader that checks less would accept
+signatures that others reject.
+
 A file that is both signed and encrypted is encrypted first and then
 signed, so the signature is checked without the key to decrypt it. A
 reader checks the signature before it does anything else with a
@@ -322,6 +329,10 @@ optional, and a reader ignores those it does not know of.
 
 - `other` — A map of anything else those making the file want it to tell.
 
+A reader rejects a file with one of these keys of another type than
+told here, but for `bound_to` in a file that is not bound, which it
+does not look at.
+
 ## CBOR
 
 The metadata and the nodes are CBOR (RFC 8949), of which only this is
@@ -343,6 +354,18 @@ used:
 
 There are no byte strings but those of a bignum, nothing of
 indefinite length and no other tags.
+
+- A writer writes integers, lengths and floats in as few bytes as
+  they take. A reader also takes them in more bytes.
+
+- A map has no key twice. A reader rejects a map that has, or takes
+  the last of them, as the reader of this package does. It never takes
+  another one, so that two readers never read a file differently.
+
+- A reader takes arrays and maps nested 64 deep, the outermost counted
+  as 1, and may reject one nested deeper, as the reader of this
+  package does. The metadata and the nodes are counted each on their
+  own. A file nested deeper is not one that every reader loads.
 
 ## Nodes
 
@@ -525,6 +548,68 @@ all `null` by default: `tag`, `size`, `restricted_to`,
 
 <!-- kinds-end -->
 
+### The fields
+
+These are the values of the fields of the kinds of a compiled
+specification, where their names do not tell them. A reader rejects a
+file with a field of another type than told here.
+
+- `name` of any kind, `module_name` and `element_name` are text strings.
+  An `element_name` that is empty is as if there was none.
+
+- `optional`, `extensible`, `includes` and `partial` are booleans.
+
+- `number` of a `Tag` is an integer of 0 or more. `tag_class` is the
+  text string `UNIVERSAL`, `APPLICATION` or `PRIVATE`, and a tag with
+  none is context-specific. `mode` is the text string `IMPLICIT` or
+  `EXPLICIT`.
+
+- `number` of a `NamedNumber` is a value, as in [Values](#values).
+  `named_numbers` of an `IntegerType` and `named_bits` of a
+  `BitStringType` are lists of `NamedNumber` nodes, and `values` of an
+  `EnumeratedType` a list of `NamedNumber` nodes and an
+  `ExtensionMarker`.
+
+- `members` of a `SequenceType`, a `SetType` and a `ChoiceType` is a
+  list of `Member`, `ExtensionMarker` and `ExtensionAdditionGroup`
+  nodes, and `members` of an `ExtensionAdditionGroup` a list of `Member`
+  nodes.
+
+- `type` of a `TypeAssignment`, a `Member`, an `ObjectClassField` and an
+  `AnyDefinedByChoice`, and `element` of a `SequenceOfType` and a
+  `SetOfType`, are types: nodes of the kinds 10 to 19 and 36.
+
+- `default` of a `Member` is a value, as in [Defaults](#defaults).
+
+- `value` of an `AnyDefinedByType` is the name of the member of the
+  same `SEQUENCE` or `SET` that tells its type. `choices` is a list of
+  `AnyDefinedByChoice` nodes, of which `value` is an integer for an
+  `INTEGER`, a text string for an `OBJECT IDENTIFIER` (as `1.2.3`), the
+  name of an item of an `ENUMERATED` or a character string, or a
+  boolean. The value of the member is that of a choice if it is equal
+  to it.
+
+- `size`, `restricted_to` and `permitted_alphabet` are lists of values,
+  `Range` nodes and an `ExtensionMarker`. See [Constraints](#constraints).
+  `lower` and `upper` of a `Range` are values, `Min`, `Max` or
+  `Excluded`.
+
+- `with_components` is a list of alternatives, each a list of
+  `ComponentConstraint` nodes, and an `ExtensionMarker`.
+  `with_component` is a list of `ElementConstraint` nodes and an
+  `ExtensionMarker`. `presence` of a `ComponentConstraint` is the text
+  string `PRESENT` or `ABSENT`. See [Constraints](#constraints).
+
+- `table` is a `TableConstraint`, with the name of the object set as a
+  text string in `object_set` and a list of text strings in
+  `component_ids`. `containing` is a type. No runtime here looks at
+  either.
+
+- `object_classes` of a `CompiledModule` is a list of
+  `ObjectClassAssignment` nodes, and `fields` of one a list of
+  `ObjectClassField` nodes. The compiler never writes `syntax` in a
+  compiled specification.
+
 What the kinds of a compiled specification mean is told in
 [What the nodes mean](#what-the-nodes-mean). The others, which are
 only found in syntax trees, are told in `asnkitrt.syntax.nodes` (see
@@ -658,15 +743,17 @@ Two things are still left to look up by name in version 1.0:
 
 This is for those writing a runtime. It tells what the runtimes in
 this repository do with the nodes of a compiled specification, which
-is the same in both of them. `tests/vectors` holds more than 4,000
-encodings and decodings by the one for Python, with the compiled
+is the same in all of them. `tests/vectors` holds more than 5,300
+encodings and decodings by the one for Rust, the runtime of reference,
+in BER, DER, OER, PER, UPER, JER and XER, with the compiled
 specifications they were made with, for a runtime to be tried against.
 
 The codecs themselves are those of the standards: X.690 for BER and
 DER, X.691 for PER and UPER, X.696 for OER, X.697 for JER and X.693 for
 XER. This section tells which ASN.1 type a node is, which is what a
-codec needs to know. Where the runtimes here do not do what a
-standard says, it is told in
+codec needs to know, and what the runtimes write where a standard
+leaves a choice, so that a runtime can write the same bytes. Where the
+runtimes here do not do what a standard says, it is told in
 [Where the runtimes differ from the standards](#where-the-runtimes-differ-from-the-standards).
 
 A runtime reads all the types of a file when it loads it, and rejects
@@ -873,6 +960,26 @@ the order of the tags they are encoded with, which for an untagged
 `CHOICE` is the tag of the alternative chosen (X.690 10.3), and rejects
 another order when decoding.
 
+### What BER writes
+
+BER can write a value in more than one way. The runtimes write it as
+DER does (X.690 10, 11): lengths of a known size in as few bytes as
+they take, strings in one piece, `TRUE` as the byte 0xFF, the bits
+past the length of a `BIT STRING` as 0 and no member with its default.
+They differ from DER only in this:
+
+- The members of a `SET` are in the canonical order of their tags, as
+  [Tags](#tags) tells, and the items of a `SET OF` in the order they
+  are given. Neither is sorted by its encoding.
+
+- `UTCTime` and `GeneralizedTime` are in the forms of
+  [Dates and times](#dates-and-times), which are not those of DER.
+
+A BER decoder reads every form X.690 8 allows: lengths of an unknown
+size, strings in pieces, any byte for `TRUE` and so on. A DER decoder
+reads only what DER writes, unless it is told to be lenient, when it
+reads what BER allows.
+
 ### Members
 
 The members of a `SEQUENCE`, a `SET` or a `CHOICE` are the
@@ -898,9 +1005,18 @@ members as the additions they are, one by one.
 
 `optional` is `OPTIONAL`. A `default` is `DEFAULT`, as
 [Defaults](#defaults) tells. A member with its default value is left
-out when encoding in all the codecs (but in PER, UPER and OER if it is
-an extension addition), and DER rejects it when decoding. When
-decoding, a member that is not there has its default, if it has one.
+out when encoding by BER, DER, PER, UPER and OER (but in PER, UPER and
+OER if it is an extension addition), and DER rejects it when decoding.
+JER and XER write every member the value has. When decoding, a member
+that is not there has its default, if it has one.
+
+A value to encode may be one of an earlier version of its type, made
+before some additions were. BER, DER, PER, UPER and OER write the
+additions in their order, up to the first one that can not be
+written, as one that is not there and is not `OPTIONAL`, and leave out
+that one and all after it. Any error in an addition ends them so,
+whatever it is. JER and XER reject a value without a member that is
+not `OPTIONAL` and has no default, also an addition.
 
 ### Defaults
 
@@ -1136,11 +1252,131 @@ An `ENUMERATED` that is extensible and has a value that is not one
 of its own decodes to nothing, and so does a `CHOICE` with an
 alternative of a later version, with no name.
 
-XER writes the items of a `SEQUENCE OF` and a `SET OF` as elements
-named `element_name`. Without it, they are named after the type of
-the items: the `name` of a `BuiltinType` or a `ReferencedType`, or
-the kind of the type, as `INTEGER`, `SEQUENCE` or `CHOICE`. Spaces
-in the name are written as `_`, as in `BIT_STRING`.
+### Dates and times
+
+A date is a year, a month and a day. A time is an hour, a minute, a
+second, a number of microseconds and an offset, in minutes east of
+UTC, or none for local time. The value of a `UTCTime`, a
+`GeneralizedTime` and a `DATE-TIME` is both. A runtime holds time to
+the microsecond: a decoder rounds a finer one down.
+
+`UTCTime` and `GeneralizedTime` are written as text, in these forms.
+`hh`, `mm` and `ss` are the hour, the minute and the second, and
+`±hhmm` is the offset, as `+0130` or `-0500`:
+
+| Type | BER, OER, JER and XER | DER, PER and UPER |
+|---|---|---|
+| `UTCTime` | `YYMMDDhhmm`, then `ss` if the second is not 0, then `Z` if there is no offset and `±hhmm` if there is one. | The time in UTC, as `YYMMDDhhmmssZ`. |
+| `GeneralizedTime` | `YYYYMMDDhhmm`, then `ss` if the second or the microseconds are not 0, then `.` and the microseconds without their trailing zeros if they are not 0, then nothing if there is no offset, `Z` if it is 0 and `±hhmm` else. | The time in UTC, as `YYYYMMDDhhmmss`, then the microseconds as in the other column, then `Z`. A time with no offset is taken as one in UTC. |
+
+A decoder reads a `UTCTime` as `YYMMDDhhmm`, then `ss` or not, then
+`Z` or `±hhmm` (X.680 47.3). It reads a `GeneralizedTime` as
+`YYYYMMDDhh`, then `mm` or not, then, after `mm`, `ss` or not, then `.`
+or `,` and any number of digits or not, then `Z`, `±hh`, `±hhmm` or
+nothing (X.680 46.3). The digits are a fraction of the last of the
+hour, the minute and the second there is, so `198511062106.456` is
+21:06:27.36. In DER, PER and UPER, it reads only the forms they
+write.
+The `Z` of a `UTCTime` is read as no offset, and that of a
+`GeneralizedTime` as the offset 0, but in DER, PER and UPER, where it
+is read as no offset too. The two digits of the year of a `UTCTime`
+are 1969 to 1999 from 69 to 99, and 2000 to 2068 from 00 to 68. That is
+not the rule of RFC 5280, which has 1950 to 2049. A year outside 1969
+to 2068 is written with its two last digits, and so read back as
+another year.
+
+`DATE`, `TIME-OF-DAY` and `DATE-TIME` are written by BER and DER as
+`YYYYMMDD`, `hhmmss` and `YYYYMMDDhhmmss`, by JER and XER as
+`YYYY-MM-DD`, `hh:mm:ss` and `YYYY-MM-DDThh:mm:ss`, and by PER, UPER and
+OER as X.691 32 and X.696 31 say. When reading the forms of JER and
+XER, the month, the day, the hour, the minute and the second may have
+one digit. These types have no fraction of a second and no offset
+(X.680 38.4.2, 38.4.3), and an encoder rejects a value that has one.
+
+A `DURATION` is written by XER without its elements that are 0, but
+the last one, so `P1Y0M2D` is `P1Y2D`, and as it is given by the
+others.
+
+### JER
+
+JER writes a value in one form of those X.697 allows:
+
+- Without spaces or line breaks, unless it is asked for `indent`
+  spaces for each level. It then writes a line break and the spaces of
+  the level after each `{`, `[` and `,`, and before each `}` and `]`, but
+  in `{}` and `[]`, and a space after each `:`.
+
+- In ASCII only: in a string, `"` and `\` are `\"` and `\\`, a line feed,
+  a carriage return, a tab, a backspace and a form feed are `\n`, `\r`,
+  `\t`, `\b` and `\f`, and every other character that is not 0x20 to
+  0x7E is `\u` and the four hexadecimal digits, in lower case, of each
+  of its UTF-16 code units.
+
+- The members of a `SEQUENCE` and a `SET` in the order they are
+  declared in, the additions last, and a `CHOICE` as an object with the
+  name of the alternative.
+
+- An `INTEGER` as a number, of any size. A `REAL` as the shortest
+  number that reads back as the same float, as `repr()` of Python
+  writes it: with a `.` and at least one digit after it if it is at
+  least 0.0001 and less than 10<sup>16</sup>, as `1.0` and `0.0001`,
+  and else with one digit before the `.`, if more, then `e`, the sign
+  of the exponent and at least two of its digits, as `1e-05` and
+  `1.5e+16`. A `REAL` given as an integer is written as one. Minus
+  zero, the infinities and NaN are the strings `"-0"`, `"-INF"`,
+  `"INF"` and `"NaN"` (X.697 23.2).
+
+- An `OCTET STRING` as a string of hexadecimal digits in upper case. A
+  `BIT STRING` with a size of one value as the digits of the bytes of
+  its bits, the bits past them 0, and any other as an object with
+  those digits in `value` and the number of bits in `length` (X.697
+  24). One with named bits is given or left the trailing 0 bits that
+  make its size of one value, and is rejected if it can not have it.
+
+- An `ENUMERATED` as the name of its item, also when the runtime is
+  told to give numbers (X.697 22).
+
+A decoder ignores the members of an object that are not those of the
+type. It reads a `REAL` from any JSON number, and from `"-0"`,
+`"-INF"`, `"INF"` and `"NaN"`.
+
+### XER
+
+XER writes a value in one form of those X.693 allows:
+
+- With no XML declaration. The outermost element is named after the
+  type that is encoded, a member after the member and an item of a
+  `SEQUENCE OF` or a `SET OF` as [Values](#values) tells, but for an
+  item that is a `BOOLEAN`, an `ENUMERATED` or a `CHOICE`, which has no
+  element of its own (X.693 9.3.6).
+
+- An element with no text and no elements in it as `<name />`, with a
+  space before the `/`. In text, `&`, `<` and `>` are `&amp;`, `&lt;`
+  and `&gt;`, and every character that is not ASCII is `&#` and its code
+  point in decimal, then `;`. In a character string, a control
+  character but tab, line feed and carriage return is the empty
+  element of its name in X.680 12.15.5, with no space, as `<bel/>`.
+
+- With `indent`, each element in another one on a line of its own,
+  after the spaces of its level, the end tag of an element with
+  elements in it on a line of its own, and a line feed after the
+  outermost element if it has elements in it.
+
+- A `BOOLEAN` as `<true />` or `<false />` and an `ENUMERATED` as the
+  element of the name of its item, in the element of the value. `NULL`
+  as an empty element.
+
+- An `INTEGER` in decimal. A finite `REAL` as the digits that JER
+  writes, then `E0`, if it is 0, or less than 10 away from 0 and JER
+  writes it with no `e`, as `1.5E0`, `0.0E0` and, for minus zero,
+  `-0.0E0`.
+  Any other as the fewest digits that read back as the same float, with
+  one before the `.` and at least one after it, then `E` and the
+  exponent, as `1.0E-5` and `1.2345E4`. The infinities and NaN as
+  `<PLUS-INFINITY />`, `<MINUS-INFINITY />` and `<NOT-A-NUMBER />`.
+
+- An `OCTET STRING` as hexadecimal digits in upper case, and a `BIT
+  STRING` as its bits, each `0` or `1`.
 
 ### Where the runtimes differ from the standards
 

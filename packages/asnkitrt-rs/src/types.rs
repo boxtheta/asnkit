@@ -1702,26 +1702,41 @@ fn default_value(types: &Types, ty: TypeId, constant: &Const) -> Result<Option<V
         (_, Const::Bool(value)) => Some(Value::Boolean(*value)),
         (_, Const::Real(value)) => Some(Value::Real(*value)),
         (_, Const::Text(text) | Const::Identifier(text)) => Some(Value::Text(text.clone())),
-        (_, Const::Named(name, value)) => default_value(types, ty, value)?
-            .map(|value| Value::Choice(name.clone(), Box::new(value))),
-        (_, Const::Sequence(members)) => {
+        // The value of an alternative, a member or an item is one of its
+        // own type.
+        (Kind::Choice(members), Const::Named(name, value)) => {
+            match members.all().find(|member| &member.name == name) {
+                Some(member) => default_value(types, member.ty, value)?
+                    .map(|value| Value::Choice(name.clone(), Box::new(value))),
+                None => None,
+            }
+        }
+        (
+            Kind::Sequence(members) | Kind::Set(members) | Kind::External(members),
+            Const::Sequence(values),
+        ) => {
             let mut converted = Vec::new();
 
-            for (name, value) in members {
-                // The member's type is not known here, so a value stands as it is.
-                if let Some(value) = default_value(types, ty, value)? {
-                    converted.push((name.clone(), value));
+            for (name, value) in values {
+                let Some(member) = members.all().find(|member| &member.name == name) else {
+                    return Ok(None);
+                };
+
+                match default_value(types, member.ty, value)? {
+                    Some(value) => converted.push((name.clone(), value)),
+                    None => return Ok(None),
                 }
             }
 
             Some(Value::Map(converted))
         }
-        (_, Const::List(items)) => {
+        (Kind::SequenceOf(element) | Kind::SetOf(element), Const::List(items)) => {
             let mut converted = Vec::new();
 
             for item in items {
-                if let Some(value) = default_value(types, ty, item)? {
-                    converted.push(value);
+                match default_value(types, *element, item)? {
+                    Some(value) => converted.push(value),
+                    None => return Ok(None),
                 }
             }
 

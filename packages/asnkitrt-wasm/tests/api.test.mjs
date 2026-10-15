@@ -159,6 +159,55 @@ describe('errors', () => {
 
     assert.throws(() => spec.encode('Pair', value), { name: 'EncodeError' });
   });
+
+  test('a value that holds itself is refused', () => {
+    const value = { id: 1 };
+
+    value.name = value;
+    assert.throws(() => spec.encode('Record', value), { name: 'EncodeError' });
+  });
+
+  test('a function is not a value', () => {
+    assert.throws(() => spec.encode('Record', { id: 1, name: () => 'x' }), { name: 'EncodeError' });
+  });
+});
+
+describe('values cross to the WebAssembly and back', () => {
+  const spec = new Specification(TYPES, 'ber');
+
+  test('with text that is not ASCII', () => {
+    for (const name of ['é', 'ünïcödé', '日本語', '😀 and more', 'a'.repeat(40) + 'é']) {
+      assert.deepEqual(roundTrip(spec, 'Record', { id: 1, name }), { id: 1, name });
+    }
+  });
+
+  test('with the numbers of every size', () => {
+    for (const number of [0, -1, 2 ** 31 - 1, -(2 ** 31), 2 ** 31, -(2 ** 31) - 1, 2 ** 40]) {
+      assert.equal(roundTrip(spec, 'Big', number), number);
+    }
+
+    assert.ok(Object.is(roundTrip(spec, 'Real', -0), -0));
+    assert.ok(Number.isNaN(roundTrip(spec, 'Real', NaN)));
+  });
+
+  test('with bytes that are their own', () => {
+    const data = bytes('030205a0');
+    const [decoded] = spec.decode('Bits', data);
+
+    assert.equal(decoded.byteLength, 1);
+    assert.equal(decoded.buffer.byteLength, 1);
+  });
+
+  test('when a getter of the value encodes too', () => {
+    const value = {
+      id: 1,
+      get name() {
+        return hex(spec.encode('Big', 5));
+      },
+    };
+
+    assert.deepEqual(spec.decode('Record', spec.encode('Record', value)), { id: 1, name: '020105' });
+  });
 });
 
 describe('codecs', () => {

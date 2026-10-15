@@ -19,6 +19,7 @@ from asnkitrt.codecs.codec import Codec
 
 from ..constants import EXTENSION_MARKER
 from . import (
+    check_local_time,
     NamedNumbersMixin,
     BaseType,
     DecodeError,
@@ -35,10 +36,64 @@ from . import (
 from .compiler import enum_values_as_dict
 
 
+# The names of the control characters in an "xmlcstring", by their code
+# (X.680 12.15.5, Table 3). Tab, line feed and carriage return are
+# written as they are.
+CONTROLS = [
+    "nul", "soh", "stx", "etx", "eot", "enq", "ack", "bel", "bs", "", "", "vt",
+    "ff", "", "so", "si", "dle", "dc1", "dc2", "dc3", "dc4", "nak", "syn", "etb",
+    "can", "em", "sub", "esc", "is4", "is3", "is2", "is1",
+]  # fmt: skip
+CONTROL_CODES = {name: code for code, name in enumerate(CONTROLS) if name}
+
+# A control character is first an element with this before its name,
+# which no identifier of ASN.1 has, so that it is told from an element of
+# a member, and then written as `<bel/>`, with no space (X.680 12.15.5).
+CONTROL_PREFIX = "ctl--"
+CONTROL_TAG = re.compile(rb"<ctl--([a-z0-9]+) />")
+
+
+def add_text(element, text):
+    """Set the text of `element` to `text`, with its control characters as
+    empty elements.
+
+    """
+
+    last = None
+
+    for part in re.split(r"([\x00-\x08\x0b\x0c\x0e-\x1f])", text):
+        if len(part) == 1 and ord(part) < 32:
+            last = ElementTree.SubElement(element, CONTROL_PREFIX + CONTROLS[ord(part)])
+        elif part:
+            if last is None:
+                element.text = part
+            else:
+                last.tail = part
+
+
+def text_of(element):
+    """The text of `element`, in which a control character is an empty
+    element, as `<bel/>`.
+
+    """
+
+    parts = [element.text or ""]
+
+    for child in element:
+        if child.tag not in CONTROL_CODES or len(child) or child.text:
+            raise DecodeError("Expected text in the XML element.")
+
+        parts.append(chr(CONTROL_CODES[child.tag]))
+        parts.append(child.tail or "")
+
+    return "".join(parts)
+
+
 def indent_xml(element, indent, level=0):
     i = "\n" + level * indent
 
-    if len(element):
+    # The control characters of a string are in its text.
+    if len(element) and not element[0].tag.startswith(CONTROL_PREFIX):
         if not element.text or not element.text.strip():
             element.text = i + indent
 
@@ -83,15 +138,12 @@ class StringType(Type):
         element = ElementTree.Element(self.name)
 
         if len(data) > 0:
-            element.text = data
+            add_text(element, data)
 
         return element
 
     def decode(self, element):
-        if element.text is None:
-            return ""
-        else:
-            return element.text
+        return text_of(element)
 
     def __repr__(self):
         return "{}({})".format(self.__class__.__name__, self.name)
@@ -643,6 +695,8 @@ class Date(StringType):
 
 class TimeOfDay(StringType):
     def encode(self, data):
+        check_local_time(data)
+
         element = ElementTree.Element(self.name)
         element.text = str(data)
 
@@ -667,6 +721,8 @@ class Duration(StringType):
 
 class DateTime(StringType):
     def encode(self, data):
+        check_local_time(data)
+
         element = ElementTree.Element(self.name)
         element.text = str(data).replace(" ", "T")
 
@@ -775,7 +831,7 @@ class CompiledType(compiler.CompiledType):
         if indent is not None:
             indent_xml(element, indent * " ")
 
-        return ElementTree.tostring(element)
+        return CONTROL_TAG.sub(rb"<\1/>", ElementTree.tostring(element))
 
     def decode(self, data):
         element = ElementTree.fromstring(data.decode("utf-8"))

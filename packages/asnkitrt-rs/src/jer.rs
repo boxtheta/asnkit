@@ -16,7 +16,7 @@ use alloc::vec::Vec;
 use crate::decimal;
 use crate::json::{self, Json};
 use crate::time::{self, iso};
-use crate::types::{Kind, MemberInfo, Members, TypeId, Types};
+use crate::types::{Kind, MemberInfo, Members, TypeId, Types, clean_bits};
 use crate::value::Value;
 use crate::{Error, Result};
 
@@ -122,10 +122,13 @@ impl Coder<'_> {
             },
             Kind::Real => match value {
                 Value::Real(value) => {
+                    // The special values are strings (X.697 23.2).
                     out.push_str(&if value.is_nan() {
                         String::from("\"NaN\"")
                     } else if value.is_infinite() {
                         String::from(if *value > 0.0 { "\"INF\"" } else { "\"-INF\"" })
+                    } else if *value == 0.0 && value.is_sign_negative() {
+                        String::from("\"-0\"")
                     } else {
                         decimal::float_repr(*value)
                     });
@@ -143,7 +146,7 @@ impl Coder<'_> {
                 }
                 _ => encode_error("Expected None."),
             },
-            Kind::BitString(_) => {
+            Kind::BitString(named) => {
                 let Value::Bits(bytes, bits) = value else {
                     return encode_error("Expected data of type tuple(bytes, int).");
                 };
@@ -152,14 +155,37 @@ impl Coder<'_> {
                     return encode_error("Expected more bits of data.");
                 }
 
-                if self.fixed_size(id).is_some() {
-                    json::write_string(out, &decimal::hex_upper(bytes));
-                } else {
-                    out.push_str("{\"value\":");
-                    json::write_string(out, &decimal::hex_upper(bytes));
-                    out.push_str(",\"length\":");
-                    out.push_str(&alloc::format!("{bits}"));
-                    out.push('}');
+                // The bytes of the bits, with those past them 0 (X.697
+                // 24.2.1).
+                let (mut bytes, mut bits) = clean_bits(bytes, *bits, false);
+
+                match self.fixed_size(id) {
+                    Some(size) => {
+                        // With named bits, trailing 0 bits are added or
+                        // removed to make the size (X.697 24.2.2).
+                        if !named.is_empty() {
+                            let (trimmed, length) = clean_bits(&bytes, bits, true);
+
+                            if length <= size {
+                                bytes = trimmed;
+                                bytes.resize(size.div_ceil(8), 0);
+                                bits = size;
+                            }
+                        }
+
+                        if bits != size {
+                            return encode_error("The BIT STRING is not of its size.");
+                        }
+
+                        json::write_string(out, &decimal::hex_upper(&bytes));
+                    }
+                    None => {
+                        out.push_str("{\"value\":");
+                        json::write_string(out, &decimal::hex_upper(&bytes));
+                        out.push_str(",\"length\":");
+                        out.push_str(&alloc::format!("{bits}"));
+                        out.push('}');
+                    }
                 }
 
                 Ok(())
@@ -189,14 +215,15 @@ impl Coder<'_> {
 
                         json::write_string(out, name);
                     }
+                    // The name, also of a value given as its number (X.697 22).
                     Value::Integer(number) if self.types.numeric_enums => {
-                        if !names(root, additions)
-                            .any(|(_, candidate)| i128::from(*candidate) == *number)
-                        {
+                        let Some((name, _)) = names(root, additions)
+                            .find(|(_, candidate)| i128::from(*candidate) == *number)
+                        else {
                             return encode_error("Expected an enumeration value.");
-                        }
+                        };
 
-                        out.push_str(&alloc::format!("{number}"));
+                        json::write_string(out, name);
                     }
                     _ => return encode_error("Expected an enumeration value."),
                 }
@@ -251,7 +278,7 @@ impl Coder<'_> {
             },
             Kind::TimeOfDay => match value {
                 Value::Time(value) => {
-                    json::write_string(out, &iso::time_to_string(value));
+                    json::write_string(out, &iso::time_to_string(value)?);
 
                     Ok(())
                 }
@@ -259,7 +286,7 @@ impl Coder<'_> {
             },
             Kind::DateTime => match value {
                 Value::DateTime(value) => {
-                    json::write_string(out, &iso::date_time_to_string(value));
+                    json::write_string(out, &iso::date_time_to_string(value)?);
 
                     Ok(())
                 }
@@ -364,8 +391,8 @@ impl Coder<'_> {
                     "INF" => Ok(Value::Real(f64::INFINITY)),
                     "-INF" => Ok(Value::Real(f64::NEG_INFINITY)),
                     "NaN" => Ok(Value::Real(f64::NAN)),
-                    "0" | "-0" => Ok(Value::Real(0.0)),
-                    _ => decode_error("Expected a JSON number or INF, -INF or NaN."),
+                    "-0" => Ok(Value::Real(-0.0)),
+                    _ => decode_error("Expected a JSON number or INF, -INF, NaN or -0."),
                 },
                 _ => decode_error("Expected a JSON number."),
             },
@@ -413,14 +440,15 @@ impl Coder<'_> {
             },
             Kind::Enumerated { root, additions } => {
                 let found = match json {
-                    Json::Str(name) if !self.types.numeric_enums => names(root, additions)
+                    Json::Str(name) => names(root, additions)
                         .find(|(candidate, _)| candidate == name)
-                        .map(|_| Value::Text(name.clone())),
-                    Json::Int(Value::Integer(number)) if self.types.numeric_enums => {
-                        names(root, additions)
-                            .find(|(_, candidate)| i128::from(*candidate) == *number)
-                            .map(|_| Value::Integer(*number))
-                    }
+                        .map(|(name, number)| {
+                            if self.types.numeric_enums {
+                                Value::Integer(i128::from(*number))
+                            } else {
+                                Value::Text(name.clone())
+                            }
+                        }),
                     _ => None,
                 };
 

@@ -74,8 +74,8 @@ class UtilsTest(unittest.TestCase):
             ("198201021200", datetime(1982, 1, 2, 12, 0, 0)),
             ("198201021211", datetime(1982, 1, 2, 12, 11)),
             ("19820102120023.5", datetime(1982, 1, 2, 12, 0, 23, 500000)),
-            ("198201021222.5", datetime(1982, 1, 2, 12, 22, 0, 500000)),
-            ("198201021200.5", datetime(1982, 1, 2, 12, 0, 0, 500000)),
+            ("19820102122200.5", datetime(1982, 1, 2, 12, 22, 0, 500000)),
+            ("19820102120000.5", datetime(1982, 1, 2, 12, 0, 0, 500000)),
             ("19820102120024Z", datetime(1982, 1, 2, 12, 0, 24, tzinfo=tzinfo(0))),
             ("198201021200Z", datetime(1982, 1, 2, 12, 0, 0, tzinfo=tzinfo(0))),
             (
@@ -83,7 +83,7 @@ class UtilsTest(unittest.TestCase):
                 datetime(1982, 1, 2, 12, 0, 25, 100000, tzinfo=tzinfo(0)),
             ),
             (
-                "198201021200.1Z",
+                "19820102120000.1Z",
                 datetime(1982, 1, 2, 12, 0, 0, 100000, tzinfo=tzinfo(0)),
             ),
             (
@@ -96,7 +96,7 @@ class UtilsTest(unittest.TestCase):
                 datetime(1982, 1, 2, 12, 0, 27, 100000, tzinfo=tzinfo(1)),
             ),
             (
-                "198201021200.1+0100",
+                "19820102120000.1+0100",
                 datetime(1982, 1, 2, 12, 0, 0, 100000, tzinfo=tzinfo(1)),
             ),
         ]
@@ -107,17 +107,38 @@ class UtilsTest(unittest.TestCase):
             actual = generalized_time_from_datetime(date)
             self.assertEqual(actual, generalized_time)
 
+    def test_generalized_time_fractions_of_minutes_and_hours(self):
+        """A fraction after the minute is one of a minute, and after the
+        hour one of an hour, which may also have no minute (X.680 46.3).
+
+        """
+
+        datas = [
+            ("198511062106.456", datetime(1985, 11, 6, 21, 6, 27, 360000)),
+            ("1985110621.14159", datetime(1985, 11, 6, 21, 8, 29, 724000)),
+            ("1985110621", datetime(1985, 11, 6, 21, 0, 0)),
+            ("198201021222.5Z", datetime(1982, 1, 2, 12, 22, 30, tzinfo=tzinfo(0))),
+            ("1982010212,25+01", datetime(1982, 1, 2, 12, 15, 0, tzinfo=tzinfo(1))),
+            (
+                "19820102120000.1234567Z",
+                datetime(1982, 1, 2, 12, 0, 0, 123456, tzinfo=tzinfo(0)),
+            ),
+        ]
+
+        for generalized_time, date in datas:
+            self.assertEqual(generalized_time_to_datetime(generalized_time), date)
+
     def test_generalized_time_comma(self):
         datas = [
             ("19820102120023,5", datetime(1982, 1, 2, 12, 0, 23, 500000)),
-            ("198201021200,5", datetime(1982, 1, 2, 12, 0, 0, 500000)),
+            ("198201021200,5", datetime(1982, 1, 2, 12, 0, 30)),
             (
                 "19820102120027,1+0100",
                 datetime(1982, 1, 2, 12, 0, 27, 100000, tzinfo=tzinfo(1)),
             ),
             (
                 "198201021200,1+0100",
-                datetime(1982, 1, 2, 12, 0, 0, 100000, tzinfo=tzinfo(1)),
+                datetime(1982, 1, 2, 12, 0, 6, tzinfo=tzinfo(1)),
             ),
         ]
 

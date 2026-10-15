@@ -93,30 +93,39 @@ impl Cursor<'_> {
         self.at == self.bytes.len()
     }
 
-    /// One to six digits of a fraction, as microseconds.
-    fn fraction(&mut self) -> Result<u32> {
+    /// The digits of a fraction of a unit of `unit` microseconds, as
+    /// microseconds, rounded down. There may be any number of digits
+    /// (X.680 46.3), but those past the 20th are less than a
+    /// microsecond, and are not looked at.
+    fn fraction(&mut self, unit: u128) -> Result<u64> {
         let mut digits = 0;
-        let mut value = 0u32;
+        let mut value = 0u128;
+        let mut any = false;
 
         while let Some(byte) = self.peek() {
-            if !byte.is_ascii_digit() || digits == 6 {
+            if !byte.is_ascii_digit() {
                 break;
             }
 
-            value = value * 10 + u32::from(byte - b'0');
-            digits += 1;
+            if digits < 20 {
+                value = value * 10 + u128::from(byte - b'0');
+                digits += 1;
+            }
+
+            any = true;
             self.at += 1;
         }
 
-        if digits == 0 {
+        if !any {
             return Err(bad());
         }
 
-        Ok(value * 10u32.pow(6 - digits))
+        Ok((value * unit / 10u128.pow(digits)) as u64)
     }
 
-    /// `+HHMM` or `-HHMM`, as minutes east of UTC.
-    fn offset(&mut self) -> Result<i32> {
+    /// `+HHMM` or `-HHMM`, or with `hours_only` also `+HH` or `-HH`, as
+    /// minutes east of UTC.
+    fn offset(&mut self, hours_only: bool) -> Result<i32> {
         let sign = match self.peek() {
             Some(b'+') => 1,
             Some(b'-') => -1,
@@ -126,7 +135,11 @@ impl Cursor<'_> {
         self.at += 1;
 
         let hours = self.number(2)? as i32;
-        let minutes = self.number(2)? as i32;
+        let minutes = if hours_only && self.done() {
+            0
+        } else {
+            self.number(2)? as i32
+        };
 
         if minutes > 59 || hours > 23 {
             return Err(bad());
@@ -279,7 +292,7 @@ pub fn utc_time_from_string(string: &str, restricted: bool) -> Result<DateTime> 
                 None
             }
             _ if restricted => return Err(bad()),
-            _ => Some(cursor.offset()?),
+            _ => Some(cursor.offset(false)?),
         };
 
         if !cursor.done() {
@@ -327,7 +340,8 @@ pub fn generalized_time_to_string(value: &DateTime, restricted: bool) -> String 
         value.date.year, value.date.month, value.date.day, value.time.hour, value.time.minute
     );
 
-    if value.time.second != 0 {
+    // A fraction after the minute would be one of a minute (X.680 46.3).
+    if value.time.second != 0 || value.time.microsecond != 0 {
         string.push_str(&format!("{:02}", value.time.second));
     }
 
@@ -368,27 +382,39 @@ pub fn generalized_time_from_string(string: &str, restricted: bool) -> Result<Da
         let month = cursor.number(2)? as u8;
         let day = cursor.number(2)? as u8;
         let hour = cursor.number(2)? as u8;
-        let minute = cursor.number(2)? as u8;
-        let mut second = 0;
-        let mut microsecond = 0;
-
-        // Seconds, or a fraction of minutes that python reads as seconds.
-        if cursor.peek().is_some_and(|byte| byte.is_ascii_digit()) {
-            second = cursor.number(2)? as u8;
-        }
-
-        if matches!(cursor.peek(), Some(b'.' | b',')) {
+        let is_digit =
+            |cursor: &Cursor<'_>| cursor.peek().is_some_and(|byte| byte.is_ascii_digit());
+        // The minute and the second may be left out, and a fraction is
+        // one of the last of the hour, the minute and the second there
+        // is (X.680 46.3).
+        let minute = if is_digit(cursor) {
+            Some(cursor.number(2)? as u8)
+        } else {
+            None
+        };
+        let second = if minute.is_some() && is_digit(cursor) {
+            Some(cursor.number(2)? as u8)
+        } else {
+            None
+        };
+        let unit: u128 = match (minute, second) {
+            (None, _) => 3_600_000_000,
+            (Some(_), None) => 60_000_000,
+            (Some(_), Some(_)) => 1_000_000,
+        };
+        let fraction = if matches!(cursor.peek(), Some(b'.' | b',')) {
             cursor.at += 1;
-            microsecond = cursor.fraction()?;
-        }
-
+            cursor.fraction(unit)?
+        } else {
+            0
+        };
         let offset = match cursor.peek() {
             Some(b'Z') => {
                 cursor.at += 1;
 
                 Some(0)
             }
-            Some(b'+' | b'-') => Some(cursor.offset()?),
+            Some(b'+' | b'-') => Some(cursor.offset(true)?),
             _ => None,
         };
 
@@ -396,14 +422,18 @@ pub fn generalized_time_from_string(string: &str, restricted: bool) -> Result<Da
             return Err(bad());
         }
 
+        let minute = u64::from(minute.unwrap_or(0)) + fraction / 60_000_000;
+        let fraction = fraction % 60_000_000;
+        let second = u64::from(second.unwrap_or(0)) + fraction / 1_000_000;
+
         Ok(DateTime {
             date: checked_date(year, month, day)?,
             // The restricted form is read as a naive time.
             time: checked_time(
                 hour,
-                minute,
-                second,
-                microsecond,
+                u8::try_from(minute).map_err(|_| bad())?,
+                u8::try_from(second).map_err(|_| bad())?,
+                (fraction % 1_000_000) as u32,
                 if restricted { None } else { offset },
             )?,
         })
@@ -432,19 +462,26 @@ pub fn date_from_string(string: &str) -> Result<Date> {
     checked_date(year, month, day)
 }
 
-/// What `str(time)` of Python is without the colons.
-pub fn time_of_day_to_string(value: &Time) -> String {
-    let mut string = format!("{:02}{:02}{:02}", value.hour, value.minute, value.second);
-
-    if value.microsecond > 0 {
-        string.push_str(&format!(".{:06}", value.microsecond));
+/// Checks that a time is one of a TIME-OF-DAY or a DATE-TIME, which
+/// are a local time to the second (X.680 38.4.2, 38.4.3).
+pub fn check_local_time(value: &Time) -> Result<()> {
+    if value.microsecond != 0 || value.offset.is_some() {
+        return Err(Error::Encode(
+            "A TIME-OF-DAY or a DATE-TIME has no fraction of a second and no offset.",
+        ));
     }
 
-    if let Some(offset) = value.offset {
-        string.push_str(&format_offset(offset));
-    }
+    Ok(())
+}
 
-    string
+/// A TIME-OF-DAY as BER writes it (X.690 8.26.3).
+pub fn time_of_day_to_string(value: &Time) -> Result<String> {
+    check_local_time(value)?;
+
+    Ok(format!(
+        "{:02}{:02}{:02}",
+        value.hour, value.minute, value.second
+    ))
 }
 
 pub fn time_of_day_from_string(string: &str) -> Result<Time> {
@@ -463,8 +500,11 @@ pub fn time_of_day_from_string(string: &str) -> Result<Time> {
     checked_time(hour, minute, second, 0, None)
 }
 
-pub fn date_time_to_string(value: &DateTime) -> String {
-    format!(
+/// A DATE-TIME as BER writes it (X.690 8.26.4).
+pub fn date_time_to_string(value: &DateTime) -> Result<String> {
+    check_local_time(&value.time)?;
+
+    Ok(format!(
         "{:04}{:02}{:02}{:02}{:02}{:02}",
         value.date.year,
         value.date.month,
@@ -472,7 +512,7 @@ pub fn date_time_to_string(value: &DateTime) -> String {
         value.time.hour,
         value.time.minute,
         value.time.second
-    )
+    ))
 }
 
 pub fn date_time_from_string(string: &str) -> Result<DateTime> {
@@ -507,29 +547,21 @@ pub(crate) mod iso {
         format!("{:04}-{:02}-{:02}", value.year, value.month, value.day)
     }
 
-    pub fn time_to_string(value: &Time) -> String {
-        let mut string = format!("{:02}:{:02}:{:02}", value.hour, value.minute, value.second);
+    pub fn time_to_string(value: &Time) -> Result<String> {
+        check_local_time(value)?;
 
-        if value.microsecond > 0 {
-            string.push_str(&format!(".{:06}", value.microsecond));
-        }
-
-        if let Some(offset) = value.offset {
-            let sign = if offset < 0 { '-' } else { '+' };
-            let offset = offset.abs();
-
-            string.push_str(&format!("{sign}{:02}:{:02}", offset / 60, offset % 60));
-        }
-
-        string
+        Ok(format!(
+            "{:02}:{:02}:{:02}",
+            value.hour, value.minute, value.second
+        ))
     }
 
-    pub fn date_time_to_string(value: &DateTime) -> String {
-        format!(
+    pub fn date_time_to_string(value: &DateTime) -> Result<String> {
+        Ok(format!(
             "{}T{}",
             date_to_string(&value.date),
-            time_to_string(&value.time)
-        )
+            time_to_string(&value.time)?
+        ))
     }
 
     /// One or two digits, as many as there are.
@@ -1169,11 +1201,11 @@ mod tests {
             offset: None,
         };
 
-        assert_eq!(time_of_day_to_string(&time), "152746");
+        assert_eq!(time_of_day_to_string(&time).as_deref(), Ok("152746"));
         assert_eq!(time_of_day_from_string("152746"), Ok(time));
         assert_eq!(
-            date_time_to_string(&naive(1985, 4, 12, 15, 27, 30)),
-            "19850412152730"
+            date_time_to_string(&naive(1985, 4, 12, 15, 27, 30)).as_deref(),
+            Ok("19850412152730")
         );
         assert_eq!(
             date_time_from_string("19850412152730"),

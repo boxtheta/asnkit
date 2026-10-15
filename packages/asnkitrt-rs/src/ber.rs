@@ -1089,11 +1089,11 @@ impl<'a> Coder<'a> {
                 _ => encode_error("Expected data of type datetime.date."),
             },
             Kind::TimeOfDay => match value {
-                Value::Time(value) => Ok(time::time_of_day_to_string(value).into_bytes()),
+                Value::Time(value) => Ok(time::time_of_day_to_string(value)?.into_bytes()),
                 _ => encode_error("Expected data of type datetime.time."),
             },
             Kind::DateTime => match value {
-                Value::DateTime(value) => Ok(time::date_time_to_string(value).into_bytes()),
+                Value::DateTime(value) => Ok(time::date_time_to_string(value)?.into_bytes()),
                 _ => encode_error("Expected data of type datetime.datetime."),
             },
             Kind::Duration => match value {

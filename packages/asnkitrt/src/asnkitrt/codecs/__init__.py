@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 import importlib
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, List
 
@@ -180,25 +181,81 @@ class OutOfDataError(DecodeError):
         return " (At bit offset: {})".format(self.offset)
 
 
-def _generalized_time_to_datetime(string: str) -> datetime:
-    length = len(string)
+# A GeneralizedTime: the date and the hour, then the minute and the
+# second or not, a fraction of the last of them or not, and the offset
+# or not (X.680 46.3).
+_GENERALIZED_TIME = re.compile(
+    r"(\d{4})(\d{2})(\d{2})(\d{2})(?:(\d{2})(\d{2})?)?(?:[.,](\d+))?"
+    r"(Z|[+-]\d{2}(?:\d{2})?)?\Z",
+    re.ASCII,
+)
 
-    if "." in string:
-        try:
-            return datetime.strptime(string, "%Y%m%d%H%M.%f")
-        except ValueError:
-            return datetime.strptime(string, "%Y%m%d%H%M%S.%f")
-    elif "," in string:
-        try:
-            return datetime.strptime(string, "%Y%m%d%H%M,%f")
-        except ValueError:
-            return datetime.strptime(string, "%Y%m%d%H%M%S,%f")
-    elif length == 12:
-        return datetime.strptime(string, "%Y%m%d%H%M")
-    elif length == 14:
-        return datetime.strptime(string, "%Y%m%d%H%M%S")
-    else:
+
+def _parse_generalized_time(string: str) -> datetime:
+    match = _GENERALIZED_TIME.match(string)
+
+    if match is None:
         raise ValueError
+
+    year, month, day, hour, minute, second, fraction, offset = match.groups()
+
+    # A fraction is one of the hour, the minute or the second, as
+    # microseconds rounded down. The digits past the 20th are less than a
+    # microsecond, and are not looked at.
+    if minute is None:
+        unit = 3_600_000_000
+    elif second is None:
+        unit = 60_000_000
+    else:
+        unit = 1_000_000
+
+    if fraction is None:
+        microseconds = 0
+    else:
+        digits = fraction[:20]
+        microseconds = int(digits) * unit // 10 ** len(digits)
+
+    minutes = int(minute or 0) + microseconds // 60_000_000
+    microseconds %= 60_000_000
+    seconds = int(second or 0) + microseconds // 1_000_000
+
+    if offset is None:
+        tzinfo = None
+    elif offset == "Z":
+        tzinfo = timezone(timedelta(hours=0))
+    else:
+        hours = int(offset[1:3])
+        offset_minutes = int(offset[3:5] or 0)
+
+        if hours > 23 or offset_minutes > 59:
+            raise ValueError
+
+        sign = -1 if offset[0] == "-" else 1
+        tzinfo = timezone(timedelta(minutes=sign * (hours * 60 + offset_minutes)))
+
+    return datetime(
+        int(year),
+        int(month),
+        int(day),
+        int(hour),
+        minutes,
+        seconds,
+        microseconds % 1_000_000,
+        tzinfo=tzinfo,
+    )
+
+
+def check_local_time(value: Any) -> None:
+    """Check that `value`, a ``datetime.time`` or a ``datetime.datetime``,
+    is one of a TIME-OF-DAY or a DATE-TIME, which are a local time to the
+    second (X.680 38.4.2, 38.4.3).
+
+    """
+
+    if value.microsecond != 0 or value.tzinfo is not None:
+        raise EncodeError(
+            "A TIME-OF-DAY or a DATE-TIME has no fraction of a second and no offset."
+        )
 
 
 def format_or(items: List[Any]) -> str:
@@ -311,25 +368,7 @@ def generalized_time_to_datetime(string: str) -> datetime:
     """
 
     try:
-        if string[-1] == "Z":
-            date = _generalized_time_to_datetime(string[:-1])
-
-            return date.replace(tzinfo=timezone(timedelta(hours=0)))
-        elif string[-5] in "-+":
-            if "." in string:
-                try:
-                    return datetime.strptime(string, "%Y%m%d%H%M.%f%z")
-                except ValueError:
-                    return datetime.strptime(string, "%Y%m%d%H%M%S.%f%z")
-            elif "," in string:
-                try:
-                    return datetime.strptime(string, "%Y%m%d%H%M,%f%z")
-                except ValueError:
-                    return datetime.strptime(string, "%Y%m%d%H%M%S,%f%z")
-            else:
-                return datetime.strptime(string, "%Y%m%d%H%M%S%z")
-        else:
-            return _generalized_time_to_datetime(string)
+        return _parse_generalized_time(string)
     except (ValueError, IndexError):
         raise Error("Expected a generalized time string, but got '{}'.".format(string))
 
@@ -340,16 +379,13 @@ def generalized_time_from_datetime(date: datetime) -> str:
 
     """
 
-    if date.second == 0:
-        if date.microsecond > 0:
-            string = date.strftime("%Y%m%d%H%M.%f").rstrip("0")
-        else:
-            string = date.strftime("%Y%m%d%H%M")
+    # A fraction after the minute would be one of a minute (X.680 46.3).
+    if date.microsecond > 0:
+        string = date.strftime("%Y%m%d%H%M%S.%f").rstrip("0")
+    elif date.second > 0:
+        string = date.strftime("%Y%m%d%H%M%S")
     else:
-        if date.microsecond > 0:
-            string = date.strftime("%Y%m%d%H%M%S.%f").rstrip("0")
-        else:
-            string = date.strftime("%Y%m%d%H%M%S")
+        string = date.strftime("%Y%m%d%H%M")
 
     if date.tzinfo is not None:
         if date.utcoffset():
@@ -376,12 +412,11 @@ def restricted_generalized_time_to_datetime(string: str) -> datetime:
 
             if string[14] != ".":
                 raise ValueError
-
-            return datetime.strptime(string[:-1], "%Y%m%d%H%M%S.%f")
         elif len(string) != 15:
             raise ValueError
 
-        return datetime.strptime(string[:-1], "%Y%m%d%H%M%S")
+        # Read as a time with no offset.
+        return _parse_generalized_time(string[:-1])
     except (ValueError, IndexError):
         raise Error(
             "Expected a restricted generalized time string, but got '{}'.".format(

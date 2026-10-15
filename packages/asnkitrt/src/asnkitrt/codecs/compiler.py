@@ -624,11 +624,61 @@ class Compiler(object):
                 if resolved_member["type"] == "OCTET STRING":
                     self.pre_process_default_value_octet_string(member)
 
-                if resolved_member["type"] == "ENUMERATED" and self._numeric_enums:
-                    for key, value in resolved_member["values"]:
-                        if key == member["default"]:
-                            member["default"] = value
-                            break
+                if self._numeric_enums:
+                    member["default"] = self.numeric_enums_of_default(
+                        member["default"], resolved_member, module_name
+                    )
+
+    def numeric_enums_of_default(self, default, resolved, module_name):
+        """The items of ENUMERATED types in `default`, a value of the type
+        `resolved`, as their numbers. A member, an alternative and an
+        item is one of its own type.
+
+        """
+
+        type_name = resolved["type"]
+
+        if type_name == "ENUMERATED":
+            for key, value in resolved["values"]:
+                if key == default:
+                    return value
+        elif type_name in ["SEQUENCE", "SET"] and isinstance(default, dict):
+            members = {
+                member["name"]: member
+                for member in flatten(resolved["members"])
+                if member != EXTENSION_MARKER
+            }
+
+            return {
+                name: self.numeric_enums_of_default(
+                    value,
+                    self.resolve_type_descriptor(members[name], module_name),
+                    module_name,
+                )
+                if name in members
+                else value
+                for name, value in default.items()
+            }
+        elif type_name == "CHOICE" and isinstance(default, tuple):
+            for member in flatten(resolved["members"]):
+                if member != EXTENSION_MARKER and member["name"] == default[0]:
+                    return (
+                        default[0],
+                        self.numeric_enums_of_default(
+                            default[1],
+                            self.resolve_type_descriptor(member, module_name),
+                            module_name,
+                        ),
+                    )
+        elif type_name in ["SEQUENCE OF", "SET OF"] and isinstance(default, list):
+            element = self.resolve_type_descriptor(resolved["element"], module_name)
+
+            return [
+                self.numeric_enums_of_default(item, element, module_name)
+                for item in default
+            ]
+
+        return default
 
     def pre_process_default_value_reference(self, member, resolved_member, module_name):
         """Replace a default value given as a named number or as a

@@ -308,11 +308,11 @@ impl Coder<'_> {
                 _ => return encode_error("Expected data of type datetime.date."),
             },
             Kind::TimeOfDay => match value {
-                Value::Time(value) => element.text = Some(iso::time_to_string(value)),
+                Value::Time(value) => element.text = Some(iso::time_to_string(value)?),
                 _ => return encode_error("Expected data of type datetime.time."),
             },
             Kind::DateTime => match value {
-                Value::DateTime(value) => element.text = Some(iso::date_time_to_string(value)),
+                Value::DateTime(value) => element.text = Some(iso::date_time_to_string(value)?),
                 _ => return encode_error("Expected data of type datetime.datetime."),
             },
             Kind::Duration => match value {
@@ -388,6 +388,26 @@ impl Coder<'_> {
         }
     }
 
+    /// The text of a character string, in which a control character is
+    /// an empty element, as `<bel/>` (X.680 12.15.5).
+    fn string(&self, element: &Element) -> Result<String> {
+        let mut text = String::from(element.text.as_deref().unwrap_or(""));
+
+        for child in &element.children {
+            let control = crate::xml::control(&child.name)
+                .filter(|_| child.text.is_none() && child.children.is_empty());
+
+            match control {
+                Some(control) => text.push(control),
+                None => return decode_error("Expected text in the XML element."),
+            }
+
+            text.push_str(child.tail.as_deref().unwrap_or(""));
+        }
+
+        Ok(text)
+    }
+
     fn decode(&self, id: TypeId, element: &Element, depth: usize) -> Result<Value> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.");
@@ -454,7 +474,7 @@ impl Coder<'_> {
                 }
             }
             Kind::ObjectIdentifier => Ok(Value::text(self.text(element)?)),
-            Kind::Str(_) => Ok(Value::text(element.text.as_deref().unwrap_or(""))),
+            Kind::Str(_) => self.string(element).map(Value::Text),
             Kind::Enumerated { root, additions } => {
                 let Some(inner) = element.children.first() else {
                     return decode_error("Expected an enumeration value.");

@@ -35,7 +35,8 @@ per line with:
    The name of the file in ``specs``, without ``.asni``.
 
 ``codec``
-   ``ber``, ``der``, ``oer``, ``per`` or ``uper``.
+   ``ber``, ``der``, ``oer``, ``per``, ``uper``, ``jer`` or ``xer``. The
+   bytes of ``jer`` and ``xer`` are UTF-8 text.
 
 ``numeric_enums``, ``lenient``
    How the specification was loaded.

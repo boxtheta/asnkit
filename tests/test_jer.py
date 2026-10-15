@@ -45,8 +45,10 @@ class JerTest(unittest.TestCase):
         self.assertEqual(foo.encode("A", float("nan")), b'"NaN"')
         self.assertTrue(math.isnan(foo.decode("A", b'"NaN"')))
 
-        self.assertEqual(foo.decode("A", b'"0"'), 0.0)
-        self.assertEqual(foo.decode("A", b'"-0"'), 0.0)
+        # Minus zero is a string (X.697 23.2).
+        self.assertEqual(foo.encode("A", -0.0), b'"-0"')
+        self.assertEqual(math.copysign(1.0, foo.decode("A", b'"-0"')), -1.0)
+        self.assertEqual(foo.encode("A", 0.0), b"0.0")
 
     def test_bit_string(self):
         foo = fixtures.compile_string(
@@ -66,6 +68,32 @@ class JerTest(unittest.TestCase):
 
         for type_name, decoded, encoded in datas:
             self.assert_encode_decode_string(foo, type_name, decoded, encoded)
+
+    def test_bit_string_bytes_of_the_bits(self):
+        """The hexadecimal digits are those of the bits, with the bits past
+        them 0, and with named bits and a size, trailing 0 bits make the
+        size (X.697 24.2).
+
+        """
+
+        foo = fixtures.compile_string(
+            "Foo DEFINITIONS AUTOMATIC TAGS ::= "
+            "BEGIN "
+            "A ::= BIT STRING "
+            "B ::= BIT STRING (SIZE (6)) "
+            "C ::= BIT STRING { a(0), b(1) } (SIZE (4)) "
+            "END",
+            "jer",
+        )
+
+        self.assertEqual(
+            json.loads(foo.encode("A", (b"\x4f\xff", 4))), {"value": "40", "length": 4}
+        )
+        self.assertEqual(foo.encode("B", (b"\xaf", 6)), b'"AC"')
+        self.assertEqual(foo.encode("C", (b"\x40", 2)), b'"40"')
+
+        with self.assertRaises(fixtures.EncodeError):
+            foo.encode("B", (b"\xac", 5))
 
     def test_octet_string(self):
         foo = fixtures.compile_string(
@@ -119,6 +147,22 @@ class JerTest(unittest.TestCase):
 
         for type_name, decoded, encoded in datas:
             self.assert_encode_decode_string(foo, type_name, decoded, encoded)
+
+        # Written as the name also when the values are numbers (X.697 22).
+        numeric = fixtures.compile_string(
+            "Foo DEFINITIONS AUTOMATIC TAGS ::= "
+            "BEGIN "
+            "A ::= ENUMERATED { "
+            "  a(1), "
+            "  b(3) "
+            "} "
+            "END",
+            "jer",
+            numeric_enums=True,
+        )
+
+        self.assertEqual(numeric.encode("A", 3), b'"b"')
+        self.assertEqual(numeric.decode("A", b'"b"'), 3)
 
         # Encode error.
         with self.assertRaises(fixtures.EncodeError) as cm:

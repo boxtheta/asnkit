@@ -369,6 +369,31 @@ class XerTest(BaseTest):
         for type_name, decoded, encoded in datas:
             self.assert_encode_decode_string(foo, type_name, decoded, encoded)
 
+    def test_control_characters(self):
+        """The control characters but tab, line feed and carriage return are
+        empty elements, with no space in them (X.680 12.15.5).
+
+        """
+
+        foo = fixtures.compile_string(
+            "Foo DEFINITIONS AUTOMATIC TAGS ::= "
+            "BEGIN "
+            "A ::= SEQUENCE { a UTF8String, bel NULL } "
+            "END",
+            "xer",
+        )
+
+        datas = [
+            (
+                "A",
+                {"a": "x\x07y\x00\tz\x1f", "bel": None},
+                b"<A><a>x<bel/>y<nul/>\tz<is1/></a><bel /></A>",
+            ),
+        ]
+
+        for type_name, decoded, encoded in datas:
+            self.assert_encode_decode_string(foo, type_name, decoded, encoded)
+
     def test_generalized_time(self):
         foo = fixtures.compile_string(
             "Foo DEFINITIONS AUTOMATIC TAGS ::= BEGIN A ::= GeneralizedTime END", "xer"
@@ -377,7 +402,7 @@ class XerTest(BaseTest):
         datas = [
             ("A", gt2dt("199205210000Z"), b"<A>199205210000Z</A>"),
             ("A", gt2dt("19920622123421Z"), b"<A>19920622123421Z</A>"),
-            ("A", gt2dt("199207221321.3Z"), b"<A>199207221321.3Z</A>"),
+            ("A", gt2dt("19920722132100.3Z"), b"<A>19920722132100.3Z</A>"),
         ]
 
         for type_name, decoded, encoded in datas:

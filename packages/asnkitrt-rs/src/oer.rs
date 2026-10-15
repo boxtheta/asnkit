@@ -689,6 +689,8 @@ impl Coder<'_> {
     }
 
     fn encode_time_of_day(&self, time: &Time, w: &mut Writer) -> Result<()> {
+        time::check_local_time(time)?;
+
         w.uint(u128::from(time.hour), 8);
         w.uint(u128::from(time.minute), 8);
         w.uint(u128::from(time.second), 8);

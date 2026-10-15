@@ -8,7 +8,9 @@
 //! It loads `.asni` files and encodes and decodes with them, as the
 //! runtime for Python does, with the values of JavaScript (see
 //! `convert`). The JavaScript of `js/` loads the WebAssembly, in a
-//! browser or in Node.js, and is what is used.
+//! browser or in Node.js, and is what is used: it gives the methods
+//! here that take or give a value their names without `_`, and the
+//! values as they are in JavaScript and not as buffers.
 
 use asnkitrt::container::{Binding, Checks, KEY_ID_SIZE, KEY_SIZE, Key, Nonce, Signature};
 use asnkitrt::runtime::{Options, Specification as Inner};
@@ -269,7 +271,7 @@ impl Specification {
         found.ok_or_else(|| runtime_error(asnkitrt::Error::NoSuchType))
     }
 
-    fn value_of(&self, name: &str, value: &JsValue, options: &JsValue) -> Result<Value, JsValue> {
+    fn value_of(&self, name: &str, value: &[u8], options: &JsValue) -> Result<Value, JsValue> {
         let id = self.find(name, options)?;
 
         convert::to_value(self.inner.types(), id, value)
@@ -284,12 +286,14 @@ impl Specification {
         .map_err(runtime_error)
     }
 
-    /// Encodes `value` as the type `name`. The options are
-    /// `checkConstraints`, to check the value first, `module`, the
-    /// module of the type if more than one has a type with that name,
-    /// and `indent`, the number of spaces for each level of JER and XER.
-    pub fn encode(&self, name: &str, value: JsValue, options: JsValue) -> Result<Vec<u8>, JsValue> {
-        let value = self.value_of(name, &value, &options)?;
+    /// Encodes `value`, written by `js/values.js`, as the type `name`.
+    /// The options are `checkConstraints`, to check the value first,
+    /// `module`, the module of the type if more than one has a type with
+    /// that name, and `indent`, the number of spaces for each level of
+    /// JER and XER.
+    #[wasm_bindgen(js_name = _encode)]
+    pub fn encode(&self, name: &str, value: &[u8], options: JsValue) -> Result<Vec<u8>, JsValue> {
+        let value = self.value_of(name, value, &options)?;
 
         if flag(&options, "checkConstraints")? {
             self.check(name, &value, &options)?;
@@ -307,8 +311,10 @@ impl Specification {
     }
 
     /// Decodes `data`, a `Uint8Array` or, for JER and XER, a string, as
-    /// the type `name`. The options are those of `encode()`.
-    pub fn decode(&self, name: &str, data: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
+    /// the type `name`, for `js/values.js` to read. The options are those
+    /// of `encode()`.
+    #[wasm_bindgen(js_name = _decode)]
+    pub fn decode(&self, name: &str, data: JsValue, options: JsValue) -> Result<Vec<u8>, JsValue> {
         let data = data_of(&data)?;
         let value = match text(&options, "module")? {
             Some(module) => self.inner.decode_in(&module, name, &data),
@@ -320,12 +326,12 @@ impl Specification {
             self.check(name, &value, &options)?;
         }
 
-        Ok(convert::to_js(&value))
+        Ok(convert::to_buffer(&value))
     }
 
     /// The same as `decode()`, but returns `[value, length]`, with the
     /// number of bytes the value was encoded in. BER and DER only.
-    #[wasm_bindgen(js_name = decodeWithLength)]
+    #[wasm_bindgen(js_name = _decodeWithLength)]
     pub fn decode_with_length(
         &self,
         name: &str,
@@ -345,7 +351,10 @@ impl Specification {
             self.check(name, &value, &options)?;
         }
 
-        Ok(Array::of2(&convert::to_js(&value), &JsValue::from(length)))
+        Ok(Array::of2(
+            &Uint8Array::from(convert::to_buffer(&value).as_slice()),
+            &JsValue::from(length),
+        ))
     }
 
     /// The length of the first value of `data` in bytes, or `null` if
@@ -359,17 +368,17 @@ impl Specification {
             .map_or(JsValue::NULL, JsValue::from))
     }
 
-    /// Checks `value` against the constraints of the type `name`, and
-    /// throws a `ConstraintsError` if it does not fulfil them. The option
-    /// is `module`.
-    #[wasm_bindgen(js_name = checkConstraints)]
+    /// Checks `value`, written by `js/values.js`, against the constraints
+    /// of the type `name`, and throws a `ConstraintsError` if it does not
+    /// fulfil them. The option is `module`.
+    #[wasm_bindgen(js_name = _checkConstraints)]
     pub fn check_constraints(
         &self,
         name: &str,
-        value: JsValue,
+        value: &[u8],
         options: JsValue,
     ) -> Result<(), JsValue> {
-        let value = self.value_of(name, &value, &options)?;
+        let value = self.value_of(name, value, &options)?;
 
         self.check(name, &value, &options)
     }

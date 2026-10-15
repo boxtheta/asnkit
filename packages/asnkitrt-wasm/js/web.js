@@ -7,6 +7,9 @@
 // loaded.
 
 import init, { Specification } from '../pkg/asnkitrt_wasm.js';
+import { install } from './values.js';
+
+install(Specification);
 
 let initialized;
 

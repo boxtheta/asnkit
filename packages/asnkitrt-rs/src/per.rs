@@ -1543,6 +1543,8 @@ impl Coder<'_> {
     }
 
     fn encode_time_of_day(&self, time: &Time, w: &mut Writer) -> Result<()> {
+        time::check_local_time(time)?;
+
         self.put_range(i128::from(time.hour), 0, 24, w);
         self.put_range(i128::from(time.minute), 0, 59, w);
         self.put_range(i128::from(time.second), 0, 60, w);

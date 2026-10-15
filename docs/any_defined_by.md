@@ -1,7 +1,10 @@
 # ANY DEFINED BY
 
-> **Note:** This is a draft. `asnkitcc` and the runtimes do not read
-> these choices yet.
+> **Note:** This is a draft. Neither the TOML file nor the options of
+> the runtimes below are implemented yet. The runtimes do read the
+> choices of an `AnyDefinedByType` in an `.asni` file, as
+> [File formats](file_formats.md#built-in-types) tells, but `asnkitcc`
+> does not write any.
 
 An `ANY DEFINED BY` member has the type that the value of another member
 of the same `SEQUENCE` or `SET` says, but the ASN.1 does not say which
@@ -152,5 +155,7 @@ The member has the type of the choice, which every codec encodes as
 `AnyDefinedByType` with choices. A choice of `OpenType` is encoded as
 an `ANY`, so JER and XER reject it.
 
-In the `.asni` file, each choice is an `AnyDefinedByChoice`, and the
-default is the field `default` of the `AnyDefinedByType`.
+In the `.asni` file, each choice is an `AnyDefinedByChoice`. Version
+1.0 of the formats has no field for the default: it is to be added to
+`AnyDefinedByType` as a field after the others, in a later minor
+version.

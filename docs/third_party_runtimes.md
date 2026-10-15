@@ -2,8 +2,9 @@
 
 This is for those writing a runtime for asnkit in another language,
 or for a platform the first-party runtimes do not cover. The
-first-party runtimes are `asnkitrt` for Python and `asnkitrt` for
-Rust.
+first-party runtimes are `asnkitrt` for Python, `asnkitrt` for Rust,
+and `asnkitrt` on npm, which is the one for Rust built as
+WebAssembly.
 
 > **Note:** This is a draft, like the [file formats](file_formats.md) it builds on. It is to be settled before the first release of the formats.
 

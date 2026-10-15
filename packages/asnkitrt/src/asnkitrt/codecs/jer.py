@@ -17,6 +17,7 @@ from asnkitrt.codecs.codec import Codec
 
 from ..constants import EXTENSION_MARKER
 from . import (
+    check_local_time,
     NamedNumbersMixin,
     BaseType,
     DecodeError,
@@ -30,7 +31,7 @@ from . import (
     utc_time_from_datetime,
     utc_time_to_datetime,
 )
-from .compiler import enum_values_as_dict
+from .compiler import clean_bit_string_value, enum_values_as_dict
 
 
 class Type(BaseType):
@@ -144,12 +145,15 @@ class Real(Type):
         super(Real, self).__init__(name, "REAL")
 
     def encode(self, data):
+        # The special values are strings (X.697 23.2).
         if data == float("inf"):
             return "INF"
         elif data == float("-inf"):
             return "-INF"
         elif math.isnan(data):
             return "NaN"
+        elif data == 0 and math.copysign(1.0, data) < 0:
+            return "-0"
         else:
             return data
 
@@ -161,8 +165,7 @@ class Real(Type):
                 "INF": float("inf"),
                 "-INF": float("-inf"),
                 "NaN": float("nan"),
-                "0": 0.0,
-                "-0": 0.0,
+                "-0": -0.0,
             }[data]
 
 
@@ -178,8 +181,9 @@ class Null(Type):
 
 
 class BitString(Type):
-    def __init__(self, name, minimum, maximum):
+    def __init__(self, name, minimum, maximum, has_named_bits=False):
         super(BitString, self).__init__(name, "BIT STRING")
+        self.has_named_bits = has_named_bits
         self.set_size_range(minimum, maximum, None)
 
     def set_size_range(self, minimum, maximum, has_extension_marker):
@@ -191,12 +195,25 @@ class BitString(Type):
             self.size = None
 
     def encode(self, data):
-        value: typing.Any = format_bytes(data[0]).upper()
+        # The bytes of the bits, with those past them 0 (X.697 24.2.1).
+        data, number_of_bits = clean_bit_string_value(data, False)
 
-        if self.size is None:
-            value = {"value": value, "length": data[1]}
+        if self.size is not None:
+            # With named bits, trailing 0 bits are added or removed to
+            # make the size (X.697 24.2.2).
+            if self.has_named_bits:
+                trimmed, length = clean_bit_string_value((data, number_of_bits), True)
 
-        return value
+                if length <= self.size:
+                    data = bytes(trimmed).ljust((self.size + 7) // 8, b"\x00")
+                    number_of_bits = self.size
+
+            if number_of_bits != self.size:
+                raise EncodeError("The BIT STRING is not of its size.")
+
+            return format_bytes(data).upper()
+
+        return {"value": format_bytes(data).upper(), "length": number_of_bits}
 
     def decode(self, data):
         if self.size is None:
@@ -231,10 +248,15 @@ class Enumerated(Type):
     def __init__(self, name, values, numeric):
         super(Enumerated, self).__init__(name, "ENUMERATED")
 
+        # Written as the name, also with numeric values (X.697 22).
+        self.numeric = numeric
+        self.numbers = enum_values_as_dict(values)
+        self.names = {name: number for number, name in self.numbers.items()}
+
         if numeric:
-            self.values = {k: k for k in enum_values_as_dict(values)}
+            self.values = {k: k for k in self.numbers}
         else:
-            self.values = {v: v for v in enum_values_as_dict(values).values()}
+            self.values = {v: v for v in self.numbers.values()}
 
         self.has_extension_marker = EXTENSION_MARKER in values
 
@@ -251,11 +273,11 @@ class Enumerated(Type):
                 )
             )
 
-        return value
+        return self.numbers[value] if self.numeric else value
 
     def decode(self, data):
-        if data in self.values:
-            return self.values[data]
+        if isinstance(data, str) and data in self.names:
+            return self.names[data] if self.numeric else data
         elif self.has_extension_marker:
             return None
         else:
@@ -452,6 +474,8 @@ class Date(StringType):
 
 class TimeOfDay(StringType):
     def encode(self, data):
+        check_local_time(data)
+
         return str(data)
 
     def decode(self, data):
@@ -470,6 +494,8 @@ class Duration(StringType):
 
 class DateTime(StringType):
     def encode(self, data):
+        check_local_time(data)
+
         return str(data).replace(" ", "T")
 
     def decode(self, data):
@@ -669,7 +695,9 @@ class Compiler(compiler.Compiler):
             compiled = GeneralizedTime(name)
         elif type_name == "BIT STRING":
             minimum, maximum, _ = self.get_size_range(type_descriptor, module_name)
-            compiled = BitString(name, minimum, maximum)
+            compiled = BitString(
+                name, minimum, maximum, "named-bits" in type_descriptor
+            )
         elif type_name in ["ANY", "OpenType"]:
             # An open type needs the type of its value (X.697 41, X.693 8.5).
             compiled = Any(name)

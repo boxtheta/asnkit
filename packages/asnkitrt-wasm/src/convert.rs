@@ -9,11 +9,17 @@
 //! STRING `[bytes, bits]`, an OCTET STRING a `Uint8Array` and so on. As
 //! an array is both a CHOICE and a SEQUENCE OF, and a REAL of `1.0` is
 //! the number `1`, a value is converted as its type says it is.
+//!
+//! A value crosses between JavaScript and WebAssembly as one buffer, and
+//! not a call for each of its parts, which costs much more than the
+//! codecs: `js/values.js` writes a value of JavaScript as the types of
+//! JavaScript it is made of, which `parse()` reads here, and reads the
+//! values that `to_buffer()` writes. The tags and their layouts are in
+//! both, and have to agree. Numbers are little-endian, and lengths and
+//! counts are `u32`.
 
 use asnkitrt::types::{Kind, TypeId, Types, const_matches};
 use asnkitrt::value::{Date, DateTime, Time, Value};
-use js_sys::{Array, BigInt, Object, Reflect, Uint8Array};
-use wasm_bindgen::{JsCast, JsValue};
 
 /// The greatest integer a number of JavaScript holds exactly.
 const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
@@ -22,9 +28,242 @@ const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
 /// than to run out of stack.
 const MAX_DEPTH: usize = 256;
 
-/// Converts `value` to a value of the type `id`.
-pub fn to_value(types: &Types, id: TypeId, value: &JsValue) -> Result<Value, String> {
-    Converter { types }.typed(Some(id), value, 0)
+/// The tags of the values of JavaScript, from `js/values.js`.
+mod from_js {
+    pub const NULL: u8 = 0;
+    pub const FALSE: u8 = 1;
+    pub const TRUE: u8 = 2;
+    /// An `f64`.
+    pub const NUMBER: u8 = 3;
+    /// A number that is an `i32`.
+    pub const INT32: u8 = 4;
+    /// Its text in base 16, as `-1f`.
+    pub const BIGINT: u8 = 5;
+    /// A length and UTF-8.
+    pub const STRING: u8 = 6;
+    /// A length and the bytes of a `Uint8Array`.
+    pub const BYTES: u8 = 7;
+    /// A count and the items.
+    pub const ARRAY: u8 = 8;
+    /// A count, and for each property that is not `undefined` its name,
+    /// as a length and UTF-8, and its value.
+    pub const OBJECT: u8 = 9;
+    /// A `Date`: its year, month from 0, day, hours, minutes, seconds
+    /// and milliseconds in UTC, as `f64`s.
+    pub const DATE: u8 = 10;
+    /// A function or a symbol.
+    pub const UNSUPPORTED: u8 = 11;
+    /// An array or an object nested deeper than is converted, in place
+    /// of it.
+    pub const TOO_DEEP: u8 = 12;
+}
+
+/// The tags of the values given to JavaScript, which `js/values.js`
+/// reads.
+mod to_js {
+    pub const NULL: u8 = 0;
+    pub const FALSE: u8 = 1;
+    pub const TRUE: u8 = 2;
+    /// An `f64`.
+    pub const NUMBER: u8 = 3;
+    /// An `i32`.
+    pub const INT32: u8 = 4;
+    /// A length and the integer in two's complement, for a `BigInt`.
+    pub const BIGINT: u8 = 5;
+    /// A length and UTF-8.
+    pub const STRING: u8 = 6;
+    /// A length and the bytes, for a `Uint8Array`.
+    pub const BYTES: u8 = 7;
+    /// A length, the bytes and the number of bits as an `f64`.
+    pub const BITS: u8 = 8;
+    /// A count and the items.
+    pub const LIST: u8 = 9;
+    /// A count, and the name and the value of each member.
+    pub const MAP: u8 = 10;
+    /// The name and the value.
+    pub const CHOICE: u8 = 11;
+    /// A date and a time, as below.
+    pub const DATE_TIME: u8 = 12;
+    /// The year as an `i32`, the month and the day as `u8`s.
+    pub const DATE: u8 = 13;
+    /// The hour, minute and second as `u8`s, the microsecond as a `u32`,
+    /// and the offset as a `u8` that is 1 if there is one and an `i32`.
+    pub const TIME: u8 = 14;
+}
+
+/// A value of JavaScript, as `js/values.js` wrote it.
+enum Js<'a> {
+    Null,
+    Boolean(bool),
+    Number(f64),
+    /// The text in base 16.
+    BigInt(&'a str),
+    Text(&'a str),
+    Bytes(&'a [u8]),
+    Array(Vec<Js<'a>>),
+    /// The properties that are not `undefined`.
+    Object(Vec<(&'a str, Js<'a>)>),
+    /// The year, month from 0, day, hours, minutes, seconds and
+    /// milliseconds of a `Date`, in UTC.
+    Date([f64; 7]),
+    Unsupported,
+    TooDeep,
+}
+
+impl<'a> Js<'a> {
+    /// The property `key` of an object, `None` if it is not there or this
+    /// is not an object, as it is `undefined` then.
+    fn get(&self, key: &str) -> Option<&Js<'a>> {
+        match self {
+            Js::Object(properties) => properties
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, value)| value),
+            _ => None,
+        }
+    }
+
+    fn as_f64(&self) -> Option<f64> {
+        match self {
+            Js::Number(number) => Some(*number),
+            _ => None,
+        }
+    }
+
+    /// The two items of an array of two items.
+    fn pair(&self) -> Option<(&Js<'a>, &Js<'a>)> {
+        match self {
+            Js::Array(items) if items.len() == 2 => Some((&items[0], &items[1])),
+            _ => None,
+        }
+    }
+
+    fn is_object(&self) -> bool {
+        matches!(
+            self,
+            Js::Object(_) | Js::Array(_) | Js::Bytes(_) | Js::Date(_) | Js::TooDeep
+        )
+    }
+}
+
+/// Reads what `js/values.js` wrote.
+struct Reader<'a> {
+    data: &'a [u8],
+    at: usize,
+}
+
+const MALFORMED: &str = "The value was not written as expected.";
+
+impl<'a> Reader<'a> {
+    fn take(&mut self, length: usize) -> Result<&'a [u8], String> {
+        let end = self.at.checked_add(length).ok_or(MALFORMED)?;
+        let bytes = self.data.get(self.at..end).ok_or(MALFORMED)?;
+
+        self.at = end;
+
+        Ok(bytes)
+    }
+
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], String> {
+        Ok(self.take(N)?.try_into().expect("N bytes"))
+    }
+
+    fn u32(&mut self) -> Result<usize, String> {
+        Ok(u32::from_le_bytes(self.array()?) as usize)
+    }
+
+    fn f64(&mut self) -> Result<f64, String> {
+        Ok(f64::from_le_bytes(self.array()?))
+    }
+
+    fn text(&mut self) -> Result<&'a str, String> {
+        let length = self.u32()?;
+
+        std::str::from_utf8(self.take(length)?).map_err(|_| MALFORMED.into())
+    }
+
+    /// A count of items, each of at least one byte.
+    fn count(&mut self) -> Result<usize, String> {
+        let count = self.u32()?;
+
+        if count > self.data.len() - self.at {
+            return Err(MALFORMED.into());
+        }
+
+        Ok(count)
+    }
+
+    fn value(&mut self, depth: usize) -> Result<Js<'a>, String> {
+        // `js/values.js` writes no deeper than a little more than
+        // MAX_DEPTH.
+        if depth > 2 * MAX_DEPTH {
+            return Err(MALFORMED.into());
+        }
+
+        let [tag] = self.array()?;
+
+        Ok(match tag {
+            from_js::NULL => Js::Null,
+            from_js::FALSE => Js::Boolean(false),
+            from_js::TRUE => Js::Boolean(true),
+            from_js::NUMBER => Js::Number(self.f64()?),
+            from_js::INT32 => Js::Number(f64::from(i32::from_le_bytes(self.array()?))),
+            from_js::BIGINT => Js::BigInt(self.text()?),
+            from_js::STRING => Js::Text(self.text()?),
+            from_js::BYTES => {
+                let length = self.u32()?;
+
+                Js::Bytes(self.take(length)?)
+            }
+            from_js::ARRAY => {
+                let count = self.count()?;
+                let mut items = Vec::with_capacity(count);
+
+                for _ in 0..count {
+                    items.push(self.value(depth + 1)?);
+                }
+
+                Js::Array(items)
+            }
+            from_js::OBJECT => {
+                let count = self.count()?;
+                let mut properties = Vec::with_capacity(count);
+
+                for _ in 0..count {
+                    let key = self.text()?;
+
+                    properties.push((key, self.value(depth + 1)?));
+                }
+
+                Js::Object(properties)
+            }
+            from_js::DATE => {
+                let mut fields = [0.0; 7];
+
+                for field in fields.iter_mut() {
+                    *field = self.f64()?;
+                }
+
+                Js::Date(fields)
+            }
+            from_js::UNSUPPORTED => Js::Unsupported,
+            from_js::TOO_DEEP => Js::TooDeep,
+            _ => return Err(MALFORMED.into()),
+        })
+    }
+}
+
+/// Converts the value `js/values.js` wrote in `data` to a value of the
+/// type `id`.
+pub fn to_value(types: &Types, id: TypeId, data: &[u8]) -> Result<Value, String> {
+    let mut reader = Reader { data, at: 0 };
+    let value = reader.value(0)?;
+
+    if reader.at != data.len() {
+        return Err(MALFORMED.into());
+    }
+
+    Converter { types }.typed(Some(id), &value, 0)
 }
 
 struct Converter<'a> {
@@ -34,7 +273,7 @@ struct Converter<'a> {
 impl Converter<'_> {
     /// Converts a value of the type `id`, or of no known type if `None`,
     /// as in an open type.
-    fn typed(&self, id: Option<TypeId>, value: &JsValue, depth: usize) -> Result<Value, String> {
+    fn typed(&self, id: Option<TypeId>, value: &Js, depth: usize) -> Result<Value, String> {
         if depth > MAX_DEPTH {
             return Err("The value is nested too deep.".into());
         }
@@ -49,45 +288,43 @@ impl Converter<'_> {
                 Some(number) => Ok(Value::Real(number)),
                 None => self.untyped(value, depth),
             },
-            Kind::BitString(_) => match pair(value) {
-                Some((bytes, bits)) => match (bytes.dyn_ref::<Uint8Array>(), bits.as_f64()) {
-                    (Some(bytes), Some(bits)) if bits >= 0.0 && bits.fract() == 0.0 => {
+            Kind::BitString(_) => match value.pair() {
+                Some((bytes, bits)) => match (bytes, bits.as_f64()) {
+                    (Js::Bytes(bytes), Some(bits)) if bits >= 0.0 && bits.fract() == 0.0 => {
                         Ok(Value::Bits(bytes.to_vec(), bits as usize))
                     }
                     _ => Err("Expected a BIT STRING as [Uint8Array, number of bits].".into()),
                 },
                 None => self.untyped(value, depth),
             },
-            Kind::Choice(members) => match pair(value) {
+            Kind::Choice(members) => match value.pair() {
                 Some((name, inner)) => {
-                    let Some(name) = name.as_string() else {
+                    let Js::Text(name) = name else {
                         return Err("Expected a CHOICE as [name, value].".into());
                     };
                     let ty = members
                         .all()
-                        .find(|member| member.name == name)
+                        .find(|member| member.name == *name)
                         .map(|member| member.ty);
 
                     Ok(Value::Choice(
-                        name,
-                        Box::new(self.typed(ty, &inner, depth + 1)?),
+                        name.to_string(),
+                        Box::new(self.typed(ty, inner, depth + 1)?),
                     ))
                 }
                 None => self.untyped(value, depth),
             },
             Kind::Sequence(members) | Kind::Set(members) | Kind::External(members)
-                if is_plain_object(value) =>
+                if matches!(value, Js::Object(_)) =>
             {
                 let mut slots: Vec<Option<(String, Value)>> = Vec::new();
                 let mut defined_by = Vec::new();
 
                 for member in members.all() {
-                    let inner = get(value, &member.name)?;
-
-                    // An undefined member is one that is not there.
-                    if inner.is_undefined() {
+                    // A member that is undefined is not there.
+                    let Some(inner) = value.get(&member.name) else {
                         continue;
-                    }
+                    };
 
                     // An ANY DEFINED BY is of the type that another member
                     // tells, which is converted first.
@@ -102,7 +339,7 @@ impl Converter<'_> {
                     } else {
                         slots.push(Some((
                             member.name.clone(),
-                            self.typed(Some(member.ty), &inner, depth + 1)?,
+                            self.typed(Some(member.ty), inner, depth + 1)?,
                         )));
                     }
                 }
@@ -120,111 +357,86 @@ impl Converter<'_> {
                             .map(|(_, ty)| *ty)
                     });
 
-                    slots[slot] = Some((member.name.clone(), self.typed(ty, &inner, depth + 1)?));
+                    slots[slot] = Some((member.name.clone(), self.typed(ty, inner, depth + 1)?));
                 }
 
                 let mut map: Vec<(String, Value)> = slots.into_iter().flatten().collect();
 
                 // Any other is left for the codec to reject.
-                for key in Object::keys(value.unchecked_ref::<Object>()).iter() {
-                    let key = key.as_string().unwrap_or_default();
-
-                    if !members.all().any(|member| member.name == key) {
-                        let inner = get(value, &key)?;
-
-                        if !inner.is_undefined() {
-                            map.push((key, self.untyped(&inner, depth + 1)?));
+                if let Js::Object(properties) = value {
+                    for (key, inner) in properties {
+                        if !members.all().any(|member| member.name == *key) {
+                            map.push((key.to_string(), self.untyped(inner, depth + 1)?));
                         }
                     }
                 }
 
                 Ok(Value::Map(map))
             }
-            Kind::SequenceOf(element) | Kind::SetOf(element) if Array::is_array(value) => {
-                let mut list = Vec::new();
-
-                for item in value.unchecked_ref::<Array>().iter() {
-                    list.push(self.typed(Some(*element), &item, depth + 1)?);
-                }
-
-                Ok(Value::List(list))
-            }
-            Kind::Utc | Kind::Generalized | Kind::DateTime if is_object(value) => {
+            Kind::SequenceOf(element) | Kind::SetOf(element) => match value {
+                Js::Array(items) => items
+                    .iter()
+                    .map(|item| self.typed(Some(*element), item, depth + 1))
+                    .collect::<Result<_, _>>()
+                    .map(Value::List),
+                _ => self.untyped(value, depth),
+            },
+            Kind::Utc | Kind::Generalized if value.is_object() => {
                 Ok(Value::DateTime(date_time(value)?))
             }
-            Kind::Date if is_object(value) => Ok(Value::Date(date(value)?)),
-            Kind::TimeOfDay if is_object(value) => Ok(Value::Time(time(value)?)),
+            // A local time, which a `Date` is as its time in UTC.
+            Kind::DateTime if value.is_object() => {
+                let mut date_time = date_time(value)?;
+
+                if matches!(value, Js::Date(_)) {
+                    date_time.time.offset = None;
+                }
+
+                Ok(Value::DateTime(date_time))
+            }
+            Kind::Date if value.is_object() => Ok(Value::Date(date(value)?)),
+            Kind::TimeOfDay if value.is_object() => {
+                let mut time = time(value)?;
+
+                if matches!(value, Js::Date(_)) {
+                    time.offset = None;
+                }
+
+                Ok(Value::Time(time))
+            }
             _ => self.untyped(value, depth),
         }
     }
 
     /// Converts a value as the type of JavaScript it is.
-    fn untyped(&self, value: &JsValue, depth: usize) -> Result<Value, String> {
+    fn untyped(&self, value: &Js, depth: usize) -> Result<Value, String> {
         if depth > MAX_DEPTH {
             return Err("The value is nested too deep.".into());
         }
 
-        if value.is_null() || value.is_undefined() {
-            Ok(Value::Null)
-        } else if let Some(boolean) = value.as_bool() {
-            Ok(Value::Boolean(boolean))
-        } else if let Some(number) = value.as_f64() {
-            Ok(number_to_value(number))
-        } else if value.is_bigint() {
-            bigint_to_value(value.unchecked_ref::<BigInt>())
-        } else if let Some(text) = value.as_string() {
-            Ok(Value::Text(text))
-        } else if let Some(bytes) = value.dyn_ref::<Uint8Array>() {
-            Ok(Value::Bytes(bytes.to_vec()))
-        } else if Array::is_array(value) {
-            value
-                .unchecked_ref::<Array>()
+        match value {
+            Js::Null => Ok(Value::Null),
+            Js::Boolean(boolean) => Ok(Value::Boolean(*boolean)),
+            Js::Number(number) => Ok(number_to_value(*number)),
+            Js::BigInt(text) => bigint_to_value(text),
+            Js::Text(text) => Ok(Value::Text(text.to_string())),
+            Js::Bytes(bytes) => Ok(Value::Bytes(bytes.to_vec())),
+            Js::Array(items) => items
                 .iter()
-                .map(|item| self.untyped(&item, depth + 1))
+                .map(|item| self.untyped(item, depth + 1))
                 .collect::<Result<_, _>>()
-                .map(Value::List)
-        } else if value.is_instance_of::<js_sys::Date>() {
-            Ok(Value::DateTime(date_time(value)?))
-        } else if is_plain_object(value) {
-            let mut map = Vec::new();
-
-            for key in Object::keys(value.unchecked_ref::<Object>()).iter() {
-                let key = key.as_string().unwrap_or_default();
-                let inner = get(value, &key)?;
-
-                if !inner.is_undefined() {
-                    map.push((key, self.untyped(&inner, depth + 1)?));
-                }
-            }
-
-            Ok(Value::Map(map))
-        } else {
-            Err("A value of a type that can not be encoded.".into())
+                .map(Value::List),
+            Js::Date(_) => Ok(Value::DateTime(date_time(value)?)),
+            Js::Object(properties) => properties
+                .iter()
+                .map(|(key, inner)| Ok((key.to_string(), self.untyped(inner, depth + 1)?)))
+                .collect::<Result<_, String>>()
+                .map(Value::Map),
+            // Only written in place of what is deeper than MAX_DEPTH.
+            Js::TooDeep => Err("The value is nested too deep.".into()),
+            Js::Unsupported => Err("A value of a type that can not be encoded.".into()),
         }
     }
-}
-
-/// The two items of an array of two items.
-fn pair(value: &JsValue) -> Option<(JsValue, JsValue)> {
-    let array = value.dyn_ref::<Array>()?;
-
-    (array.length() == 2).then(|| (array.get(0), array.get(1)))
-}
-
-fn is_object(value: &JsValue) -> bool {
-    value.is_object() && !value.is_function()
-}
-
-/// An object that is not an array, bytes or a date.
-fn is_plain_object(value: &JsValue) -> bool {
-    is_object(value)
-        && !Array::is_array(value)
-        && !value.is_instance_of::<Uint8Array>()
-        && !value.is_instance_of::<js_sys::Date>()
-}
-
-fn get(value: &JsValue, key: &str) -> Result<JsValue, String> {
-    Reflect::get(value, &JsValue::from_str(key)).map_err(|_| format!("Can not read '{key}'."))
 }
 
 fn number_to_value(number: f64) -> Value {
@@ -237,14 +449,10 @@ fn number_to_value(number: f64) -> Value {
 }
 
 /// The integer of a `BigInt`, by its digits in base 16.
-fn bigint_to_value(value: &BigInt) -> Result<Value, String> {
-    let text: String = value
-        .to_string(16)
-        .map_err(|_| "Can not read a BigInt.")?
-        .into();
+fn bigint_to_value(text: &str) -> Result<Value, String> {
     let (negative, digits) = match text.strip_prefix('-') {
         Some(digits) => (true, digits),
-        None => (false, text.as_str()),
+        None => (false, text),
     };
     // The magnitude, most significant byte first, with a byte for the
     // sign.
@@ -257,8 +465,10 @@ fn bigint_to_value(value: &BigInt) -> Result<Value, String> {
 
     for index in (0..padded.len()).step_by(2) {
         bytes.push(
-            u8::from_str_radix(&padded[index..index + 2], 16)
-                .map_err(|_| "Can not read a BigInt.")?,
+            padded
+                .get(index..index + 2)
+                .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+                .ok_or("Can not read a BigInt.")?,
         );
     }
 
@@ -282,66 +492,24 @@ fn bigint_to_value(value: &BigInt) -> Result<Value, String> {
     Ok(Value::from_twos_complement(&bytes))
 }
 
-/// The `BigInt` of an integer in two's complement.
-fn twos_complement_to_bigint(bytes: &[u8]) -> JsValue {
-    let negative = bytes.first().is_some_and(|byte| byte & 0x80 != 0);
-    let mut magnitude = bytes.to_vec();
-
-    if negative {
-        for byte in magnitude.iter_mut() {
-            *byte = !*byte;
-        }
-
-        for byte in magnitude.iter_mut().rev() {
-            let (sum, carry) = byte.overflowing_add(1);
-
-            *byte = sum;
-
-            if !carry {
-                break;
-            }
-        }
-    }
-
-    let hex: String = magnitude.iter().map(|byte| format!("{byte:02x}")).collect();
-    let value: JsValue = BigInt::new(&JsValue::from_str(&format!("0x{hex}")))
-        .map(Into::into)
-        .unwrap_or(JsValue::NULL);
-
-    if negative { -&value } else { value }
-}
-
-fn integer_to_js(value: i128) -> JsValue {
-    if value.abs() <= MAX_SAFE_INTEGER {
-        JsValue::from_f64(value as f64)
-    } else {
-        twos_complement_to_bigint(&asnkitrt::value::integer_to_twos_complement(value))
+fn field(value: &Js, key: &str) -> Result<Option<f64>, String> {
+    match value.get(key) {
+        None | Some(Js::Null) => Ok(None),
+        Some(Js::Number(number)) if number.fract() == 0.0 => Ok(Some(*number)),
+        Some(_) => Err(format!("Expected '{key}' to be an integer.")),
     }
 }
 
-fn field(value: &JsValue, key: &str) -> Result<Option<f64>, String> {
-    let inner = get(value, key)?;
-
-    if inner.is_undefined() || inner.is_null() {
-        return Ok(None);
-    }
-
-    match inner.as_f64() {
-        Some(number) if number.fract() == 0.0 => Ok(Some(number)),
-        _ => Err(format!("Expected '{key}' to be an integer.")),
-    }
-}
-
-fn required(value: &JsValue, key: &str) -> Result<f64, String> {
+fn required(value: &Js, key: &str) -> Result<f64, String> {
     field(value, key)?.ok_or_else(|| format!("Expected '{key}'."))
 }
 
-fn date(value: &JsValue) -> Result<Date, String> {
-    if let Some(date) = value.dyn_ref::<js_sys::Date>() {
+fn date(value: &Js) -> Result<Date, String> {
+    if let Js::Date([year, month, day, ..]) = value {
         return Ok(Date {
-            year: date.get_utc_full_year() as i32,
-            month: date.get_utc_month() as u8 + 1,
-            day: date.get_utc_date() as u8,
+            year: *year as i32,
+            month: *month as u8 + 1,
+            day: *day as u8,
         });
     }
 
@@ -352,13 +520,13 @@ fn date(value: &JsValue) -> Result<Date, String> {
     })
 }
 
-fn time(value: &JsValue) -> Result<Time, String> {
-    if let Some(date) = value.dyn_ref::<js_sys::Date>() {
+fn time(value: &Js) -> Result<Time, String> {
+    if let Js::Date([.., hour, minute, second, millisecond]) = value {
         return Ok(Time {
-            hour: date.get_utc_hours() as u8,
-            minute: date.get_utc_minutes() as u8,
-            second: date.get_utc_seconds() as u8,
-            microsecond: date.get_utc_milliseconds() * 1000,
+            hour: *hour as u8,
+            minute: *minute as u8,
+            second: *second as u8,
+            microsecond: (*millisecond as u32) * 1000,
             offset: Some(0),
         });
     }
@@ -374,83 +542,119 @@ fn time(value: &JsValue) -> Result<Time, String> {
 
 /// A date and a time from an object with the fields of both, or from a
 /// `Date`, which is in UTC.
-fn date_time(value: &JsValue) -> Result<DateTime, String> {
+fn date_time(value: &Js) -> Result<DateTime, String> {
     Ok(DateTime {
         date: date(value)?,
         time: time(value)?,
     })
 }
 
-fn set(object: &Object, key: &str, value: &JsValue) {
-    // Setting a property of a new plain object does not fail.
-    let _ = Reflect::set(object, &JsValue::from_str(key), value);
+/// Writes a decoded value for `js/values.js` to read.
+pub fn to_buffer(value: &Value) -> Vec<u8> {
+    let mut buffer = Vec::with_capacity(256);
+
+    write(&mut buffer, value);
+
+    buffer
 }
 
-fn date_fields(object: &Object, date: &Date) {
-    set(object, "year", &JsValue::from(date.year));
-    set(object, "month", &JsValue::from(date.month));
-    set(object, "day", &JsValue::from(date.day));
+fn write_length(buffer: &mut Vec<u8>, length: usize) {
+    buffer.extend_from_slice(&(length as u32).to_le_bytes());
 }
 
-fn time_fields(object: &Object, time: &Time) {
-    set(object, "hour", &JsValue::from(time.hour));
-    set(object, "minute", &JsValue::from(time.minute));
-    set(object, "second", &JsValue::from(time.second));
-    set(object, "microsecond", &JsValue::from(time.microsecond));
-    set(
-        object,
-        "offset",
-        &time.offset.map(JsValue::from).unwrap_or(JsValue::NULL),
-    );
+fn write_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) {
+    write_length(buffer, bytes.len());
+    buffer.extend_from_slice(bytes);
 }
 
-/// Converts a decoded value to JavaScript.
-pub fn to_js(value: &Value) -> JsValue {
+fn write_date(buffer: &mut Vec<u8>, date: &Date) {
+    buffer.extend_from_slice(&date.year.to_le_bytes());
+    buffer.push(date.month);
+    buffer.push(date.day);
+}
+
+fn write_time(buffer: &mut Vec<u8>, time: &Time) {
+    buffer.extend_from_slice(&[time.hour, time.minute, time.second]);
+    buffer.extend_from_slice(&time.microsecond.to_le_bytes());
+    buffer.push(time.offset.is_some() as u8);
+    buffer.extend_from_slice(&time.offset.unwrap_or(0).to_le_bytes());
+}
+
+fn write(buffer: &mut Vec<u8>, value: &Value) {
     match value {
-        Value::Null => JsValue::NULL,
-        Value::Boolean(boolean) => JsValue::from_bool(*boolean),
-        Value::Integer(integer) => integer_to_js(*integer),
-        Value::BigInteger(bytes) => twos_complement_to_bigint(bytes),
-        Value::Real(number) => JsValue::from_f64(*number),
-        Value::Text(text) => JsValue::from_str(text),
-        Value::Bytes(bytes) => Uint8Array::from(bytes.as_slice()).into(),
-        Value::Bits(bytes, bits) => Array::of2(
-            &Uint8Array::from(bytes.as_slice()),
-            &JsValue::from_f64(*bits as f64),
-        )
-        .into(),
-        Value::List(items) => items.iter().map(to_js).collect::<Array>().into(),
+        Value::Null => buffer.push(to_js::NULL),
+        Value::Boolean(false) => buffer.push(to_js::FALSE),
+        Value::Boolean(true) => buffer.push(to_js::TRUE),
+        Value::Integer(integer) => {
+            if let Ok(small) = i32::try_from(*integer) {
+                buffer.push(to_js::INT32);
+                buffer.extend_from_slice(&small.to_le_bytes());
+            } else if integer.abs() <= MAX_SAFE_INTEGER {
+                buffer.push(to_js::NUMBER);
+                buffer.extend_from_slice(&(*integer as f64).to_le_bytes());
+            } else {
+                buffer.push(to_js::BIGINT);
+                write_bytes(
+                    buffer,
+                    &asnkitrt::value::integer_to_twos_complement(*integer),
+                );
+            }
+        }
+        Value::BigInteger(bytes) => {
+            buffer.push(to_js::BIGINT);
+            write_bytes(buffer, bytes);
+        }
+        Value::Real(number) => {
+            buffer.push(to_js::NUMBER);
+            buffer.extend_from_slice(&number.to_le_bytes());
+        }
+        Value::Text(text) => {
+            buffer.push(to_js::STRING);
+            write_bytes(buffer, text.as_bytes());
+        }
+        Value::Bytes(bytes) => {
+            buffer.push(to_js::BYTES);
+            write_bytes(buffer, bytes);
+        }
+        Value::Bits(bytes, bits) => {
+            buffer.push(to_js::BITS);
+            write_bytes(buffer, bytes);
+            buffer.extend_from_slice(&(*bits as f64).to_le_bytes());
+        }
+        Value::List(items) => {
+            buffer.push(to_js::LIST);
+            write_length(buffer, items.len());
+
+            for item in items {
+                write(buffer, item);
+            }
+        }
         Value::Map(members) => {
-            let object = Object::new();
+            buffer.push(to_js::MAP);
+            write_length(buffer, members.len());
 
             for (name, member) in members {
-                set(&object, name, &to_js(member));
+                write_bytes(buffer, name.as_bytes());
+                write(buffer, member);
             }
-
-            object.into()
         }
-        Value::Choice(name, inner) => Array::of2(&JsValue::from_str(name), &to_js(inner)).into(),
+        Value::Choice(name, inner) => {
+            buffer.push(to_js::CHOICE);
+            write_bytes(buffer, name.as_bytes());
+            write(buffer, inner);
+        }
         Value::DateTime(date_time) => {
-            let object = Object::new();
-
-            date_fields(&object, &date_time.date);
-            time_fields(&object, &date_time.time);
-
-            object.into()
+            buffer.push(to_js::DATE_TIME);
+            write_date(buffer, &date_time.date);
+            write_time(buffer, &date_time.time);
         }
         Value::Date(date) => {
-            let object = Object::new();
-
-            date_fields(&object, date);
-
-            object.into()
+            buffer.push(to_js::DATE);
+            write_date(buffer, date);
         }
         Value::Time(time) => {
-            let object = Object::new();
-
-            time_fields(&object, time);
-
-            object.into()
+            buffer.push(to_js::TIME);
+            write_time(buffer, time);
         }
     }
 }

@@ -18,6 +18,7 @@ from asnkitrt.codecs.codec import Codec
 
 from ..constants import EXTENSION_MARKER
 from . import (
+    check_local_time,
     NamedNumbersMixin,
     BaseType,
     bmp_string_decode,
@@ -1594,6 +1595,8 @@ class TimeOfDay(StandardEncodeMixin, StandardDecodeMixin, Type):
         super(TimeOfDay, self).__init__(name, "TIME-OF-DAY", Tag.TIME_OF_DAY)
 
     def encode_content(self, data, values=None):
+        check_local_time(data)
+
         return str(data).replace(":", "").encode("ascii")
 
     def decode_content(self, data, offset, length):
@@ -1627,6 +1630,8 @@ class DateTime(StandardEncodeMixin, StandardDecodeMixin, Type):
         super(DateTime, self).__init__(name, "DATE-TIME", Tag.DATE_TIME)
 
     def encode_content(self, data, values=None):
+        check_local_time(data)
+
         return "{:04d}{:02d}{:02d}{:02d}{:02d}{:02d}".format(*data.timetuple()).encode(
             "ascii"
         )

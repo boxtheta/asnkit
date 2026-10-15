@@ -457,6 +457,38 @@ class CodecsConsistencyTest(BaseTest):
 
         self.encode_decode_codecs("TIME-OF-DAY", decoded, encoded)
 
+    def test_local_times_have_no_fraction_and_no_offset(self):
+        """A TIME-OF-DAY and a DATE-TIME are a local time to the second
+        (X.680 38.4.2, 38.4.3).
+
+        """
+
+        from datetime import timezone
+
+        for type_spec, values in [
+            (
+                "TIME-OF-DAY",
+                [time(15, 27, 46, 1), time(15, 27, 46, tzinfo=timezone.utc)],
+            ),
+            (
+                "DATE-TIME",
+                [
+                    datetime(1985, 4, 12, 15, 27, 46, 1),
+                    datetime(1985, 4, 12, 15, 27, 46, tzinfo=timezone.utc),
+                ],
+            ),
+        ]:
+            spec = (
+                "Foo DEFINITIONS AUTOMATIC TAGS ::= BEGIN A ::= " + type_spec + " END"
+            )
+
+            for codec in CODECS:
+                foo = fixtures.compile_string(spec, codec)
+
+                for value in values:
+                    with self.assertRaises(fixtures.EncodeError, msg=codec):
+                        foo.encode("A", value)
+
     def test_date_time(self):
         decoded = [datetime(1985, 4, 12, 15, 27, 46), datetime(1582, 2, 3, 4, 5, 6)]
 

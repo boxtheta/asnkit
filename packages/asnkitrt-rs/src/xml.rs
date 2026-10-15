@@ -28,6 +28,27 @@ pub(crate) struct Element {
     /// The text before the first child.
     pub text: Option<String>,
     pub children: Vec<Element>,
+    /// The text after the element, before the next one, in the element
+    /// it is in.
+    pub tail: Option<String>,
+}
+
+/// The names of the control characters in an `xmlcstring`, by their
+/// code (X.680 12.15.5, Table 3). Tab, line feed and carriage return
+/// are written as they are.
+const CONTROLS: [&str; 32] = [
+    "nul", "soh", "stx", "etx", "eot", "enq", "ack", "bel", "bs", "", "", "vt", "ff", "", "so",
+    "si", "dle", "dc1", "dc2", "dc3", "dc4", "nak", "syn", "etb", "can", "em", "sub", "esc", "is4",
+    "is3", "is2", "is1",
+];
+
+/// The control character an empty element in an `xmlcstring` stands
+/// for, as `<bel/>` (X.680 12.15.5).
+pub(crate) fn control(name: &str) -> Option<char> {
+    CONTROLS
+        .iter()
+        .position(|candidate| !candidate.is_empty() && *candidate == name)
+        .and_then(|code| char::from_u32(code as u32))
 }
 
 impl Element {
@@ -36,6 +57,7 @@ impl Element {
             name: name.replace(' ', "_"),
             text: None,
             children: Vec::new(),
+            tail: None,
         }
     }
 
@@ -100,7 +122,7 @@ pub(crate) fn parse(text: &str) -> Result<Element> {
     let mut root = None;
     let mut events = 0usize;
 
-    // Text goes to the element that is open, if it has no child yet.
+    // Text goes to the element that is open, or after its last child.
     fn add(stack: &mut [Element], more: &str) -> Result<()> {
         if !more.chars().all(is_xml_char) {
             return bad();
@@ -108,8 +130,13 @@ pub(crate) fn parse(text: &str) -> Result<Element> {
 
         match stack.last_mut() {
             Some(open) => {
-                if open.children.is_empty() && !more.is_empty() {
-                    open.text.get_or_insert_with(String::new).push_str(more);
+                if !more.is_empty() {
+                    let text = match open.children.last_mut() {
+                        Some(child) => &mut child.tail,
+                        None => &mut open.text,
+                    };
+
+                    text.get_or_insert_with(String::new).push_str(more);
                 }
 
                 Ok(())
@@ -144,6 +171,7 @@ pub(crate) fn parse(text: &str) -> Result<Element> {
                     name: start.local_name().as_ref().to_string(),
                     text: None,
                     children: Vec::new(),
+                    tail: None,
                 };
 
                 if matches!(event, Event::Empty(_)) {
@@ -199,6 +227,12 @@ fn write_text(out: &mut String, text: &str) {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
+            // The control characters XML does not have (X.680 12.15.5).
+            c if (c as u32) < 0x20 && !matches!(c, '\t' | '\n' | '\r') => {
+                out.push('<');
+                out.push_str(CONTROLS[c as usize]);
+                out.push_str("/>");
+            }
             c if c.is_ascii() => out.push(c),
             c => {
                 let _ = write!(out, "&#{};", c as u32);

@@ -47,7 +47,11 @@ Values are those of the Python runtime, in JavaScript types:
 
 `offset` is in minutes east of UTC, or `null` for local time. When
 encoding, a JavaScript `Date` is also accepted for dates and times, in
-UTC, and a member set to `undefined` counts as absent. Values are
+UTC. For `DATE-TIME` and `TIME-OF-DAY`, which are a local time to the
+second, it is its time in UTC with no offset, and it must have no
+milliseconds. A member set to `undefined` counts as absent. The members of
+an object are its own enumerable properties, as `Object.keys()` gives
+them, and not those it inherits, such as the getters of a class. Values are
 converted according to their ASN.1 type, so an array is a `CHOICE` or a
 `SEQUENCE OF` as the type says, and `1` is a valid `REAL`.
 
@@ -94,7 +98,7 @@ npm run build
 npm test
 ```
 
-The build writes `pkg/`, with a `.wasm` file of about 500 KB (190 KB
+The build writes `pkg/`, with a `.wasm` file of about 590 KB (225 KB
 gzipped). The tests need Node.js 21 or later, and replay all the vectors
 of `tests/vectors` through the JavaScript API, as the Rust runtime does
 in Rust.

@@ -9,6 +9,9 @@ import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 import { initSync, Specification } from '../pkg/asnkitrt_wasm.js';
+import { install } from './values.js';
+
+install(Specification);
 
 initSync({
   module: readFileSync(new URL('../pkg/asnkitrt_wasm_bg.wasm', import.meta.url)),
