@@ -16,14 +16,13 @@ and passes its tests.
 - **PyPI:** add a pending trusted publisher for `asnkitrt` and for
   `asnkit-gen-python`: owner `boxtheta`, repository `asnkit`, workflow
   `release.yml`, environment `pypi`. No token is needed.
-- **crates.io:** make an API token limited to publishing and to the
-  crates `asnkitrt`, `asnkit-compiler`, `asnkit-gen-rust` and
-  `asnkitcc`, and store it as the secret `CARGO_REGISTRY_TOKEN` of the
-  environment `crates-io`. Once the crates exist, trusted publishing
-  can replace the token.
-- **npm:** make a granular access token that can publish `asnkitrt`,
-  and store it as the secret `NPM_TOKEN` of the environment `npm`.
-  Once the package exists, trusted publishing can replace the token.
+- **crates.io:** publish the crates once by hand, then add a trusted
+  publisher to each of `asnkitrt`, `asnkit-compiler`, `asnkit-gen-rust`
+  and `asnkitcc`: owner `boxtheta`, repository `asnkit`, workflow
+  `release.yml`, environment `crates-io`. No token is needed.
+- **npm:** publish `asnkitrt` once by hand, then add a trusted publisher
+  to it: GitHub Actions, owner `boxtheta`, repository `asnkit`, workflow
+  `release.yml`, environment `npm`. No token is needed.
 - **DCO:** install the [DCO app](https://github.com/apps/dco) on the
   repository, and make its check required on `trunk`, so that every
   commit of a pull request is signed off (see `CONTRIBUTING.md`).

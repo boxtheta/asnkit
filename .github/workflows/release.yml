@@ -98,14 +98,21 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: crates-io
+    permissions:
+      contents: read
+      # Trusted publishing.
+      id-token: write
 
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
+    - name: Get a token from crates.io
+      uses: rust-lang/crates-io-auth-action@v1
+      id: auth
     - name: Publish to crates.io
       env:
-        CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       # In the order they need each other. cargo waits for each to be in
       # the index before it goes on. One that is already there is left
       # out, so that the job can be run again after a failure.
@@ -126,7 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm
     permissions:
-      # Provenance.
+      # Trusted publishing, with provenance.
       id-token: write
 
     steps:
@@ -139,15 +146,16 @@ jobs:
       with:
         node-version: 22
         registry-url: https://registry.npmjs.org
+    # Trusted publishing needs npm 11.5.1 or later.
+    - name: Update npm
+      run: npm install -g npm@latest
     - name: Publish to npm
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       # Left out if it is already there, so that the job can be run again.
       run: |
         if npm view "asnkitrt@${GITHUB_REF_NAME#v}" version | grep -q .; then
           echo "asnkitrt ${GITHUB_REF_NAME#v} is already published."
         else
-          npm publish --provenance --access public npm/asnkitrt-*.tgz
+          npm publish --access public npm/asnkitrt-*.tgz
         fi
 
   github:
