@@ -110,8 +110,10 @@ jobs:
       run: |
         cargo test --locked -p asnkitrt-c
     - name: Link the example with the static library
+      # Without color, which CARGO_TERM_COLOR asks for, as a code of it
+      # would end the list of libraries.
       run: |
-        libraries=$(cargo rustc --locked --release -p asnkitrt-c --crate-type staticlib -- --print native-static-libs 2>&1 \
+        libraries=$(cargo rustc --locked --color never --release -p asnkitrt-c --crate-type staticlib -- --print native-static-libs 2>&1 \
           | sed -n 's/.*native-static-libs: //p')
         test -n "$libraries"
         cc -std=c99 -Wall -Wextra -Werror -pedantic -I packages/asnkitrt-c/include \
