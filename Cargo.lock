@@ -99,6 +99,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "asnkitrt-c"
+version = "1.0.1"
+dependencies = [
+ "asnkitrt",
+]
+
+[[package]]
 name = "asnkitrt-wasm"
 version = "1.0.1"
 dependencies = [

@@ -18,6 +18,9 @@ security fixes.
   `packages/asnkit-compiler-wasm`: it compiles and parses the text of a
   specification, and signs, encrypts, binds and gives a nonce as
   `asnkitcc` does. It is not on npm yet.
+- The runtime for C, in `packages/asnkitrt-c`: the Rust runtime as a
+  shared and a static library, with the header `asnkitrt.h`. It is
+  built from source.
 
 ### Changed
 

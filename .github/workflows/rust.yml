@@ -94,6 +94,34 @@ jobs:
         npm run build
         npm test
 
+  # The runtime for C: the runtime in Rust as a shared and a static
+  # library, with include/asnkitrt.h, used from C and C++.
+  runtime-c:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Test, with the example and the API in C and the shared library
+      run: |
+        cargo test --locked -p asnkitrt-c
+    - name: Link the example with the static library
+      run: |
+        libraries=$(cargo rustc --locked --release -p asnkitrt-c --crate-type staticlib -- --print native-static-libs 2>&1 \
+          | sed -n 's/.*native-static-libs: //p')
+        test -n "$libraries"
+        cc -std=c99 -Wall -Wextra -Werror -pedantic -I packages/asnkitrt-c/include \
+          packages/asnkitrt-c/examples/question.c target/release/libasnkitrt_c.a $libraries -o "$RUNNER_TEMP/question"
+        "$RUNNER_TEMP/question" examples/compiled/foo.asni
+    - name: The header is C++ too
+      run: |
+        printf '#include "asnkitrt.h"\nint main() { asnkit_options options = ASNKIT_OPTIONS_INIT; (void) options; }\n' \
+          | c++ -std=c++11 -Wall -Wextra -Werror -pedantic -fsyntax-only -I packages/asnkitrt-c/include -x c++ -
+
   # The compiler for the web: the compiler in Rust as WebAssembly, of
   # which what it makes is loaded by the runtime as WebAssembly.
   compiler-wasm:

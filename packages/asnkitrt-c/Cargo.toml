@@ -1,0 +1,23 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "asnkitrt-c"
+version = "1.0.1"
+edition = "2024"
+rust-version = "1.88"
+description = "The runtime of asnkit for C, as a shared and a static library with a header"
+license = "MIT"
+repository = "https://github.com/boxtheta/asnkit"
+readme = "README.md"
+# It is a library for C, with include/asnkitrt.h, and not a crate to
+# depend on.
+publish = false
+
+[lib]
+name = "asnkitrt_c"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+asnkitrt = { path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "bigint"] }

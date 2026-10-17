@@ -33,6 +33,7 @@ def versions():
 
     for package in [
         "asnkitrt-rs",
+        "asnkitrt-c",
         "asnkitrt-wasm",
         "asnkit-compiler",
         "asnkit-compiler-wasm",

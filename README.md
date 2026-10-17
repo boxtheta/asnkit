@@ -36,6 +36,7 @@ with an error rather than encoded wrongly.
 | `asnkitrt` | Runtime for Python. | [`packages/asnkitrt`](packages/asnkitrt) | [PyPI](https://pypi.org/project/asnkitrt/) | MIT |
 | `asnkitrt` | Runtime for Rust. Needs `alloc` but not `std`, so it builds for embedded targets. | [`packages/asnkitrt-rs`](packages/asnkitrt-rs) | [crates.io](https://crates.io/crates/asnkitrt) | MIT |
 | `asnkitrt` | Runtime for browsers and Node.js: the Rust runtime as WebAssembly. | [`packages/asnkitrt-wasm`](packages/asnkitrt-wasm) | [npm](https://www.npmjs.com/package/asnkitrt) | MIT |
+| `asnkitrt-c` | Runtime for C: the Rust runtime as a shared and a static library, with a header. | [`packages/asnkitrt-c`](packages/asnkitrt-c) | build from source | MIT |
 | **Compiler** | Parses ASN.1 and writes `.asni` files. | | | |
 | `asnkit-compiler` | The compiler as a Rust library, which also runs the plugins, for an application to compile ASN.1 itself. | [`packages/asnkit-compiler`](packages/asnkit-compiler) | [crates.io](https://crates.io/crates/asnkit-compiler) | Apache-2.0 |
 | `asnkitcc` | The command, made with the library. | [`packages/asnkitcc`](packages/asnkitcc) | [crates.io](https://crates.io/crates/asnkitcc) | Apache-2.0 |
