@@ -20,6 +20,10 @@ foo.asn --> compiler --> foo.asni --> runtime: encode, decode
                             +-------> plugin: Python or Rust code
 ```
 
+Try it in the browser in the [playground](https://asnkit.boxtheta.org/playground/),
+which runs the compiler and the runtime as WebAssembly; the
+[documentation](https://asnkit.boxtheta.org/) is on the same site.
+
 asnkit supports a large subset of ASN.1; what it does not support yet is
 listed under [Known limitations](#known-limitations), and is rejected
 with an error rather than encoded wrongly.

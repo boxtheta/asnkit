@@ -1,8 +1,8 @@
 name: Release
 
 # A tag v1.2.3 releases every package at version 1.2.3: the Python
-# packages to PyPI, the crates to crates.io, the WebAssembly runtime to
-# npm, and makes a release on GitHub with the notes of CHANGELOG.md.
+# packages to PyPI, the crates to crates.io, the WebAssembly runtime and
+# compiler to npm, and makes a release on GitHub with the notes of CHANGELOG.md.
 # RELEASING.md tells how to make one, and what has to be set up first.
 on:
   push:
@@ -57,13 +57,13 @@ jobs:
       run: |
         cargo publish --dry-run --locked -p asnkitrt
         cargo publish --dry-run --locked -p asnkit-compiler
-    - name: Build and test the npm package
-      working-directory: packages/asnkitrt-wasm
+    - name: Build and test the npm packages
+      # The compiler is tested with the runtime, which is built first.
       run: |
-        npm run build
-        npm test
-        mkdir ../../npm
-        npm pack --pack-destination ../../npm
+        mkdir npm
+        for package in asnkitrt-wasm asnkit-compiler-wasm; do
+          (cd "packages/$package" && npm run build && npm test && npm pack --pack-destination ../../npm)
+        done
     - uses: actions/upload-artifact@v4
       with:
         name: python
@@ -151,12 +151,17 @@ jobs:
       run: npm install -g npm@latest
     - name: Publish to npm
       # Left out if it is already there, so that the job can be run again.
+      # Each package has a trusted publisher of its own on npm, for this
+      # workflow and the environment npm.
       run: |
-        if npm view "asnkitrt@${GITHUB_REF_NAME#v}" version | grep -q .; then
-          echo "asnkitrt ${GITHUB_REF_NAME#v} is already published."
-        else
-          npm publish --access public ./npm/asnkitrt-*.tgz
-        fi
+        version=${GITHUB_REF_NAME#v}
+        for package in asnkitrt asnkit-compiler; do
+          if npm view "$package@$version" version | grep -q .; then
+            echo "$package $version is already published."
+          else
+            npm publish --access public "./npm/$package-$version.tgz"
+          fi
+        done
 
   github:
 

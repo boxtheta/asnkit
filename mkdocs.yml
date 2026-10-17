@@ -4,6 +4,7 @@
 
 site_name: asnkit
 site_description: ASN.1 compiled once, encoded and decoded anywhere
+site_url: https://asnkit.boxtheta.org/
 repo_url: https://github.com/boxtheta/asnkit
 docs_dir: docs
 theme:

@@ -19,6 +19,7 @@ repository, as the page imports them from ``packages/``:
 
 Then open http://localhost:8000/examples/playground/.
 
-The documentation on GitHub Pages has it under ``playground/``, with
+It is online at https://asnkit.boxtheta.org/playground/. The
+documentation on GitHub Pages has it under ``playground/``, with
 the packages copied next to it by ``build-site.sh``, which the workflow
 ``docs.yml`` runs.

@@ -20,8 +20,8 @@ and passes its tests.
   publisher to each of `asnkitrt`, `asnkit-compiler`, `asnkit-gen-rust`
   and `asnkitcc`: owner `boxtheta`, repository `asnkit`, workflow
   `release.yml`, environment `crates-io`. No token is needed.
-- **npm:** publish `asnkitrt` once by hand, then add a trusted publisher
-  to it: GitHub Actions, owner `boxtheta`, repository `asnkit`, workflow
+- **npm:** publish `asnkitrt` and `asnkit-compiler` once by hand, then
+  add a trusted publisher to each: GitHub Actions, owner `boxtheta`, repository `asnkit`, workflow
   `release.yml`, environment `npm`. No token is needed.
 - **DCO:** install the [DCO app](https://github.com/apps/dco) on the
   repository, and make its check required on `trunk`, so that every
