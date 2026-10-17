@@ -78,6 +78,40 @@ class XerTest(BaseTest):
         for type_name, decoded, encoded in datas:
             self.assert_encode_decode_string(foo, type_name, decoded, encoded)
 
+    def test_boolean(self):
+        foo = fixtures.compile_string(
+            "Foo DEFINITIONS AUTOMATIC TAGS ::= "
+            "BEGIN "
+            "A ::= BOOLEAN "
+            "B ::= SEQUENCE OF BOOLEAN "
+            "END",
+            "xer",
+        )
+
+        datas = [
+            ("A", True, b"<A><true /></A>"),
+            ("A", False, b"<A><false /></A>"),
+            ("B", [True, False], b"<B><true /><false /></B>"),
+        ]
+
+        for type_name, decoded, encoded in datas:
+            self.assert_encode_decode_string(foo, type_name, decoded, encoded)
+
+        self.assertEqual(foo.decode("A", b"<A>\n  <true/>\n</A>"), True)
+
+        # Anything else is an error, not false.
+        for type_name, encoded in [
+            ("A", b"<A>true</A>"),
+            ("A", b"<A />"),
+            ("A", b"<A><yes /></A>"),
+            ("A", b"<A><true>x</true></A>"),
+            ("A", b"<A><true /><false /></A>"),
+            ("A", b"<A><true />x</A>"),
+            ("B", b"<B><yes /></B>"),
+        ]:
+            with self.assertRaises(fixtures.DecodeError):
+                foo.decode(type_name, encoded)
+
     def test_bit_string(self):
         foo = fixtures.compile_string(
             "Foo DEFINITIONS AUTOMATIC TAGS ::= BEGIN A ::= BIT STRING END", "xer"
@@ -98,6 +132,14 @@ class XerTest(BaseTest):
         for type_name, decoded, encoded in datas:
             self.assert_encode_decode_string(foo, type_name, decoded, encoded)
 
+        # Space is allowed in an xmlbstring (X.680 12.10).
+        self.assertEqual(foo.decode("A", b"<A> 01\n00\t1 </A>"), (b"\x48", 5))
+        self.assertEqual(foo.decode("A", b"<A>\n</A>"), (b"", 0))
+
+        for encoded in [b"<A>012</A>", b"<A>0b1</A>", b"<A>1_0</A>", b"<A>+1</A>"]:
+            with self.assertRaises(fixtures.DecodeError):
+                foo.decode("A", encoded)
+
     def test_octet_string(self):
         foo = fixtures.compile_string(
             "Foo DEFINITIONS AUTOMATIC TAGS ::= BEGIN A ::= OCTET STRING END", "xer"
@@ -112,7 +154,14 @@ class XerTest(BaseTest):
         for type_name, decoded, encoded in datas:
             self.assert_encode_decode_string(foo, type_name, decoded, encoded)
 
-        self.assertEqual(b"\x01\x23", foo.decode("A", b"<A>123</A>"))
+        # An odd number of digits is ended by a zero (X.680 22.3), and
+        # space is allowed in an xmlhstring (X.680 12.12).
+        self.assertEqual(b"\x12\x30", foo.decode("A", b"<A>123</A>"))
+        self.assertEqual(b"\xab\xcd", foo.decode("A", b"<A> ab\ncd </A>"))
+
+        for encoded in [b"<A>0G</A>", b"<A>0x12</A>"]:
+            with self.assertRaises(fixtures.DecodeError):
+                foo.decode("A", encoded)
 
     def test_object_identifier(self):
         foo = fixtures.compile_string(
@@ -388,6 +437,13 @@ class XerTest(BaseTest):
                 "A",
                 {"a": "x\x07y\x00\tz\x1f", "bel": None},
                 b"<A><a>x<bel/>y<nul/>\tz<is1/></a><bel /></A>",
+            ),
+            # A carriage return is a reference, as a reader makes one that
+            # is written as it is a line feed.
+            (
+                "A",
+                {"a": "x\r\ny\r", "bel": None},
+                b"<A><a>x&#13;\ny&#13;</a><bel /></A>",
             ),
         ]
 

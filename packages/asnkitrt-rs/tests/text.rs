@@ -89,6 +89,78 @@ fn xml_is_written_as_python_writes_it() {
 }
 
 #[test]
+fn xml_is_read_as_x680_says() {
+    let foo = compiled("foo.asni", Codec::Xer);
+    let rfc5280 = compiled("rfc5280.asni", Codec::Xer);
+    let answer = |value: bool| {
+        Value::Map(vec![
+            ("id".into(), Value::Integer(1)),
+            ("answer".into(), Value::Boolean(value)),
+        ])
+    };
+
+    // A BOOLEAN is <true/> or <false/>, with space around it, and
+    // anything else is an error, not false.
+    assert_eq!(
+        foo.decode(
+            "Answer",
+            b"<Answer><id>1</id><answer>\n <false/>\n</answer></Answer>"
+        )
+        .unwrap(),
+        answer(false)
+    );
+
+    for bad in [
+        "true",
+        "",
+        "<yes/>",
+        "<true>x</true>",
+        "<true/><false/>",
+        "<true/>x",
+    ] {
+        let xml = format!("<Answer><id>1</id><answer>{bad}</answer></Answer>");
+
+        assert!(foo.decode("Answer", xml.as_bytes()).is_err(), "{xml}");
+    }
+
+    // Space is allowed in an xmlbstring and an xmlhstring (X.680 12.10,
+    // 12.12), and an odd number of hexadecimal digits is ended by a zero
+    // (X.680 22.3).
+    assert_eq!(
+        rfc5280
+            .decode(
+                "UniqueIdentifier",
+                b"<UniqueIdentifier> 01\n00\t1 </UniqueIdentifier>"
+            )
+            .unwrap(),
+        Value::Bits(vec![0x48], 5)
+    );
+    assert_eq!(
+        rfc5280
+            .decode("KeyIdentifier", b"<KeyIdentifier> ab\ncd </KeyIdentifier>")
+            .unwrap(),
+        Value::Bytes(vec![0xab, 0xcd])
+    );
+    assert_eq!(
+        rfc5280
+            .decode("KeyIdentifier", b"<KeyIdentifier>123</KeyIdentifier>")
+            .unwrap(),
+        Value::Bytes(vec![0x12, 0x30])
+    );
+
+    // A carriage return is a reference, as a reader makes one that is
+    // written as it is a line feed.
+    let value = question(1, "a\r\nb\r");
+    let encoded = foo.encode("Question", &value).unwrap();
+
+    assert_eq!(
+        encoded,
+        b"<Question><id>1</id><question>a&#13;\nb&#13;</question></Question>"
+    );
+    assert_eq!(foo.decode("Question", &encoded).unwrap(), value);
+}
+
+#[test]
 fn integers_of_any_size() {
     let big = "-123456789012345678901234567890123456789012345678901234567890";
 

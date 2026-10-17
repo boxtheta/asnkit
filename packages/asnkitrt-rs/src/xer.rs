@@ -84,6 +84,27 @@ fn names<'a>(
     root.iter().chain(additions.iter().flatten())
 }
 
+/// Whether `c` is white-space in XML.
+fn is_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\r')
+}
+
+/// Whether `text` is nothing but white-space.
+fn is_blank(text: &Option<String>) -> bool {
+    text.as_deref().unwrap_or("").chars().all(is_space)
+}
+
+/// A BOOLEAN, `<true/>` or `<false/>` (X.680 18.3): an empty element
+/// and nothing else, but space.
+fn boolean(element: &Element) -> Result<bool> {
+    match element.name.as_str() {
+        "true" | "false" if element.text.is_none() && element.children.is_empty() => {
+            Ok(element.name == "true")
+        }
+        _ => decode_error("Expected <true/> or <false/>."),
+    }
+}
+
 fn time_error<T>(result: Result<T>) -> Result<T> {
     result.map_err(|_| Error::Decode("Expected a date or a time.", 0))
 }
@@ -354,7 +375,7 @@ impl Coder<'_> {
     /// Decodes an item of a SEQUENCE OF or a SET OF.
     fn decode_of(&self, id: TypeId, element: &Element, depth: usize) -> Result<Value> {
         match self.types.kind(id) {
-            Kind::Boolean => Ok(Value::Boolean(element.name == "true")),
+            Kind::Boolean => boolean(element).map(Value::Boolean),
             Kind::Enumerated { root, additions } => {
                 match names(root, additions).find(|(name, _)| name == &element.name) {
                     Some((name, number)) => Ok(self.enumeration_value(name, *number)),
@@ -415,7 +436,12 @@ impl Coder<'_> {
 
         match self.types.kind(id) {
             Kind::Ref(_) => decode_error("The type has no contents of its own."),
-            Kind::Boolean => Ok(Value::Boolean(element.child("true").is_some())),
+            Kind::Boolean => match element.children.as_slice() {
+                [value] if is_blank(&element.text) && is_blank(&value.tail) => {
+                    boolean(value).map(Value::Boolean)
+                }
+                _ => decode_error("Expected <true/> or <false/>."),
+            },
             Kind::Integer(_) => match decimal::decimal_to_value(self.text(element)?.trim()) {
                 Some(value) => Ok(value),
                 None => decode_error("Expected an integer."),
@@ -444,8 +470,15 @@ impl Coder<'_> {
                 _ => decode_error("Expected a real."),
             },
             Kind::Null => Ok(Value::Null),
+            // An `xmlbstring` may have space in it (X.680 12.10).
             Kind::BitString(_) => {
-                let text = element.text.as_deref().unwrap_or("");
+                let text: String = element
+                    .text
+                    .as_deref()
+                    .unwrap_or("")
+                    .chars()
+                    .filter(|c| !is_space(*c))
+                    .collect();
                 let mut bytes = alloc::vec![0u8; text.len().div_ceil(8)];
 
                 for (bit, c) in text.bytes().enumerate() {
@@ -458,17 +491,22 @@ impl Coder<'_> {
 
                 Ok(Value::Bits(bytes, text.len()))
             }
+            // An `xmlhstring` may have space in it (X.680 12.12), and an
+            // odd number of digits is ended by a zero (X.680 22.3).
             Kind::OctetString => {
-                let text = element.text.as_deref().unwrap_or("");
-                let padded;
-                let text = if text.len() % 2 == 1 {
-                    padded = format!("0{text}");
-                    &padded
-                } else {
-                    text
-                };
+                let mut text: String = element
+                    .text
+                    .as_deref()
+                    .unwrap_or("")
+                    .chars()
+                    .filter(|c| !is_space(*c))
+                    .collect();
 
-                match decimal::hex_decode(text) {
+                if text.len() % 2 == 1 {
+                    text.push('0');
+                }
+
+                match decimal::hex_decode(&text) {
                     Some(bytes) => Ok(Value::Bytes(bytes)),
                     None => decode_error("Expected hex."),
                 }

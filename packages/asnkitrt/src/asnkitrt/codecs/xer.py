@@ -89,6 +89,25 @@ def text_of(element):
     return "".join(parts)
 
 
+XML_SPACE = re.compile("[ \t\n\r]")
+
+
+def without_space(text):
+    return XML_SPACE.sub("", text or "")
+
+
+def decode_boolean(element):
+    """A BOOLEAN, <true/> or <false/> (X.680 18.3): an empty element and
+    nothing else, but space.
+
+    """
+
+    if element.tag not in ("true", "false") or element.text or len(element):
+        raise DecodeError("Expected <true/> or <false/>.")
+
+    return element.tag == "true"
+
+
 def indent_xml(element, indent, level=0):
     i = "\n" + level * indent
 
@@ -256,13 +275,20 @@ class Boolean(Type):
         return element
 
     def decode(self, element):
-        return element.find("true") is not None
+        if (
+            len(element) != 1
+            or without_space(element.text)
+            or without_space(element[0].tail)
+        ):
+            raise DecodeError("Expected <true/> or <false/>.")
+
+        return decode_boolean(element[0])
 
     def encode_of(self, data):
         return ElementTree.Element("true" if data else "false")
 
     def decode_of(self, element):
-        return element.tag == "true"
+        return decode_boolean(element)
 
 
 class Integer(NamedNumbersMixin, Type):
@@ -376,13 +402,17 @@ class BitString(Type):
         return element
 
     def decode(self, element):
-        encoded = element.text
+        # An xmlbstring may have space in it (X.680 12.10).
+        encoded = without_space(element.text)
 
-        if encoded is None:
-            number_of_bits = 0
+        if encoded.strip("01"):
+            raise DecodeError("Expected 0 and 1 in a BIT STRING.")
+
+        number_of_bits = len(encoded)
+
+        if number_of_bits == 0:
             decoded = b""
         else:
-            number_of_bits = len(encoded)
             value = int(encoded, 2)
             value |= 0x80 << number_of_bits
             rest = number_of_bits % 8
@@ -408,12 +438,17 @@ class OctetString(Type):
         return element
 
     def decode(self, element):
-        if element.text is None:
-            return b""
-        else:
-            if len(element.text) % 2:
-                return binascii.unhexlify(element.text.zfill(len(element.text) + 1))
-            return binascii.unhexlify(element.text)
+        # An xmlhstring may have space in it (X.680 12.12), and an odd
+        # number of digits is ended by a zero (X.680 22.3).
+        encoded = without_space(element.text)
+
+        if len(encoded) % 2:
+            encoded += "0"
+
+        try:
+            return binascii.unhexlify(encoded)
+        except (binascii.Error, ValueError):
+            raise DecodeError("Expected hex.")
 
 
 class ObjectIdentifier(StringType):
@@ -831,7 +866,10 @@ class CompiledType(compiler.CompiledType):
         if indent is not None:
             indent_xml(element, indent * " ")
 
-        return CONTROL_TAG.sub(rb"<\1/>", ElementTree.tostring(element))
+        # A carriage return written as it is would be read as a line feed.
+        encoded = ElementTree.tostring(element).replace(b"\r", b"&#13;")
+
+        return CONTROL_TAG.sub(rb"<\1/>", encoded)
 
     def decode(self, data):
         element = ElementTree.fromstring(data.decode("utf-8"))

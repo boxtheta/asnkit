@@ -227,6 +227,8 @@ fn write_text(out: &mut String, text: &str) {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
+            // Written as it is, a reader would make it a line feed.
+            '\r' => out.push_str("&#13;"),
             // The control characters XML does not have (X.680 12.15.5).
             c if (c as u32) < 0x20 && !matches!(c, '\t' | '\n' | '\r') => {
                 out.push('<');

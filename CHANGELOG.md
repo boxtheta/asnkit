@@ -31,6 +31,19 @@ security fixes.
   from a file, as one that is signed, encrypted, bound or has a nonce.
   The module of Python then has `use_asni()`.
 
+### Fixed
+
+- XER, in every runtime: a BOOLEAN is read only as `<true/>` or
+  `<false/>`, and anything else is an error, where it was read as false.
+  An OCTET STRING with an odd number of hexadecimal digits is ended by a
+  zero (X.680 22.3), so `<A>123</A>` is `12 30`, where it was `01 23`.
+  A BIT STRING and an OCTET STRING may have space in them (X.680 12.10,
+  12.12), and the runtime for Python no longer takes `0b`, `_` or `+` in
+  a BIT STRING. A carriage return in a string is written `&#13;`, as one
+  written as it is is read as a line feed.
+- The playground no longer tells a byte offset for an error in JER or
+  XER, which the runtimes do not give.
+
 ## [1.0.1] - 2026-10-15
 
 What the runtimes write and read now follows the standards where it

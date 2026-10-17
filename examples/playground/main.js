@@ -122,8 +122,11 @@ function showStatus(element, message, kind) {
 }
 
 function describe(error) {
-  if (error?.name === 'DecodeError' && error.offset !== undefined) {
-    const unit = ['per', 'uper'].includes($('input-codec').value) ? 'bit' : 'byte';
+  const codec = $('input-codec').value;
+
+  // The text codecs do not tell where an error is.
+  if (error?.name === 'DecodeError' && error.offset !== undefined && !TEXT_CODECS.has(codec)) {
+    const unit = ['per', 'uper'].includes(codec) ? 'bit' : 'byte';
 
     return `${error.name}: ${error.message} (at ${unit} ${error.offset})`;
   }
