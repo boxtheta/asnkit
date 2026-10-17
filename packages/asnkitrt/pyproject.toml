@@ -1,6 +1,6 @@
 [project]
 name = "asnkitrt"
-version = "1.0.1"
+version = "1.1.0"
 description = "Encode and decode ASN.1 with compiled specifications"
 readme = "README.rst"
 authors = [

@@ -158,7 +158,9 @@ class GeneratedFooTest(unittest.TestCase):
                 fin.read(),
                 text,
                 "Make it again with: uv run asnkit-gen-python --asni {} "
-                "--out examples/generated".format(FOO_ASNI),
+                "--asnst {} --out examples/generated".format(
+                    FOO_ASNI, FOO_ASNI.replace(".asni", ".asnst")
+                ),
             )
 
 

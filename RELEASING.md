@@ -3,7 +3,7 @@
 All packages are released together, with one version, by pushing a tag
 `v1.2.3`. `.github/workflows/release.yml` then tests everything,
 publishes the Python packages to PyPI, the crates to crates.io and the
-WebAssembly runtime to npm, and makes a release on GitHub with the
+WebAssembly runtime and compiler to npm, and makes a release on GitHub with the
 notes of `CHANGELOG.md`. Nothing is published unless all of it builds
 and passes its tests.
 

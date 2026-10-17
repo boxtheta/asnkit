@@ -7,7 +7,7 @@ and `.asnst` formats, the runtime APIs and the command line keep
 working within a major version. `SECURITY.md` tells which releases get
 security fixes.
 
-## [Unreleased]
+## [1.1.0] - 2026-10-17
 
 ### Added
 
@@ -17,7 +17,7 @@ security fixes.
 - The compiler for browsers and Node.js, as WebAssembly, in
   `packages/asnkit-compiler-wasm`: it compiles and parses the text of a
   specification, and signs, encrypts, binds and gives a nonce as
-  `asnkitcc` does. It is not on npm yet.
+  `asnkitcc` does. It is on npm as `asnkit-compiler`.
 - The runtime for C, in `packages/asnkitrt-c`: the Rust runtime as a
   shared and a static library, with the header `asnkitrt.h`. It is
   built from source.
@@ -112,5 +112,6 @@ WebAssembly runtime on npm.
   `application/vnd.asnkit.asnst+cbor`, guidelines for third-party
   runtimes, a corpus of `.asni` files and more than 5,300 test vectors.
 
+[1.1.0]: https://github.com/boxtheta/asnkit/releases/tag/v1.1.0
 [1.0.1]: https://github.com/boxtheta/asnkit/releases/tag/v1.0.1
 [1.0.0]: https://crates.io/crates/asnkitrt/1.0.0
