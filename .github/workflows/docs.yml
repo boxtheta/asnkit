@@ -5,9 +5,17 @@ on:
     branches: [ "trunk" ]
   pull_request:
     branches: [ "trunk" ]
+  workflow_dispatch:
+
+# One deployment at a time, and the latest one wins.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # The documentation is built with MkDocs, and any warning is an error.
+  # The playground, the compiler and the runtime as WebAssembly, is put
+  # in it under playground/.
   build-docs:
 
     runs-on: ubuntu-latest
@@ -19,3 +27,45 @@ jobs:
     - name: Build
       run: |
         uv run --group docs mkdocs build --strict
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Install wasm-bindgen, of the version of the crates
+      run: |
+        cargo install wasm-bindgen-cli --version 0.2.129 --locked
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Build the playground
+      run: |
+        (cd packages/asnkitrt-wasm && npm run build)
+        (cd packages/asnkit-compiler-wasm && npm run build)
+        examples/playground/build-site.sh site/playground
+    - name: Upload the site
+      if: github.event_name != 'pull_request'
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: site
+
+  # Published from trunk only. The repository is to have GitHub Actions
+  # as the source of its GitHub Pages.
+  deploy-docs:
+
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+    needs: build-docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

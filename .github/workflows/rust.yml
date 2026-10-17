@@ -94,6 +94,41 @@ jobs:
         npm run build
         npm test
 
+  # The compiler for the web: the compiler in Rust as WebAssembly, of
+  # which what it makes is loaded by the runtime as WebAssembly.
+  compiler-wasm:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+    - name: Install wasm-bindgen, of the version of the crate
+      run: |
+        cargo install wasm-bindgen-cli --version 0.2.129 --locked
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Lint
+      run: |
+        cargo clippy --locked -p asnkit-compiler --target wasm32-unknown-unknown -- -D warnings
+        cargo clippy --locked -p asnkit-compiler-wasm --target wasm32-unknown-unknown -- -D warnings
+    - name: Build the runtime the tests load with
+      working-directory: packages/asnkitrt-wasm
+      run: |
+        npm run build
+    - name: Build and test
+      working-directory: packages/asnkit-compiler-wasm
+      run: |
+        npm run build
+        npm test
+
   # The oldest Rust the runtime says it builds with.
   runtime-oldest-rust:
 

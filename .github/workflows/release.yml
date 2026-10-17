@@ -46,7 +46,7 @@ jobs:
         grep -qE "^## \[${GITHUB_REF_NAME#v}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md
     - name: Test
       run: |
-        cargo test --locked --workspace --exclude asnkitrt-wasm
+        cargo test --locked --workspace --exclude asnkitrt-wasm --exclude asnkit-compiler-wasm
         cargo build --locked --release --bin asnkitcc
         uv run python -m unittest
     - name: Build the Python packages

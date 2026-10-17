@@ -78,6 +78,14 @@ that you are allowed to.
    cd packages/asnkitrt-wasm && npm run build && npm test
    ```
 
+   If you changed the compiler, also build and test the WebAssembly
+   compiler, whose tests load what it makes with the WebAssembly
+   runtime, built as above:
+
+   ```text
+   cd packages/asnkit-compiler-wasm && npm run build && npm test
+   ```
+
 6. If you changed the documentation, build it. It is written in Markdown
    and built with MkDocs, and warnings count as errors:
 

@@ -10,6 +10,9 @@ files by the compiler `asnkitcc`, which has no Python API.
 - [File formats](file_formats.md): the `.asni` and `.asnst` files.
 - [Guidelines for third-party runtimes](third_party_runtimes.md).
 - [Plugins](plugins.md): how they are run, and the two there are.
+- [Playground](playground/): compile ASN.1 and encode a value with
+  every codec, in the browser, with the compiler and the runtime as
+  WebAssembly.
 
 ## Basic usage
 

@@ -19,3 +19,7 @@ This folder contains executable example scripts.
 
 ``programming_types``
    Types often found in programming languages.
+
+``playground``
+   A web page that compiles ASN.1 and encodes a value with every codec,
+   with the compiler and the runtime as WebAssembly.

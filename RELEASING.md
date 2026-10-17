@@ -38,7 +38,8 @@ and passes its tests.
      `asnkitrt`, and `packages/asnkit-gen-python/src/asnkit_gen_python/version.py`
    - the `Cargo.toml` of each crate, and the versions of the
      dependencies of `asnkitcc` and `asnkit-gen-rust` on the others
-   - `packages/asnkitrt-wasm/package.json`
+   - `packages/asnkitrt-wasm/package.json` and
+     `packages/asnkit-compiler-wasm/package.json`
 
 2. Make everything again that names the version of the compiler or of a
    plugin: the fixtures, the compiled examples, and the code generated

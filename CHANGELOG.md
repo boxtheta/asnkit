@@ -14,6 +14,16 @@ security fixes.
 - `asnkitcc convert`, which decodes a value with one codec and encodes
   it with another, as JER to DER, with an `.asni` file or ASN.1 files
   it compiles first. `asnkitcc` now depends on the runtime `asnkitrt`.
+- The compiler for browsers and Node.js, as WebAssembly, in
+  `packages/asnkit-compiler-wasm`: it compiles and parses the text of a
+  specification, and signs, encrypts, binds and gives a nonce as
+  `asnkitcc` does. It is not on npm yet.
+
+### Changed
+
+- `asnkit-compiler` builds for `wasm32-unknown-unknown`, where it has no
+  module `plugin`, as WebAssembly runs no programs. `aes-gcm` is used
+  without its default features, which the compiler did not use.
 
 - The option `embed` of the plugins `asnkit-gen-python` and
   `asnkit-gen-rust`: with `embed=false`, the module made does not have

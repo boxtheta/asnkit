@@ -1,0 +1,93 @@
+<!doctype html>
+<!--
+Copyright (c) 2025 BoxTheta
+
+SPDX-License-Identifier: Apache-2.0
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>asnkit playground</title>
+<meta name="description" content="Compile ASN.1 and encode values with every codec, in the browser, with the compiler and the runtime of asnkit as WebAssembly.">
+<link rel="stylesheet" href="style.css">
+<!-- The packages as they are built in the repository. build-site.sh
+     maps them to the copies next to the page. -->
+<script type="importmap">
+{
+  "imports": {
+    "asnkit-compiler": "../../packages/asnkit-compiler-wasm/js/web.js",
+    "asnkitrt": "../../packages/asnkitrt-wasm/js/web.js"
+  }
+}
+</script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>asnkit <span>playground</span></h1>
+    <p>The compiler and the runtime, both as WebAssembly, running in this page. Nothing is sent anywhere.</p>
+  </div>
+  <div class="versions" id="versions">Loading WebAssembly…</div>
+</header>
+
+<main>
+  <section class="panel" aria-labelledby="spec-heading">
+    <div class="panel-head">
+      <h2 id="spec-heading"><span class="step">1</span> Specification</h2>
+      <div class="actions">
+        <select id="example" aria-label="Example specification"></select>
+        <button id="compile" class="primary">Compile</button>
+      </div>
+    </div>
+    <textarea id="spec" wrap="off" spellcheck="false" aria-label="ASN.1 specification"></textarea>
+    <div id="compile-status" class="status" role="status"></div>
+    <div class="compile-meta" id="compile-meta" hidden>
+      <ul id="modules"></ul>
+      <button id="download" class="link">Download .asni</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="value-heading">
+    <div class="panel-head">
+      <h2 id="value-heading"><span class="step">2</span> Value</h2>
+      <div class="actions">
+        <label>Type
+          <select id="type" aria-label="Type"></select>
+        </label>
+        <label>as
+          <select id="input-codec" aria-label="Codec of the input"></select>
+        </label>
+      </div>
+    </div>
+    <textarea id="input" spellcheck="false" aria-label="Value to decode"></textarea>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="check-constraints" checked> Check constraints</label>
+      <span class="hint" id="input-hint"></span>
+    </div>
+    <div id="decode-status" class="status" role="status"></div>
+  </section>
+
+  <section class="panel wide" aria-labelledby="out-heading">
+    <div class="panel-head">
+      <h2 id="out-heading"><span class="step">3</span> Every codec</h2>
+      <span class="hint">Click a row to use it as the input.</span>
+    </div>
+    <div class="table-wrap">
+      <table id="outputs">
+        <thead>
+          <tr><th>Codec</th><th class="num">Bytes</th><th class="bar-col">Size</th><th>Encoding</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a href="https://github.com/boxtheta/asnkit">github.com/boxtheta/asnkit</a>
+</footer>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

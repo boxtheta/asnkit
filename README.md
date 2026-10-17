@@ -35,6 +35,7 @@ with an error rather than encoded wrongly.
 | **Compiler** | Parses ASN.1 and writes `.asni` files. | | | |
 | `asnkit-compiler` | The compiler as a Rust library, which also runs the plugins, for an application to compile ASN.1 itself. | [`packages/asnkit-compiler`](packages/asnkit-compiler) | [crates.io](https://crates.io/crates/asnkit-compiler) | Apache-2.0 |
 | `asnkitcc` | The command, made with the library. | [`packages/asnkitcc`](packages/asnkitcc) | [crates.io](https://crates.io/crates/asnkitcc) | Apache-2.0 |
+| `asnkit-compiler` | The compiler for browsers and Node.js, as WebAssembly. | [`packages/asnkit-compiler-wasm`](packages/asnkit-compiler-wasm) | not yet | Apache-2.0 |
 | **Plugins** | Generate code from a compiled specification. | | | |
 | `asnkit-gen-python` | Python data classes. | [`packages/asnkit-gen-python`](packages/asnkit-gen-python) | [PyPI](https://pypi.org/project/asnkit-gen-python/) | Apache-2.0 |
 | `asnkit-gen-rust` | Rust structs and enums with `serde`. | [`packages/asnkit-gen-rust`](packages/asnkit-gen-rust) | [crates.io](https://crates.io/crates/asnkit-gen-rust) | Apache-2.0 |

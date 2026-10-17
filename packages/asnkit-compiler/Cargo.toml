@@ -18,7 +18,9 @@ categories = ["encoding", "parser-implementations"]
 exclude = ["tests/", "benches/", "examples/"]
 
 [dependencies]
-aes-gcm = "0.10"
+# Its own randomness is left out: the initialization vector is made
+# with getrandom.
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
 ed25519-dalek = "2"
 getrandom = "0.3"
 num-bigint = "0.4"
@@ -37,3 +39,8 @@ tempfile = "3"
 [[bench]]
 name = "compiler"
 harness = false
+
+# In a browser and Node.js, random bytes come from the crypto of
+# JavaScript, for packages/asnkit-compiler-wasm.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }

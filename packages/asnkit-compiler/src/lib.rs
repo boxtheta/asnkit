@@ -26,8 +26,9 @@
 //! `parse()` and `compile()` give the syntax tree in its readable form
 //! and the nodes of a compiled specification in their compact form, as
 //! JSON values, which is what the golden tests in `tests/golden/` hold
-//! the compiler to. `plugin` runs a plugin on a specification, and
-//! `container` signs and encrypts the files it writes.
+//! the compiler to. `plugin` runs a plugin on a specification (but not
+//! in WebAssembly, which runs no programs), and `container` signs and
+//! encrypts the files it writes.
 
 // The grammar follows that of the Python parser closely, to be compared with
 // it. These are the lints about its style.
@@ -45,6 +46,8 @@ pub mod container;
 mod data;
 mod grammar;
 mod objects;
+// A plugin is a program that is run, which WebAssembly has no way to.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod plugin;
 mod source;
 

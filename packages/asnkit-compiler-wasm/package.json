@@ -1,0 +1,31 @@
+{
+  "name": "asnkit-compiler",
+  "version": "1.0.1",
+  "description": "Compile ASN.1 to the .asni files asnkit loads, in the browser and Node.js",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boxtheta/asnkit"
+  },
+  "exports": {
+    ".": {
+      "types": "./js/index.d.ts",
+      "node": "./js/node.js",
+      "default": "./js/web.js"
+    }
+  },
+  "files": [
+    "js",
+    "pkg/asnkit_compiler_wasm.js",
+    "pkg/asnkit_compiler_wasm_bg.wasm",
+    "LICENSE-COMPILER"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "cargo build --locked --profile wasm --target wasm32-unknown-unknown -p asnkit-compiler-wasm && wasm-bindgen --target web --no-typescript --out-dir pkg ../../target/wasm32-unknown-unknown/wasm/asnkit_compiler_wasm.wasm",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

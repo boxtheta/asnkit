@@ -35,6 +35,7 @@ def versions():
         "asnkitrt-rs",
         "asnkitrt-wasm",
         "asnkit-compiler",
+        "asnkit-compiler-wasm",
         "asnkitcc",
         "asnkit-gen-rust",
     ]:
@@ -42,8 +43,9 @@ def versions():
             "version"
         ]
 
-    with open(os.path.join(PACKAGES, "asnkitrt-wasm", "package.json")) as fin:
-        found["asnkitrt-wasm/package.json"] = json.load(fin)["version"]
+    for package in ["asnkitrt-wasm", "asnkit-compiler-wasm"]:
+        with open(os.path.join(PACKAGES, package, "package.json")) as fin:
+            found[package + "/package.json"] = json.load(fin)["version"]
 
     with open(
         os.path.join(
