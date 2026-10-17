@@ -11,6 +11,10 @@ security fixes.
 
 ### Added
 
+- `asnkitcc convert`, which decodes a value with one codec and encodes
+  it with another, as JER to DER, with an `.asni` file or ASN.1 files
+  it compiles first. `asnkitcc` now depends on the runtime `asnkitrt`.
+
 - The option `embed` of the plugins `asnkit-gen-python` and
   `asnkit-gen-rust`: with `embed=false`, the module made does not have
   the compiled specification in it, and is given one that is loaded

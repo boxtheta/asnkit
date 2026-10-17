@@ -20,6 +20,7 @@ import unittest
 from typing import Any
 
 import asnkitrt
+from asnkitrt.runtime import CodecType
 
 BINARY = os.environ.get("ASNKIT_RUST_BINARY")
 
@@ -294,6 +295,168 @@ class RustCompilerProtectionTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"32 hexadecimal digits", result.stderr)
+
+
+CONVERT_SPECIFICATION = """
+C DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+    M ::= SEQUENCE {
+        id      INTEGER (0..1000),
+        name    UTF8String (SIZE (1..20)),
+        color   ENUMERATED { red, green, blue },
+        flags   BIT STRING (SIZE (4)),
+        data    OCTET STRING OPTIONAL,
+        items   SEQUENCE OF CHOICE { n INTEGER, b BOOLEAN }
+    }
+END
+"""
+
+CONVERT_VALUE = {
+    "id": 42,
+    "name": "héllo",
+    "color": "blue",
+    "flags": (b"\xa0", 4),
+    "data": b"\x01\x02",
+    "items": [("n", -7), ("b", True)],
+}
+
+CODECS: list[CodecType] = ["ber", "der", "oer", "per", "uper", "jer", "xer"]
+
+
+@unittest.skipIf(BINARY is None, "ASNKIT_RUST_BINARY is not set.")
+class RustConvertTest(unittest.TestCase):
+    """What ``asnkitcc convert`` writes is what the runtime for Python
+    encodes the same value as."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.asn = self.path("c.asn")
+
+        self.asni = self.path("c.asni")
+
+        with open(self.asn, "w") as fout:
+            fout.write(CONVERT_SPECIFICATION)
+
+        compiled = subprocess.run(
+            [BINARY or "", "compile", "-o", self.asni, self.asn], capture_output=True
+        )
+        self.assertEqual(compiled.returncode, 0, compiled.stderr)
+
+        with open(self.asni, "rb") as fin:
+            asni = fin.read()
+
+        self.specifications = {codec: asnkitrt.load(asni, codec) for codec in CODECS}
+
+    def path(self, name: str) -> str:
+        return os.path.join(self.directory.name, name)
+
+    def convert(
+        self, *arguments: str, data: bytes = b""
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert BINARY is not None
+
+        return subprocess.run(
+            [BINARY, "convert", *arguments], input=data, capture_output=True
+        )
+
+    def encoded(self, codec: CodecType) -> bytes:
+        return self.specifications[codec].encode("M", CONVERT_VALUE)  # type: ignore[no-any-return]
+
+    def test_every_codec_to_every_codec(self) -> None:
+        for source in CODECS:
+            for target in CODECS:
+                with self.subTest(source=source, target=target):
+                    result = self.convert(
+                        "-t",
+                        "M",
+                        "--from",
+                        source,
+                        "--to",
+                        target,
+                        self.asn,
+                        data=self.encoded(source),
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    output = result.stdout
+
+                    if target in ("jer", "xer"):
+                        self.assertTrue(output.endswith(b"\n"))
+                        output = output[:-1]
+
+                    self.assertEqual(
+                        self.specifications[target].decode("M", output),
+                        CONVERT_VALUE,
+                    )
+
+                    if target not in ("jer", "xer"):
+                        self.assertEqual(output, self.encoded(target))
+
+    def test_an_asni_file_codecs_by_extension_and_hex(self) -> None:
+        asni = self.asni
+
+        with open(self.path("m.json"), "wb") as fout:
+            fout.write(self.encoded("jer") + b"\n")
+
+        result = self.convert(
+            "-t", "C.M", "-i", self.path("m.json"), "-o", self.path("m.der"), asni
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        with open(self.path("m.der"), "rb") as fin:
+            self.assertEqual(fin.read(), self.encoded("der"))
+
+        result = self.convert(
+            "-t",
+            "M",
+            "-i",
+            self.path("m.der"),
+            "--to",
+            "uper",
+            "--output-hex",
+            asni,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, self.encoded("uper").hex().encode() + b"\n")
+
+        result = self.convert(
+            "-t",
+            "M",
+            "--from",
+            "uper",
+            "--input-hex",
+            "--to",
+            "jer",
+            "--indent",
+            "2",
+            asni,
+            data=result.stdout,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b'\n  "id": 42', result.stdout)
+
+    def test_errors(self) -> None:
+        for arguments, message in [
+            (["--from", "der", "--to", "jer"], b"needs --type"),
+            (["-t", "M", "--to", "jer"], b"--from"),
+            (["-t", "M", "--from", "cer", "--to", "jer"], b"unknown codec 'cer'"),
+            (["-t", "N", "--from", "der", "--to", "jer"], b"no type 'N'"),
+            (["-t", "M", "--from", "der", "--to", "jer", "--indent", "x"], b"indent"),
+            (["-t", "M", "--from", "jer", "--to", "der", "--input-hex"], b"binary"),
+            (["-t", "M", "--from", "der", "--to", "jer", "--nonce", "1"], b"nonce"),
+        ]:
+            with self.subTest(arguments=arguments):
+                result = self.convert(*arguments, self.asn, data=b"0\x00")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+
+        result = self.convert("-t", "M", "--from", "der", "--to", "jer", self.asn)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"error: decoding:", result.stderr)
+
+        result = subprocess.run(
+            [BINARY or "", "compile", "--to", "der", self.asn], capture_output=True
+        )
+        self.assertIn(b"are for convert", result.stderr)
 
 
 if __name__ == "__main__":

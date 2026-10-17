@@ -7,7 +7,10 @@
 //! ```text
 //! asnkitcc compile foo.asn             # Makes foo.asni.
 //! asnkitcc parse foo.asn               # Makes foo.asnst.
+//! asnkitcc convert -t Question --from jer --to der foo.asni < q.json > q.der
 //! ```
+
+mod convert;
 
 use asnkit_compiler::container::{KEY_ID_SIZE, KEY_SIZE, Key, Protection, derive_key_id};
 use asnkit_compiler::{Input, compile_to_asni_with_summary, parse_to_asnst, plugin};
@@ -15,7 +18,13 @@ use asnkit_compiler::{Input, compile_to_asni_with_summary, parse_to_asnst, plugi
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: asnkitcc {compile,parse,generate} [-v] [-o OUTPUT] [-e ENCODING] [--nonce N] [--bound-to STRING]\n       [--signing-key-file FILE [--signing-key-id ID]] [--encryption-key-file FILE [--encryption-key-id ID]] FILE [FILE ...]\n       asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] [-v] [-o FOLDER] [-e ENCODING] FILE [FILE ...]";
+const USAGE: &str = "usage: asnkitcc {compile,parse,generate} [-v] [-o OUTPUT] [-e ENCODING] [--nonce N] [--bound-to STRING]\n       [--signing-key-file FILE [--signing-key-id ID]] [--encryption-key-file FILE [--encryption-key-id ID]] FILE [FILE ...]\n       asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] [-v] [-o FOLDER] [-e ENCODING] FILE [FILE ...]
+       asnkitcc convert -t [MODULE.]TYPE [--from CODEC] [--to CODEC] [-i INPUT] [-o OUTPUT] [--input-hex] [--output-hex]
+       [--indent N] [--lenient] [--encryption-key-file FILE] [-v] [-e ENCODING] {FILE.asni | FILE.asn [FILE.asn ...]}
+
+The codecs are ber, der, oer, per, uper, jer and xer. Without --from or --to, the codec is told by the
+extension of the input or the output (.json is jer, .xml is xer). The input is read from standard input
+and the output written to standard output when not given.";
 
 struct Arguments {
     command: String,
@@ -30,6 +39,14 @@ struct Arguments {
     encryption_key_file: Option<PathBuf>,
     plugin: Option<String>,
     plugin_options: Vec<String>,
+    type_name: Option<String>,
+    from: Option<String>,
+    to: Option<String>,
+    input: Option<PathBuf>,
+    input_hex: bool,
+    output_hex: bool,
+    indent: Option<usize>,
+    lenient: bool,
     files: Vec<PathBuf>,
 }
 
@@ -37,7 +54,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
     let mut iterator = arguments.iter();
     let command = iterator.next().ok_or(USAGE)?.clone();
 
-    if !["compile", "parse", "generate"].contains(&command.as_str()) {
+    if !["compile", "parse", "generate", "convert"].contains(&command.as_str()) {
         return Err(format!("error: unknown command '{command}'.\n{USAGE}"));
     }
 
@@ -54,6 +71,14 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
         encryption_key_file: None,
         plugin: None,
         plugin_options: Vec::new(),
+        type_name: None,
+        from: None,
+        to: None,
+        input: None,
+        input_hex: false,
+        output_hex: false,
+        indent: None,
+        lenient: false,
         files: Vec::new(),
     };
 
@@ -80,6 +105,21 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
 
                 parsed.nonce = Some(number.map_err(|_| format!("error: bad nonce '{text}'."))?);
             }
+            "-t" | "--type" => parsed.type_name = Some(value("--type")?),
+            "--from" => parsed.from = Some(value("--from")?),
+            "--to" => parsed.to = Some(value("--to")?),
+            "-i" | "--input" => parsed.input = Some(PathBuf::from(value("-i")?)),
+            "--input-hex" => parsed.input_hex = true,
+            "--output-hex" => parsed.output_hex = true,
+            "--lenient" => parsed.lenient = true,
+            "--indent" => {
+                let text = value("--indent")?;
+
+                parsed.indent = Some(
+                    text.parse()
+                        .map_err(|_| format!("error: bad indent '{text}'."))?,
+                );
+            }
             "--bound-to" => parsed.bound_to = Some(value("--bound-to")?),
             "--signing-key-id" => parsed.signing_key_id = Some(value("--signing-key-id")?),
             "--signing-key-file" => {
@@ -96,7 +136,37 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
         }
     }
 
-    if parsed.command == "generate" {
+    let converting = parsed.type_name.is_some()
+        || parsed.from.is_some()
+        || parsed.to.is_some()
+        || parsed.input.is_some()
+        || parsed.input_hex
+        || parsed.output_hex
+        || parsed.indent.is_some()
+        || parsed.lenient;
+
+    if parsed.command == "convert" {
+        if parsed.type_name.is_none() {
+            return Err(format!("error: convert needs --type.\n{USAGE}"));
+        }
+
+        // The key of an encrypted file is the one to decrypt it with.
+        let protected = parsed.nonce.is_some()
+            || parsed.bound_to.is_some()
+            || parsed.signing_key_file.is_some()
+            || parsed.signing_key_id.is_some();
+
+        if protected || parsed.plugin.is_some() || !parsed.plugin_options.is_empty() {
+            return Err(format!(
+                "error: convert takes no nonce, binding, signing key or plugin.\n{USAGE}"
+            ));
+        }
+    } else if converting {
+        return Err(format!(
+            "error: --type, --from, --to, --input, --input-hex, --output-hex, --indent and \
+             --lenient are for convert.\n{USAGE}"
+        ));
+    } else if parsed.command == "generate" {
         if parsed.plugin.is_none() {
             return Err(format!("error: generate needs --plugin.\n{USAGE}"));
         }
@@ -225,12 +295,42 @@ fn generate(arguments: &Arguments) -> Result<(), String> {
         .map_err(|error| format!("error: {}", error.message))
 }
 
+fn convert(arguments: &Arguments) -> Result<(), String> {
+    let codec = |name: &Option<String>| name.as_deref().map(convert::codec_of).transpose();
+
+    convert::convert(&convert::Conversion {
+        type_name: arguments.type_name.as_deref().unwrap_or_default(),
+        from: codec(&arguments.from)?,
+        to: codec(&arguments.to)?,
+        input: arguments.input.as_deref(),
+        output: arguments.output.as_deref(),
+        input_hex: arguments.input_hex,
+        output_hex: arguments.output_hex,
+        indent: arguments.indent,
+        lenient: arguments.lenient,
+        specification: &arguments.files,
+        encoding: &arguments.encoding,
+        decryption_key: read_key(
+            arguments.encryption_key_id.as_deref(),
+            arguments.encryption_key_file.as_deref(),
+            "encryption",
+        )?
+        .map(|key| asnkitrt::container::Key {
+            id: key.id,
+            key: key.key,
+        }),
+        verbose: arguments.verbose,
+    })
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
 
     let result = parse_arguments(&arguments).and_then(|arguments| {
-        if arguments.command == "generate" {
-            return generate(&arguments);
+        match arguments.command.as_str() {
+            "generate" => return generate(&arguments),
+            "convert" => return convert(&arguments),
+            _ => {}
         }
 
         let extension = if arguments.command == "compile" {
