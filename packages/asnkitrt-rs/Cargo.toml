@@ -4,7 +4,7 @@
 
 [package]
 name = "asnkitrt"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 # The oldest that builds it: let chains are stable from 1.88.
 rust-version = "1.88"

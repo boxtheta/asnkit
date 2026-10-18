@@ -8,7 +8,7 @@ minor release may change what is encoded and decoded, and a patch
 release changes neither. `SECURITY.md` tells which releases get
 security fixes.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-18
 
 ### Deprecated
 
@@ -124,6 +124,7 @@ WebAssembly runtime on npm.
   `application/vnd.asnkit.asnst+cbor`, guidelines for third-party
   runtimes, a corpus of `.asni` files and more than 5,300 test vectors.
 
+[1.2.0]: https://github.com/boxtheta/asnkit/releases/tag/v1.2.0
 [1.1.0]: https://github.com/boxtheta/asnkit/releases/tag/v1.1.0
 [1.0.1]: https://github.com/boxtheta/asnkit/releases/tag/v1.0.1
 [1.0.0]: https://crates.io/crates/asnkitrt/1.0.0
