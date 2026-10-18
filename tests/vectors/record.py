@@ -13,10 +13,10 @@ encodes and decodes is what the vectors say.
 
 This finds the cases, the specifications, types and values to try, in
 the tests of the codecs of the runtime for Python. It runs them with
-`load_dict()` and the encode and decode methods of a specification
-wrapped. Each time a test loads a specification, it is resolved and
-kept as an ``.asni`` file in ``specs``, named by the SHA-256 of its
-contents. Each time a test encodes or decodes, the type and what is
+`_load_dict()`, which `load()` loads with, and the encode and decode
+methods of a specification wrapped. Each time a test loads a
+specification, it is resolved and kept as an ``.asni`` file in
+``specs``, named by the SHA-256 of its contents. Each time a test encodes or decodes, the type and what is
 given (the value to encode, or the bytes to decode) are noted.
 
 The runtime for Rust then does each of these, with
@@ -48,6 +48,7 @@ for folder in ["", "3gpp", "cen", "etsi", "ieee", "ietf", "oma"]:
     sys.path.append(os.path.join(ROOT, "tests", "files", folder))
 
 from asnkitrt import runtime, syntax  # noqa: E402
+from asnkitrt.syntax.convert import _compiled_from_dict  # noqa: E402
 from tests.vectors.values import Skip, to_json  # noqa: E402
 
 TEST_MODULES = [
@@ -87,7 +88,7 @@ class Recorder:
 
         try:
             asni = syntax.to_asni(
-                syntax.compiled_from_dict(specification),
+                _compiled_from_dict(specification),
                 syntax.Metadata(generator=None),
             )
         except Exception:
@@ -136,7 +137,7 @@ RECORDER = Recorder()
 
 
 def install():
-    original_load_dict = runtime.load_dict
+    original_load_dict = runtime._load_dict
     original_encode = runtime.Specification.encode
     original_decode = runtime.Specification.decode
 
@@ -172,7 +173,7 @@ def install():
 
         return original_decode(self, name, data, check_constraints)
 
-    runtime.load_dict = load_dict
+    runtime._load_dict = load_dict
     runtime.Specification.encode = encode
     runtime.Specification.decode = decode
 

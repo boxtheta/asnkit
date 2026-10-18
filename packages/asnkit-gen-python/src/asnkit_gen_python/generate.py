@@ -18,6 +18,10 @@ from typing import Any
 
 from asnkitrt import syntax
 
+# The resolved dictionaries are not part of the API of asnkitrt, which is
+# released with this plugin.
+from asnkitrt.syntax.convert import _compiled_to_dict
+
 DEFAULT_CODEC = "ber"
 
 # What asnkitrt encodes and decodes a type as, by the name of the type.
@@ -340,7 +344,7 @@ class Generator:
         self.sources = sources
         self.codec = codec
         self.embed = embed
-        self.modules: dict[str, Any] = syntax.compiled_to_dict(compiled)
+        self.modules: dict[str, Any] = _compiled_to_dict(compiled)
         self.blocks: list[str] = []
         self.registrations: list[str] = []
         self.functions: list[str] = []

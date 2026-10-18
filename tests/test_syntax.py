@@ -9,6 +9,7 @@ import unittest
 
 from asnkitrt.constants import ValueRange
 from asnkitrt import syntax
+from asnkitrt.syntax.convert import _tree_from_dict, _tree_to_dict
 
 
 def load_expected(path):
@@ -40,10 +41,10 @@ class SyntaxTest(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path):
                 expected = load_expected(path)
-                tree = syntax.from_dict(expected)
-                converted = syntax.to_dict(tree)
+                tree = _tree_from_dict(expected)
+                converted = _tree_to_dict(tree)
                 self.assertEqual(converted, expected)
-                self.assertEqual(syntax.from_dict(converted), tree)
+                self.assertEqual(_tree_from_dict(converted), tree)
 
     def assert_same_types(self, first, second, path="specification"):
         """Equal is not enough, as a string in quotes is equal to the
@@ -85,7 +86,7 @@ class SyntaxTest(unittest.TestCase):
     def test_primitive_round_trip(self):
         for path in parsed_specification_paths():
             with self.subTest(path=path):
-                tree = syntax.from_dict(load_expected(path))
+                tree = _tree_from_dict(load_expected(path))
                 primitive = syntax.to_primitive(tree)
                 self.assert_primitive(primitive)
                 self.assertEqual(syntax.from_primitive(primitive), tree)
@@ -111,9 +112,35 @@ class SyntaxTest(unittest.TestCase):
 
     def test_from_dict_unsupported_key(self):
         with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_dict({"A": {"types": {"B": {"type": "NULL", "foo": 1}}}})
+            _tree_from_dict({"A": {"types": {"B": {"type": "NULL", "foo": 1}}}})
 
         self.assertEqual(str(cm.exception), "Unsupported key(s) 'foo' in type 'NULL'.")
+
+    def test_dict_functions_are_deprecated(self):
+        import asnkitrt
+        from tests import compiled as fixtures
+
+        tree = _tree_from_dict({"A": {"types": {"B": {"type": "NULL"}}}})
+        compiled = syntax.from_asni(
+            fixtures.compile_string_to_asni("A DEFINITIONS ::= BEGIN B ::= NULL END")
+        )
+
+        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
+            self.assertEqual(syntax.from_dict(_tree_to_dict(tree)), tree)
+
+        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
+            self.assertEqual(syntax.to_dict(tree), _tree_to_dict(tree))
+
+        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
+            resolved = syntax.compiled_to_dict(compiled)
+
+        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
+            self.assertEqual(syntax.compiled_from_dict(resolved), compiled)
+
+        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
+            loaded = asnkitrt.runtime.load_dict(resolved)
+
+        self.assertEqual(loaded.encode("B", None), b"\x05\x00")
 
 
 if __name__ == "__main__":

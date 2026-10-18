@@ -11,9 +11,11 @@ parser.
 
 import importlib
 import typing
+import warnings
 from typing import Any, Callable, Dict, Literal, Set, Tuple
 
 from . import syntax
+from .syntax.convert import _compiled_to_dict
 from .codecs.codec import Codec
 from .errors import CompileError, DecodeError, EncodeError
 
@@ -240,16 +242,13 @@ class Specification(object):
         return self._decode_length(data)
 
 
-def load_dict(
+def _load_dict(
     specification: SpecificationDict,
     codec: CodecType = "ber",
     numeric_enums: bool = False,
     lenient: bool = False,
 ) -> Specification:
-    """Same as `load()`, but for given specification dictionary.
-    Any `ANY DEFINED BY` choices must already be part of it.
-
-    """
+    """`load()` of the dictionary of a compiled specification."""
 
     if codec not in CODEC_CLASS_NAMES:
         raise CompileError("Unsupported codec '{}'.".format(codec))
@@ -271,6 +270,27 @@ def load_dict(
         type_checker.compile_dict(specification, numeric_enums),
         constraints_checker.compile_dict(specification, numeric_enums),
     )
+
+
+@warnings.deprecated(
+    "asnkitrt.runtime.load_dict() is deprecated and will be removed in 2.0. "
+    "Load a compiled specification or an .asni file with asnkitrt.load()."
+)
+def load_dict(
+    specification: SpecificationDict,
+    codec: CodecType = "ber",
+    numeric_enums: bool = False,
+    lenient: bool = False,
+) -> Specification:
+    """Same as `load()`, but for given specification dictionary.
+    Any `ANY DEFINED BY` choices must already be part of it.
+
+    Deprecated, and removed in 2.0: load a compiled specification or an
+    `.asni` file with `load()`.
+
+    """
+
+    return _load_dict(specification, codec, numeric_enums, lenient)
 
 
 def load(
@@ -342,7 +362,7 @@ def load(
     if not isinstance(compiled, syntax.CompiledSpecification):
         raise CompileError("Expected a compiled specification.")
 
-    return load_dict(syntax.compiled_to_dict(compiled), codec, numeric_enums, lenient)
+    return _load_dict(_compiled_to_dict(compiled), codec, numeric_enums, lenient)
 
 
 def load_asni(

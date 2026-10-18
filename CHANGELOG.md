@@ -8,6 +8,17 @@ minor release may change what is encoded and decoded, and a patch
 release changes neither. `SECURITY.md` tells which releases get
 security fixes.
 
+## [Unreleased]
+
+### Deprecated
+
+- The dictionaries of specifications in the runtime for Python:
+  `asnkitrt.runtime.load_dict()` and `asnkitrt.syntax.from_dict()`,
+  `to_dict()`, `compiled_from_dict()` and `compiled_to_dict()`. They
+  warn with a `DeprecationWarning`, and are removed in 2.0. Load an
+  `.asni` file or a compiled specification with `asnkitrt.load()`, and
+  read the nodes of a syntax tree or a compiled specification instead.
+
 ## [1.1.0] - 2026-10-17
 
 ### Added

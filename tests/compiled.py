@@ -38,6 +38,7 @@ from typing import Any
 import asnkitrt
 import asnkitrt.runtime
 import asnkitrt.syntax
+from asnkitrt.syntax.convert import _compiled_from_dict, _compiled_to_dict
 from asnkitrt.errors import (
     CompileError,
     ConstraintsError,
@@ -205,7 +206,7 @@ def _dict_with_choices(
 ) -> Any:
     # What an ANY DEFINED BY can be is not something the compiler is told:
     # the choices are put in the dictionary of the compiled specification.
-    specification = asnkitrt.syntax.compiled_to_dict(asnkitrt.syntax.from_asni(data))
+    specification = _compiled_to_dict(asnkitrt.syntax.from_asni(data))
 
     for location, choices in any_defined_by_choices.items():
         types = specification[location[0]]["types"]
@@ -238,7 +239,12 @@ def _with_choices(
 
     specification = _dict_with_choices(data, any_defined_by_choices)
 
-    return asnkitrt.runtime.load_dict(specification, codec, numeric_enums, lenient)  # type: ignore[arg-type]
+    return asnkitrt.load(
+        _compiled_from_dict(specification),
+        codec,
+        numeric_enums=numeric_enums,
+        lenient=lenient,
+    )
 
 
 def compiled_with_choices(
@@ -246,7 +252,7 @@ def compiled_with_choices(
 ) -> Any:
     """The compiled specification, with the choices of ANY DEFINED BY."""
 
-    return asnkitrt.syntax.compiled_from_dict(
+    return _compiled_from_dict(
         _dict_with_choices(compile_string_to_asni(string), any_defined_by_choices)
     )
 
@@ -289,12 +295,8 @@ def dict_of_string(string: str) -> Any:
     """The resolved dictionary of the specification, which the checkers
     of types and of constraints compile."""
 
-    return asnkitrt.syntax.compiled_to_dict(
-        asnkitrt.syntax.from_asni(compile_string_to_asni(string))
-    )
+    return _compiled_to_dict(asnkitrt.syntax.from_asni(compile_string_to_asni(string)))
 
 
 def dict_of_files(files: str | list[str]) -> Any:
-    return asnkitrt.syntax.compiled_to_dict(
-        asnkitrt.syntax.from_asni(compile_files_to_asni(files))
-    )
+    return _compiled_to_dict(asnkitrt.syntax.from_asni(compile_files_to_asni(files)))
