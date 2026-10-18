@@ -2,9 +2,10 @@
 
 All packages of asnkit are released together, with one version. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and the versions [Semantic Versioning](https://semver.org/): the `.asni`
-and `.asnst` formats, the runtime APIs and the command line keep
-working within a major version. `SECURITY.md` tells which releases get
+and the versions [Semantic Versioning](https://semver.org/), as
+`docs/versioning.md` says: a major release may break the public API, a
+minor release may change what is encoded and decoded, and a patch
+release changes neither. `SECURITY.md` tells which releases get
 security fixes.
 
 ## [1.1.0] - 2026-10-17
