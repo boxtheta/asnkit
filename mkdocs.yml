@@ -15,6 +15,7 @@ nav:
   - ANY DEFINED BY: any_defined_by.md
   - Third-party runtimes: third_party_runtimes.md
   - Plugins: plugins.md
+  - Versioning: versioning.md
 plugins:
   - search
   - mkdocstrings:

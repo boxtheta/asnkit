@@ -161,3 +161,7 @@ that you are allowed to.
 ## Releases
 
 All packages are released together with one version; see `RELEASING.md`.
+`docs/versioning.md` tells which release a change can go in: one that
+breaks the public API waits for a major release, and one that changes
+what is encoded or decoded for a minor release. Say in the pull request
+which it is.

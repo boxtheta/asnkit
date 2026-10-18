@@ -29,7 +29,13 @@ and passes its tests.
 
 ## Each release
 
-1. Set the version in every package. `tests/test_versions.py` lists
+1. Choose the version, as `docs/versioning.md` says, from what the
+   section `[Unreleased]` of `CHANGELOG.md` lists: a major release if
+   it breaks the public API, a minor release if it changes what is
+   encoded or decoded or adds to the API, and a patch release
+   otherwise.
+
+2. Set the version in every package. `tests/test_versions.py` lists
    the files and fails until they all agree:
 
    - `packages/asnkitrt/pyproject.toml` and
@@ -41,7 +47,7 @@ and passes its tests.
    - `packages/asnkitrt-wasm/package.json` and
      `packages/asnkit-compiler-wasm/package.json`
 
-2. Make everything again that names the version of the compiler or of a
+3. Make everything again that names the version of the compiler or of a
    plugin: the fixtures, the compiled examples, and the code generated
    from them. CI checks each of them, but only when it compiles them
    again, which the tests on your machine do not.
@@ -65,18 +71,18 @@ and passes its tests.
    - `packages/asnkit-gen-rust/tests/no_std/Cargo.lock`, a crate of its
      own: `cargo update -p asnkitrt` in its folder.
 
-3. In `CHANGELOG.md`, give the section of the version its date
+4. In `CHANGELOG.md`, give the section of the version its date
    (`## [1.2.3] - 2026-10-15`) and add the link at the end.
 
-4. Run all the checks of `CONTRIBUTING.md`, commit, and merge to `trunk`.
+5. Run all the checks of `CONTRIBUTING.md`, commit, and merge to `trunk`.
 
-5. Tag the merge commit and push the tag:
+6. Tag the merge commit and push the tag:
 
    ```text
    git tag -s v1.2.3 -m "asnkit 1.2.3"
    git push origin v1.2.3
    ```
 
-6. Follow the workflow in the Actions tab, and approve the environments
+7. Follow the workflow in the Actions tab, and approve the environments
    if they need it. If a registry fails, fix it and run the failed jobs
    again: each leaves out what is already published.
