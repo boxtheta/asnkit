@@ -150,6 +150,27 @@ describe('errors', () => {
     });
   });
 
+  test('an error with a value tells where in it', () => {
+    for (const [name, value, path, message] of [
+      ['Record', { id: 'one' }, ['Record', 'id'], 'Record.id: Expected an integer or a named number.'],
+      ['Choice', ['b', [true, 'x']], ['Choice', 'b', 1], 'Choice.b[1]: Expected data of type bool.'],
+      ['Pair', ['a', 5], ['Pair', 1], 'Pair[1]: Expected data of type str.'],
+    ]) {
+      assert.throws(() => spec.encode(name, value), { name: 'EncodeError', path, message });
+    }
+
+    assert.throws(() => spec.checkConstraints('Small', 8), {
+      name: 'ConstraintsError',
+      path: ['Small'],
+      message: 'Small: Expected an integer in the range.',
+    });
+    assert.throws(() => spec.decode('Record', bytes('3005020101')), {
+      name: 'DecodeError',
+      path: ['Record'],
+    });
+    assert.throws(() => spec.encode('Nothing', 1), (error) => error.path === undefined);
+  });
+
   test('a value nested too deep is refused', () => {
     let value = 1;
 

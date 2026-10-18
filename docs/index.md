@@ -71,8 +71,6 @@ ASN.1 types are mapped to Python types as shown in the table below.
 
 ::: asnkitrt.load
 
-::: asnkitrt.runtime.load_dict
-
 ## Reading and writing the files
 
 ::: asnkitrt.syntax.from_asni

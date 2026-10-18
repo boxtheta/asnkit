@@ -26,11 +26,11 @@ use crate::{Error, Result};
 const MAX_DEPTH: usize = 128;
 
 fn encode_error<T>(what: &'static str) -> Result<T> {
-    Err(Error::Encode(what))
+    Err(Error::encode(what))
 }
 
 fn decode_error<T>(what: &'static str) -> Result<T> {
-    Err(Error::Decode(what, 0))
+    Err(Error::decode(what, 0))
 }
 
 /// The name a type is given at the top, that of its definition.
@@ -106,7 +106,7 @@ fn boolean(element: &Element) -> Result<bool> {
 }
 
 fn time_error<T>(result: Result<T>) -> Result<T> {
-    result.map_err(|_| Error::Decode("Expected a date or a time.", 0))
+    result.map_err(|_| Error::decode("Expected a date or a time.", 0))
 }
 
 impl Coder<'_> {
@@ -127,14 +127,14 @@ impl Coder<'_> {
             _ => None,
         };
 
-        found.ok_or(Error::Encode("Expected an enumeration value."))
+        found.ok_or(Error::encode("Expected an enumeration value."))
     }
 
     fn integer_text(&self, value: &Value) -> Result<String> {
         match value {
             Value::Integer(number) => Ok(format!("{number}")),
             Value::BigInteger(bytes) => decimal::twos_complement_to_decimal(bytes)
-                .ok_or(Error::Encode("The integer has too many digits.")),
+                .ok_or(Error::encode("The integer has too many digits.")),
             _ => encode_error("Expected an integer."),
         }
     }
@@ -155,6 +155,7 @@ impl Coder<'_> {
                 let (member, inner) = self.alternative(members, value)?;
 
                 self.encode(member.ty, &member.name, inner, depth + 1)
+                    .map_err(|error| error.in_member(&member.name))
             }
             _ => self.encode(id, name, value, depth),
         }
@@ -282,11 +283,12 @@ impl Coder<'_> {
                         Some((_, value)) => element.children.push(
                             self.encode(
                                 self.member_type(member, map)
-                                    .ok_or(Error::Encode("Bad AnyDefinedBy choice."))?,
+                                    .ok_or(Error::encode("Bad AnyDefinedBy choice."))?,
                                 &member.name,
                                 value,
                                 depth + 1,
-                            )?,
+                            )
+                            .map_err(|error| error.in_member(&member.name))?,
                         ),
                         None if member.optional || member.has_default() => {}
                         None => {
@@ -306,10 +308,11 @@ impl Coder<'_> {
                     .as_deref()
                     .unwrap_or("");
 
-                for entry in items {
-                    element
-                        .children
-                        .push(self.encode_of(*item, item_name, entry, depth + 1)?);
+                for (index, entry) in items.iter().enumerate() {
+                    element.children.push(
+                        self.encode_of(*item, item_name, entry, depth + 1)
+                            .map_err(|error| error.in_element(index))?,
+                    );
                 }
             }
             Kind::Utc => match value {
@@ -347,14 +350,15 @@ impl Coder<'_> {
             Kind::Choice(members) => {
                 let (member, inner) = self.alternative(members, value)?;
 
-                element
-                    .children
-                    .push(self.encode(member.ty, &member.name, inner, depth + 1)?);
+                element.children.push(
+                    self.encode(member.ty, &member.name, inner, depth + 1)
+                        .map_err(|error| error.in_member(&member.name))?,
+                );
             }
             // The value of the type it is (X.693 8.5), which only an ANY
             // DEFINED BY with choices tells, as a member.
             Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
-                return Err(Error::Unsupported(
+                return Err(Error::unsupported(
                     "XER needs the type of the value of an ANY or an open type.",
                 ));
             }
@@ -386,7 +390,9 @@ impl Coder<'_> {
             {
                 Some(member) => Ok(Value::Choice(
                     member.name.clone(),
-                    self.decode(member.ty, element, depth + 1)?.into(),
+                    self.decode(member.ty, element, depth + 1)
+                        .map_err(|error| error.in_member(&member.name))?
+                        .into(),
                 )),
                 None => decode_error("Expected a name of an alternative of the CHOICE."),
             },
@@ -532,9 +538,13 @@ impl Coder<'_> {
                         Some(inner) => {
                             let ty = self
                                 .member_type(member, &map)
-                                .ok_or(Error::Decode("Bad AnyDefinedBy choice.", 0))?;
+                                .ok_or(Error::decode("Bad AnyDefinedBy choice.", 0))?;
 
-                            map.push((member.name.clone(), self.decode(ty, inner, depth + 1)?));
+                            let value = self
+                                .decode(ty, inner, depth + 1)
+                                .map_err(|error| error.in_member(&member.name))?;
+
+                            map.push((member.name.clone(), value));
                         }
                         None if member.optional => {}
                         None => match &member.default {
@@ -549,7 +559,11 @@ impl Coder<'_> {
             Kind::SequenceOf(item) | Kind::SetOf(item) => element
                 .children
                 .iter()
-                .map(|child| self.decode_of(*item, child, depth + 1))
+                .enumerate()
+                .map(|(index, child)| {
+                    self.decode_of(*item, child, depth + 1)
+                        .map_err(|error| error.in_element(index))
+                })
                 .collect::<Result<Vec<_>>>()
                 .map(Value::List),
             Kind::Utc => time_error(time::utc_time_from_string(self.text(element)?, false))
@@ -568,7 +582,7 @@ impl Coder<'_> {
             }
             Kind::Duration => {
                 let text = self.text(element)?;
-                time::validate_duration(text).map_err(|_| Error::Decode("Invalid DURATION.", 0))?;
+                time::validate_duration(text).map_err(|_| Error::decode("Invalid DURATION.", 0))?;
                 Ok(Value::text(text))
             }
             Kind::Choice(members) => {
@@ -579,7 +593,9 @@ impl Coder<'_> {
                 match members.all().find(|member| member.name == inner.name) {
                     Some(member) => Ok(Value::Choice(
                         member.name.clone(),
-                        self.decode(member.ty, inner, depth + 1)?.into(),
+                        self.decode(member.ty, inner, depth + 1)
+                            .map_err(|error| error.in_member(&member.name))?
+                            .into(),
                     )),
                     None if members.additions.is_some() => {
                         Ok(Value::Choice(String::new(), Value::Null.into()))
@@ -587,7 +603,7 @@ impl Coder<'_> {
                     None => decode_error("Expected a name of an alternative of the CHOICE."),
                 }
             }
-            Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => Err(Error::Unsupported(
+            Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => Err(Error::unsupported(
                 "XER needs the type of the value of an ANY or an open type.",
             )),
         }

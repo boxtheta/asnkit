@@ -18,6 +18,6 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-asnkitrt = { path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "bigint"] }
+asnkitrt = { path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "gser", "bigint"] }
 js-sys = "0.3"
 wasm-bindgen = "=0.2.129"

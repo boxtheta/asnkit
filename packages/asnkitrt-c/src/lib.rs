@@ -70,10 +70,10 @@ impl From<asnkitrt::Error> for Failure {
 
         let message = error.to_string();
         let (status, offset) = match error {
-            Encode(_) => (ASNKIT_ERROR_ENCODE, None),
-            Decode(_, offset) => (ASNKIT_ERROR_DECODE, Some(offset)),
-            Constraints(_) => (ASNKIT_ERROR_CONSTRAINTS, None),
-            Unsupported(_) => (ASNKIT_ERROR_UNSUPPORTED, None),
+            Encode(..) => (ASNKIT_ERROR_ENCODE, None),
+            Decode(_, offset, _) => (ASNKIT_ERROR_DECODE, Some(offset)),
+            Constraints(..) => (ASNKIT_ERROR_CONSTRAINTS, None),
+            Unsupported(..) => (ASNKIT_ERROR_UNSUPPORTED, None),
             NoSuchType => (ASNKIT_ERROR_NO_SUCH_TYPE, None),
             // Everything else is about the file.
             _ => (ASNKIT_ERROR_LOAD, None),

@@ -20,4 +20,4 @@ name = "asnkitrt_c"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-asnkitrt = { path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "bigint"] }
+asnkitrt = { path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "gser", "bigint"] }

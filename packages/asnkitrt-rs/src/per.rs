@@ -24,7 +24,7 @@ use crate::{Error, Result};
 const MAX_DEPTH: usize = 128;
 
 fn encode_error<T>(what: &'static str) -> Result<T> {
-    Err(Error::Encode(what))
+    Err(Error::encode(what))
 }
 
 /// The number of bits it takes to write `size`.
@@ -420,11 +420,11 @@ pub(crate) struct Reader<'a> {
 }
 
 fn out_of_data<T>(position: usize) -> Result<T> {
-    Err(Error::Decode("out of data", position))
+    Err(Error::decode("out of data", position))
 }
 
 fn decode_error<T>(what: &'static str, position: usize) -> Result<T> {
-    Err(Error::Decode(what, position))
+    Err(Error::decode(what, position))
 }
 
 impl<'a> Reader<'a> {
@@ -694,7 +694,7 @@ impl Alphabet {
             return Ok(code);
         }
 
-        self.characters.index(code).ok_or(Error::Encode(
+        self.characters.index(code).ok_or(Error::encode(
             "Expected a character in the permitted alphabet.",
         ))
     }
@@ -1264,7 +1264,7 @@ impl Coder<'_> {
         let index = additions
             .iter()
             .position(|entry| find(&entry))
-            .ok_or(Error::Encode("Expected an enumeration value."))?;
+            .ok_or(Error::encode("Expected an enumeration value."))?;
 
         w.bit(true);
         w.normally_small_whole_number(index as u128);
@@ -1318,7 +1318,9 @@ impl Coder<'_> {
                 }
             }
 
-            return self.encode_type(members.root[members.order[index]].ty, inner, w, depth + 1);
+            return self
+                .encode_type(members.root[members.order[index]].ty, inner, w, depth + 1)
+                .map_err(|error| error.in_member(name));
         }
 
         let Some(index) = additions.iter().position(|member| &member.name == name) else {
@@ -1326,7 +1328,8 @@ impl Coder<'_> {
         };
         let mut open = w.sub();
 
-        self.encode_type(additions[index].ty, inner, &mut open, depth + 1)?;
+        self.encode_type(additions[index].ty, inner, &mut open, depth + 1)
+            .map_err(|error| error.in_member(name))?;
         w.normally_small_whole_number(index as u128);
         self.put_open_type(open, w)
     }
@@ -1350,8 +1353,9 @@ impl Coder<'_> {
             let mut fragments = Fragmenter::new(items.len());
 
             while let Some((offset, count)) = fragments.next(w) {
-                for item in &items[offset..offset + count] {
-                    self.encode_type(element, item, w, depth + 1)?;
+                for (index, item) in items[offset..offset + count].iter().enumerate() {
+                    self.encode_type(element, item, w, depth + 1)
+                        .map_err(|error| error.in_element(offset + index))?;
                 }
             }
 
@@ -1370,8 +1374,9 @@ impl Coder<'_> {
             }
         }
 
-        for item in items {
-            self.encode_type(element, item, w, depth + 1)?;
+        for (index, item) in items.iter().enumerate() {
+            self.encode_type(element, item, w, depth + 1)
+                .map_err(|error| error.in_element(index))?;
         }
 
         Ok(())
@@ -1403,7 +1408,7 @@ impl Coder<'_> {
                         .chars()
                         .map(|c| {
                             u8::try_from(u32::from(c))
-                                .map_err(|_| Error::Encode("A character is not Latin-1."))
+                                .map_err(|_| Error::encode("A character is not Latin-1."))
                         })
                         .collect::<Result<_>>()?,
                 };
@@ -1703,10 +1708,11 @@ impl Coder<'_> {
                 if !member.has_default() || !is_default(self.types, member, value) || encode_default
                 {
                     match self.types.defined_by(member.ty, map) {
-                        Some(Some(ty)) => self.encode_open_type(ty, value, w, depth)?,
-                        Some(None) => return encode_error("Bad AnyDefinedBy choice."),
-                        None => self.encode_type(member.ty, value, w, depth + 1)?,
+                        Some(Some(ty)) => self.encode_open_type(ty, value, w, depth),
+                        Some(None) => encode_error("Bad AnyDefinedBy choice."),
+                        None => self.encode_type(member.ty, value, w, depth + 1),
                     }
+                    .map_err(|error| error.in_member(&member.name))?;
                 }
 
                 Ok(())
@@ -1763,7 +1769,7 @@ impl Coder<'_> {
                         presence |= 1;
                     }
                 }
-                Err(Error::Encode(_)) => break,
+                Err(Error::Encode(..)) => break,
                 Err(error) => return Err(error),
             }
         }
@@ -2092,8 +2098,10 @@ impl Coder<'_> {
         // fragments.
         let start = r.position - 8 * data.len();
         let value = decode(&mut inner).map_err(|error| match error {
-            Error::Decode(what, at) if data.len() < 16384 => Error::Decode(what, start + at),
-            Error::Decode(what, _) => Error::Decode(what, offset),
+            Error::Decode(what, at, location) if data.len() < 16384 => {
+                Error::Decode(what, start + at, location)
+            }
+            Error::Decode(what, _, location) => Error::Decode(what, offset, location),
             error => error,
         })?;
 
@@ -2157,7 +2165,9 @@ impl Coder<'_> {
                     Ok(Value::Choice(String::new(), Value::Null.into()))
                 }
                 Some(member) => {
-                    let value = self.decode_open_type(member.ty, r, depth)?;
+                    let value = self
+                        .decode_open_type(member.ty, r, depth)
+                        .map_err(|error| error.in_member(&member.name))?;
 
                     Ok(Value::Choice(member.name.clone(), value.into()))
                 }
@@ -2186,7 +2196,9 @@ impl Coder<'_> {
 
         match members.order.get(index).map(|index| &members.root[*index]) {
             Some(member) => {
-                let value = self.decode_type(member.ty, r, depth + 1)?;
+                let value = self
+                    .decode_type(member.ty, r, depth + 1)
+                    .map_err(|error| error.in_member(&member.name))?;
 
                 Ok(Value::Choice(member.name.clone(), value.into()))
             }
@@ -2213,7 +2225,10 @@ impl Coder<'_> {
                 r.spend(count)?;
 
                 for _ in 0..count {
-                    items.push(self.decode_type(element, r, depth + 1)?);
+                    items.push(
+                        self.decode_type(element, r, depth + 1)
+                            .map_err(|error| error.in_element(items.len()))?,
+                    );
                 }
 
                 if count < 16384 {
@@ -2240,7 +2255,10 @@ impl Coder<'_> {
         r.spend(length)?;
 
         for _ in 0..length {
-            items.push(self.decode_type(element, r, depth + 1)?);
+            items.push(
+                self.decode_type(element, r, depth + 1)
+                    .map_err(|error| error.in_element(items.len()))?,
+            );
         }
 
         Ok(Value::List(items))
@@ -2281,7 +2299,7 @@ impl Coder<'_> {
                 match kind {
                     StrKind::Utf8 => core::str::from_utf8(&bytes)
                         .map(|text| Value::Text(String::from(text)))
-                        .map_err(|_| Error::Decode("The string is not UTF-8.", r.position)),
+                        .map_err(|_| Error::decode("The string is not UTF-8.", r.position)),
                     StrKind::Universal => bytes
                         .chunks(4)
                         .map(|quad| {
@@ -2289,7 +2307,7 @@ impl Coder<'_> {
                         })
                         .collect::<Option<String>>()
                         .map(Value::Text)
-                        .ok_or(Error::Decode("The string is not UTF-32.", r.position)),
+                        .ok_or(Error::decode("The string is not UTF-32.", r.position)),
                     _ => Ok(Value::Text(
                         bytes.iter().map(|byte| char::from(*byte)).collect(),
                     )),
@@ -2316,7 +2334,7 @@ impl Coder<'_> {
                 let value = r.uint(known.bits_per_character)? as u32;
                 let code = known.alphabet.decode(value, r.position)?;
 
-                text.push(char::from_u32(code).ok_or(Error::Decode("Bad character.", r.position))?);
+                text.push(char::from_u32(code).ok_or(Error::decode("Bad character.", r.position))?);
             }
 
             Ok(())
@@ -2430,7 +2448,7 @@ impl Coder<'_> {
             Value::BigInteger(bytes) if bytes[0] & 0x80 == 0 => Ok(Value::BigInteger(bytes)),
             #[cfg(not(feature = "bigint"))]
             Value::BigInteger(bytes) if bytes[0] & 0x80 == 0 => {
-                Err(Error::Unsupported(time::ELEMENT_TOO_LARGE))
+                Err(Error::unsupported(time::ELEMENT_TOO_LARGE))
             }
             _ => decode_error(
                 "Expected a value above the root in the extension.",
@@ -2468,13 +2486,13 @@ impl Coder<'_> {
             let nod = self.get_duration_element(1, 3, r)?;
             let fv = self.get_duration_element(0, 999, r)?;
             let field = |value| {
-                time::fraction_field(value).map_err(|message| Error::Decode(message, r.position))
+                time::fraction_field(value).map_err(|message| Error::decode(message, r.position))
             };
 
             c.fractional_part = Some((field(nod)?, field(fv)?));
         }
 
-        time::components_to_duration(&c).map_err(|message| Error::Decode(message, r.position))
+        time::components_to_duration(&c).map_err(|message| Error::decode(message, r.position))
     }
 
     fn decode_members(
@@ -2565,6 +2583,7 @@ impl Coder<'_> {
             Some(None) => decode_error("Bad AnyDefinedBy choice.", r.position),
             None => self.decode_type(member.ty, r, depth + 1),
         }
+        .map_err(|error| error.in_member(&member.name))
     }
 
     fn decode_additions(

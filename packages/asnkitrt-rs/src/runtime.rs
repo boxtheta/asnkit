@@ -68,7 +68,7 @@ impl Specification {
 
     /// Checks `value` against the constraints of the type `name`.
     pub fn check_constraints(&self, name: &str, value: &Value) -> Result<()> {
-        check::check(&self.types, self.find(name)?, value)
+        check::check(&self.types, self.find(name)?, value).map_err(|error| error.in_type(name))
     }
 
     /// Checks `value` against the constraints of the type `name` of the
@@ -79,45 +79,56 @@ impl Specification {
             self.types.find(module, name).ok_or(Error::NoSuchType)?,
             value,
         )
+        .map_err(|error| error.in_type(name))
     }
 
     /// Encodes `value` as the type `name`, which has to be found in one
     /// of the modules only. See [`Specification::encode_in`] for the
     /// others.
     pub fn encode(&self, name: &str, value: &Value) -> Result<Vec<u8>> {
-        self.encode_id(self.find(name)?, value)
+        self.encode_id(name, self.find(name)?, value)
     }
 
     /// Encodes `value` as the type `name` of the module `module`.
     pub fn encode_in(&self, module: &str, name: &str, value: &Value) -> Result<Vec<u8>> {
         self.encode_id(
+            name,
             self.types.find(module, name).ok_or(Error::NoSuchType)?,
             value,
         )
     }
 
-    fn encode_id(&self, id: TypeId, value: &Value) -> Result<Vec<u8>> {
-        match self.types.codec {
+    /// Encodes `value` as the type `name`, found as `id`. An error in the
+    /// value is located from `name`, and one of the codec, as a missing
+    /// feature, has no location.
+    fn encode_id(&self, name: &str, id: TypeId, value: &Value) -> Result<Vec<u8>> {
+        let encoded = match self.types.codec {
             Codec::Ber | Codec::Der => ber::encode(&self.types, id, value),
             Codec::Per | Codec::Uper => per::encode(&self.types, id, value),
             Codec::Oer => oer::encode(&self.types, id, value),
             #[cfg(feature = "jer")]
             Codec::Jer => crate::jer::encode(&self.types, id, value),
             #[cfg(not(feature = "jer"))]
-            Codec::Jer => Err(Error::Unsupported("JER needs the feature jer.")),
+            Codec::Jer => return Err(Error::unsupported("JER needs the feature jer.")),
             #[cfg(feature = "xer")]
             Codec::Xer => crate::xer::encode(&self.types, id, value),
             #[cfg(not(feature = "xer"))]
-            Codec::Xer => Err(Error::Unsupported("XER needs the feature xer.")),
-        }
+            Codec::Xer => return Err(Error::unsupported("XER needs the feature xer.")),
+            #[cfg(feature = "gser")]
+            Codec::Gser => crate::gser::encode(&self.types, id, value),
+            #[cfg(not(feature = "gser"))]
+            Codec::Gser => return Err(Error::unsupported("GSER needs the feature gser.")),
+        };
+
+        encoded.map_err(|error| error.in_type(name))
     }
 
     /// Encodes `value` as the type `name`, as [`Specification::encode`]
-    /// does, with `indent` spaces for each level of JER and XER, as the
-    /// runtime for Python does. The other codecs are not indented and
+    /// does, with `indent` spaces for each level of JER, XER and GSER, as
+    /// the runtime for Python does. The other codecs are not indented and
     /// return [`Error::Unsupported`].
     pub fn encode_indented(&self, name: &str, value: &Value, indent: usize) -> Result<Vec<u8>> {
-        self.encode_indented_id(self.find(name)?, value, indent)
+        self.encode_indented_id(name, self.find(name)?, value, indent)
     }
 
     /// Encodes `value` as the type `name` of the module `module`, with
@@ -130,6 +141,7 @@ impl Specification {
         indent: usize,
     ) -> Result<Vec<u8>> {
         self.encode_indented_id(
+            name,
             self.types.find(module, name).ok_or(Error::NoSuchType)?,
             value,
             indent,
@@ -137,50 +149,68 @@ impl Specification {
     }
 
     #[allow(unused_variables)]
-    fn encode_indented_id(&self, id: TypeId, value: &Value, indent: usize) -> Result<Vec<u8>> {
+    fn encode_indented_id(
+        &self,
+        name: &str,
+        id: TypeId,
+        value: &Value,
+        indent: usize,
+    ) -> Result<Vec<u8>> {
+        // Each maps its own errors, as none may be compiled in.
         match self.types.codec {
             #[cfg(feature = "jer")]
-            Codec::Jer => crate::jer::encode_indented(&self.types, id, value, indent),
+            Codec::Jer => crate::jer::encode_indented(&self.types, id, value, indent)
+                .map_err(|error| error.in_type(name)),
             #[cfg(feature = "xer")]
-            Codec::Xer => crate::xer::encode_indented(&self.types, id, value, indent),
-            _ => Err(Error::Unsupported("Only JER and XER are indented.")),
+            Codec::Xer => crate::xer::encode_indented(&self.types, id, value, indent)
+                .map_err(|error| error.in_type(name)),
+            #[cfg(feature = "gser")]
+            Codec::Gser => crate::gser::encode_indented(&self.types, id, value, indent)
+                .map_err(|error| error.in_type(name)),
+            _ => Err(Error::unsupported("Only JER, XER and GSER are indented.")),
         }
     }
 
     /// Decodes `data` as the type `name`.
     pub fn decode(&self, name: &str, data: &[u8]) -> Result<Value> {
-        self.decode_id(self.find(name)?, data)
+        self.decode_id(name, self.find(name)?, data)
     }
 
     pub fn decode_in(&self, module: &str, name: &str, data: &[u8]) -> Result<Value> {
         self.decode_id(
+            name,
             self.types.find(module, name).ok_or(Error::NoSuchType)?,
             data,
         )
     }
 
-    fn decode_id(&self, id: TypeId, data: &[u8]) -> Result<Value> {
-        match self.types.codec {
+    fn decode_id(&self, name: &str, id: TypeId, data: &[u8]) -> Result<Value> {
+        let decoded = match self.types.codec {
             Codec::Ber | Codec::Der => ber::decode(&self.types, id, data),
             Codec::Per | Codec::Uper => per::decode(&self.types, id, data),
             Codec::Oer => oer::decode(&self.types, id, data),
             #[cfg(feature = "jer")]
             Codec::Jer => crate::jer::decode(&self.types, id, data),
             #[cfg(not(feature = "jer"))]
-            Codec::Jer => Err(Error::Unsupported("JER needs the feature jer.")),
+            Codec::Jer => return Err(Error::unsupported("JER needs the feature jer.")),
             #[cfg(feature = "xer")]
             Codec::Xer => crate::xer::decode(&self.types, id, data),
             #[cfg(not(feature = "xer"))]
-            Codec::Xer => Err(Error::Unsupported("XER needs the feature xer.")),
-        }
+            Codec::Xer => return Err(Error::unsupported("XER needs the feature xer.")),
+            // GSER is for debug output.
+            Codec::Gser => return Err(Error::unsupported("GSER is encoded only.")),
+        };
+
+        decoded.map_err(|error| error.in_type(name))
     }
 
     /// Decodes the first value of `data` as the type `name`, and
     /// returns it with its length.
     pub fn decode_with_length(&self, name: &str, data: &[u8]) -> Result<(Value, usize)> {
         match self.types.codec {
-            Codec::Ber | Codec::Der => ber::decode_with_length(&self.types, self.find(name)?, data),
-            _ => Err(Error::Unsupported("This codec is not done yet.")),
+            Codec::Ber | Codec::Der => ber::decode_with_length(&self.types, self.find(name)?, data)
+                .map_err(|error| error.in_type(name)),
+            _ => Err(Error::unsupported("This codec is not done yet.")),
         }
     }
 
@@ -189,7 +219,7 @@ impl Specification {
     pub fn decode_length(&self, data: &[u8]) -> Result<Option<usize>> {
         match self.types.codec {
             Codec::Ber | Codec::Der => Ok(ber::decode_length(data)),
-            _ => Err(Error::Unsupported("This codec has no length in the data.")),
+            _ => Err(Error::unsupported("This codec has no length in the data.")),
         }
     }
 }

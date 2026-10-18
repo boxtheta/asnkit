@@ -20,7 +20,7 @@ use asnkitrt::types::Codec;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const CODECS: &str = "ber, der, oer, per, uper, jer or xer";
+const CODECS: &str = "ber, der, oer, per, uper, jer, xer or gser";
 
 /// The codec of a name, as `der` or `DER`.
 pub fn codec_of(name: &str) -> Result<Codec, String> {
@@ -32,6 +32,7 @@ pub fn codec_of(name: &str) -> Result<Codec, String> {
         "uper" => Codec::Uper,
         "jer" => Codec::Jer,
         "xer" => Codec::Xer,
+        "gser" => Codec::Gser,
         _ => return Err(format!("error: unknown codec '{name}', expected {CODECS}.")),
     })
 }
@@ -48,7 +49,7 @@ fn codec_of_path(path: &Path) -> Option<Codec> {
 }
 
 fn is_text(codec: Codec) -> bool {
-    matches!(codec, Codec::Jer | Codec::Xer)
+    matches!(codec, Codec::Jer | Codec::Xer | Codec::Gser)
 }
 
 pub struct Conversion<'a> {
@@ -209,14 +210,18 @@ pub fn convert(conversion: &Conversion<'_>) -> Result<(), String> {
         None => decoder.decode(name, &data),
     }
     .map_err(|error| match error {
-        asnkitrt::Error::Decode(what, offset) => {
+        asnkitrt::Error::Decode(what, offset, location) => {
             let unit = if matches!(from, Codec::Per | Codec::Uper) {
                 "bit"
             } else {
                 "byte"
             };
 
-            format!("error: decoding: {what} (at {unit} {offset})")
+            if location.is_empty() {
+                format!("error: decoding: {what} (at {unit} {offset})")
+            } else {
+                format!("error: decoding: {location}: {what} (at {unit} {offset})")
+            }
         }
         asnkitrt::Error::NoSuchType => no_such_type(conversion.type_name, module.is_some()),
         error => format!("error: decoding: {error}"),

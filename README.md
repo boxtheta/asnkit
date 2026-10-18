@@ -74,14 +74,15 @@ Also in the repository:
 | Unaligned Packed Encoding Rules (UPER) | yes | yes | yes |
 | JSON Encoding Rules (JER) | yes | yes, feature `jer` | yes |
 | XML Encoding Rules (XER) | yes | yes, feature `xer` | yes |
-| Generic String Encoding Rules (GSER) | yes | no | no |
+| Generic String Encoding Rules (GSER) | encoding only | encoding only, feature `gser` | encoding only |
 
 The Rust runtime is the one of reference: the more than 5,300 vectors
 in `tests/vectors` are what it does, including constraint checks, and
 the Python runtime gives the same results for all of them. The
 WebAssembly runtime is the Rust one, and is tested on the vectors
 through its JavaScript API. In Rust,
-the text codecs are crate features that are enabled by default. `xer`
+the text codecs are crate features that are enabled by default. GSER
+is for debug output: it is encoded and not decoded. `xer`
 uses [quick-xml](https://crates.io/crates/quick-xml) and `bigint` uses
 [num-bigint](https://crates.io/crates/num-bigint), and both need `std`,
 so embedded builds use `default-features = false`.

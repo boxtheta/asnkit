@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
-/** The codecs a specification can be loaded for. */
-export type Codec = 'ber' | 'der' | 'oer' | 'per' | 'uper' | 'jer' | 'xer';
+/** The codecs a specification can be loaded for. GSER is encoded only. */
+export type Codec = 'ber' | 'der' | 'oer' | 'per' | 'uper' | 'jer' | 'xer' | 'gser';
 
 /** A date: DATE. */
 export interface AsnDate {
@@ -87,7 +87,7 @@ export interface CodecOptions {
   checkConstraints?: boolean;
   /** The module of the type, if more than one has a type with the name. */
   module?: string;
-  /** encode() of JER and XER only: the number of spaces for each level. */
+  /** encode() of JER, XER and GSER only: the number of spaces for each level. */
   indent?: number;
 }
 

@@ -160,8 +160,8 @@ asnkit_status asnkit_load_options_add_decryption_key(asnkit_load_options *option
                                                      const uint8_t *secret_key);
 
 /* Loads the `length` bytes of an .asni file for `codec`: "ber", "der",
- * "oer", "per", "uper", "jer" or "xer", or "ber" if NULL. `options` may
- * be NULL for the default, and is not kept. */
+ * "oer", "per", "uper", "jer", "xer" or "gser" (encoded only), or "ber"
+ * if NULL. `options` may be NULL for the default, and is not kept. */
 asnkit_status asnkit_spec_load(const uint8_t *asni,
                                size_t length,
                                const char *codec,

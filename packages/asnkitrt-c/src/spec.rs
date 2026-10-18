@@ -84,11 +84,12 @@ fn codec_of(name: &str) -> Result<Codec> {
         "uper" => Codec::Uper,
         "jer" => Codec::Jer,
         "xer" => Codec::Xer,
+        "gser" => Codec::Gser,
         _ => {
             return Err(failure(
                 ASNKIT_ERROR_ARGUMENT,
                 format!(
-                    "Unsupported codec '{name}': expected ber, der, oer, per, uper, jer or xer."
+                    "Unsupported codec '{name}': expected ber, der, oer, per, uper, jer, xer or gser."
                 ),
             ));
         }

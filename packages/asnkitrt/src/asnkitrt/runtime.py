@@ -11,7 +11,6 @@ parser.
 
 import importlib
 import typing
-import warnings
 from typing import Any, Callable, Dict, Literal, Set, Tuple
 
 from . import syntax
@@ -270,27 +269,6 @@ def _load_dict(
         type_checker.compile_dict(specification, numeric_enums),
         constraints_checker.compile_dict(specification, numeric_enums),
     )
-
-
-@warnings.deprecated(
-    "asnkitrt.runtime.load_dict() is deprecated and will be removed in 2.0. "
-    "Load a compiled specification or an .asni file with asnkitrt.load()."
-)
-def load_dict(
-    specification: SpecificationDict,
-    codec: CodecType = "ber",
-    numeric_enums: bool = False,
-    lenient: bool = False,
-) -> Specification:
-    """Same as `load()`, but for given specification dictionary.
-    Any `ANY DEFINED BY` choices must already be part of it.
-
-    Deprecated, and removed in 2.0: load a compiled specification or an
-    `.asni` file with `load()`.
-
-    """
-
-    return _load_dict(specification, codec, numeric_enums, lenient)
 
 
 def load(

@@ -17,7 +17,7 @@ use crate::{Error, Result};
 const MAX_DEPTH: usize = 128;
 
 fn fail<T>(what: &'static str) -> Result<T> {
-    Err(Error::Constraints(what))
+    Err(Error::constraints(what))
 }
 
 /// If a value is in one of the values or ranges of the root of a
@@ -124,7 +124,7 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
                         match named.iter().find(|(candidate, _)| candidate == name) {
                             Some((_, number)) => num_bigint::BigInt::from(*number),
                             None => {
-                                return Err(Error::Encode(
+                                return Err(Error::encode(
                                     "Expected an integer or a named number.",
                                 ));
                             }
@@ -132,7 +132,7 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
                     }
                     other => match crate::bigint::to_big(other) {
                         Some(number) => number,
-                        None => return Err(Error::Encode("Expected data of type int or str.")),
+                        None => return Err(Error::encode("Expected data of type int or str.")),
                     },
                 };
 
@@ -155,9 +155,9 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
                 }
                 Value::Text(name) => match named.iter().find(|(candidate, _)| candidate == name) {
                     Some((_, number)) => *number,
-                    None => return Err(Error::Encode("Expected an integer or a named number.")),
+                    None => return Err(Error::encode("Expected an integer or a named number.")),
                 },
-                _ => return Err(Error::Encode("Expected data of type int or str.")),
+                _ => return Err(Error::encode("Expected data of type int or str.")),
             };
 
             if !in_range(node.effective_range, &node.effective_range_parts, number) {
@@ -201,8 +201,9 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
                 return fail("Expected a list of a length in the range.");
             }
 
-            for item in items {
-                check_at(types, *element, item, depth + 1)?;
+            for (index, item) in items.iter().enumerate() {
+                check_at(types, *element, item, depth + 1)
+                    .map_err(|error| error.in_element(index))?;
             }
 
             Ok(())
@@ -213,7 +214,8 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
         ) => {
             for member in members.all() {
                 if let Some((_, value)) = map.iter().find(|(name, _)| name == &member.name) {
-                    check_at(types, member.ty, value, depth + 1)?;
+                    check_at(types, member.ty, value, depth + 1)
+                        .map_err(|error| error.in_member(&member.name))?;
                 }
             }
 
@@ -221,7 +223,8 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
         }
         (Kind::Choice(members), Value::Choice(name, inner)) => {
             match members.all().find(|member| &member.name == name) {
-                Some(member) => check_at(types, member.ty, inner, depth + 1),
+                Some(member) => check_at(types, member.ty, inner, depth + 1)
+                    .map_err(|error| error.in_member(&member.name)),
                 // An alternative that is not known is one of a later version.
                 None if members.additions.is_some() => Ok(()),
                 None => fail("Expected the name of an alternative of the CHOICE."),

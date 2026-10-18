@@ -20,8 +20,11 @@ const CODECS = [
   ['uper', 'UPER', 'Packed Encoding Rules, unaligned'],
   ['jer', 'JER', 'JSON Encoding Rules'],
   ['xer', 'XER', 'XML Encoding Rules'],
+  ['gser', 'GSER', 'Generic String Encoding Rules, encoded only'],
 ];
-const TEXT_CODECS = new Set(['jer', 'xer']);
+const TEXT_CODECS = new Set(['jer', 'xer', 'gser']);
+// For reading only: they are not decoded, so are not an input.
+const ENCODE_ONLY = new Set(['gser']);
 
 const EXAMPLES = [
   {
@@ -290,8 +293,13 @@ function renderOutputs(value, type, options) {
       const barCell = document.createElement('td');
       const out = document.createElement('td');
 
-      row.dataset.codec = codec;
-      row.classList.toggle('current', codec === current);
+      if (ENCODE_ONLY.has(codec)) {
+        row.className = 'encode-only';
+      } else {
+        row.dataset.codec = codec;
+        row.classList.toggle('current', codec === current);
+      }
+
       name.className = 'codec';
       name.textContent = label;
       name.append(Object.assign(document.createElement('small'), { textContent: title }));
@@ -321,7 +329,7 @@ function renderOutputs(value, type, options) {
       }
 
       row.append(name, size, barCell, out);
-      row.title = error ? '' : `Use the ${label} encoding as the input`;
+      row.title = error || ENCODE_ONLY.has(codec) ? '' : `Use the ${label} encoding as the input`;
       size.title = TEXT_CODECS.has(codec) && !error ? 'Without indentation' : '';
 
       return row;
@@ -378,7 +386,9 @@ function debounce(action, delay) {
 
 async function main() {
   for (const [codec, label] of CODECS) {
-    $('input-codec').append(new Option(label, codec));
+    if (!ENCODE_ONLY.has(codec)) {
+      $('input-codec').append(new Option(label, codec));
+    }
   }
 
   for (const [index, example] of EXAMPLES.entries()) {

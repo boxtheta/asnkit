@@ -8,6 +8,44 @@ minor release may change what is encoded and decoded, and a patch
 release changes neither. `SECURITY.md` tells which releases get
 security fixes.
 
+## [Unreleased]
+
+### Added
+
+- GSER in the Rust runtime, with the feature `gser`, and so in the
+  runtime for WebAssembly, the C API and `asnkitcc convert --to gser`.
+  It is encoded only, for debug output, and written as the runtime for
+  Python writes it, except that a `"` in a string is written twice and
+  a REAL with an exponent is written as `1E20` (RFC 3641).
+
+### Changed
+
+- An error of the Rust runtime with a value tells where in it it is,
+  from the type in, as the runtime for Python does:
+  `Certificate.tbsCertificate.extensions[1].critical: Expected data of
+  type bool.` `Error::Encode`, `Error::Decode` and `Error::Constraints`
+  have a `Location` as their last field, `Error::location()` gives it,
+  and `Error::encode()`, `Error::decode()` and `Error::constraints()`
+  make one without. So does `Error::Unsupported`, made with
+  `Error::unsupported()`, which has a location when it is found in a
+  value, as an `ANY` in JER, and none when it is of the codec, as a
+  codec that is not compiled in. `Error` is no longer `Copy`. The
+  messages of the C API and `asnkitcc convert` start with the location,
+  and the errors of the runtime for WebAssembly have it as `path`, as
+  `['Certificate', 'tbsCertificate', 'extensions', 1, 'critical']`.
+- GSER writes a REAL given as an integer as the float it is, `8.0E0`
+  and not `8E0`, in the runtime for Python too, so that the runtime for
+  WebAssembly, where every number is a float, writes the same.
+
+### Removed
+
+- The dictionaries of specifications in the runtime for Python,
+  deprecated in 1.2.0: `asnkitrt.runtime.load_dict()` and
+  `asnkitrt.syntax.from_dict()`, `to_dict()`, `compiled_from_dict()`
+  and `compiled_to_dict()`. Load an `.asni` file or a compiled
+  specification with `asnkitrt.load()`, and read the nodes of a syntax
+  tree or a compiled specification instead.
+
 ## [1.2.0] - 2026-10-18
 
 ### Deprecated

@@ -391,6 +391,37 @@ class RustConvertTest(unittest.TestCase):
                     if target not in ("jer", "xer"):
                         self.assertEqual(output, self.encoded(target))
 
+    def test_every_codec_to_gser(self) -> None:
+        """GSER is written as the runtime for Python writes it, and not
+        read."""
+
+        gser = asnkitrt.load(self.asni_data(), "gser")
+
+        for source in CODECS:
+            for indent in [None, 2]:
+                with self.subTest(source=source, indent=indent):
+                    arguments = [] if indent is None else ["--indent", str(indent)]
+                    result = self.convert(
+                        "-t",
+                        "M",
+                        "--from",
+                        source,
+                        "--to",
+                        "gser",
+                        *arguments,
+                        self.asn,
+                        data=self.encoded(source),
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(
+                        result.stdout,
+                        gser.encode("M", CONVERT_VALUE, indent=indent) + b"\n",
+                    )
+
+    def asni_data(self) -> bytes:
+        with open(self.asni, "rb") as fin:
+            return fin.read()
+
     def test_an_asni_file_codecs_by_extension_and_hex(self) -> None:
         asni = self.asni
 
@@ -443,6 +474,7 @@ class RustConvertTest(unittest.TestCase):
             (["-t", "M", "--from", "der", "--to", "jer", "--indent", "x"], b"indent"),
             (["-t", "M", "--from", "jer", "--to", "der", "--input-hex"], b"binary"),
             (["-t", "M", "--from", "der", "--to", "jer", "--nonce", "1"], b"nonce"),
+            (["-t", "M", "--from", "gser", "--to", "der"], b"GSER is encoded only"),
         ]:
             with self.subTest(arguments=arguments):
                 result = self.convert(*arguments, self.asn, data=b"0\x00")

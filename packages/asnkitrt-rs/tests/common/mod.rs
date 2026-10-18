@@ -339,6 +339,7 @@ fn codec_of(name: &str) -> Codec {
         "per" => Codec::Per,
         "jer" => Codec::Jer,
         "xer" => Codec::Xer,
+        "gser" => Codec::Gser,
         _ => Codec::Uper,
     }
 }

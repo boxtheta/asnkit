@@ -77,7 +77,7 @@ impl Element {
 }
 
 fn bad<T>() -> Result<T> {
-    Err(Error::Decode("Bad XML.", 0))
+    Err(Error::decode("Bad XML.", 0))
 }
 
 fn is_xml_char(c: char) -> bool {

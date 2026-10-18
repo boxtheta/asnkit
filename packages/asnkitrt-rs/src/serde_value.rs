@@ -41,13 +41,13 @@ use crate::value::Value;
 
 impl ser::Error for Error {
     fn custom<T: fmt::Display>(_: T) -> Self {
-        Error::Encode("The value can not be written as a value of ASN.1.")
+        Error::encode("The value can not be written as a value of ASN.1.")
     }
 }
 
 impl de::Error for Error {
     fn custom<T: fmt::Display>(_: T) -> Self {
-        Error::Decode("The value is not what the type is.", 0)
+        Error::decode("The value is not what the type is.", 0)
     }
 }
 
@@ -566,7 +566,7 @@ fn time_of_list(value: &Value) -> Result<crate::value::Time, Error> {
         });
     }
 
-    Err(Error::Encode("Expected the parts of a time."))
+    Err(Error::encode("Expected the parts of a time."))
 }
 
 /// Takes `value` to a [`Value`].
@@ -644,7 +644,7 @@ impl ser::Serializer for ValueSerializer {
     fn serialize_u128(self, value: u128) -> Result<Value, Error> {
         i128::try_from(value)
             .map(Value::Integer)
-            .map_err(|_| Error::Encode("The integer is too large."))
+            .map_err(|_| Error::encode("The integer is too large."))
     }
 
     fn serialize_f32(self, value: f32) -> Result<Value, Error> {
@@ -702,7 +702,7 @@ impl ser::Serializer for ValueSerializer {
         if name == BIG_INT {
             return match inner {
                 Value::Bytes(bytes) => Ok(Value::from_twos_complement(&bytes)),
-                _ => Err(Error::Encode("Expected the bytes of an INTEGER.")),
+                _ => Err(Error::encode("Expected the bytes of an INTEGER.")),
             };
         }
 
@@ -718,9 +718,9 @@ impl ser::Serializer for ValueSerializer {
                         month: *month as u8,
                         day: *day as u8,
                     })),
-                    _ => Err(Error::Encode("Expected a year, a month and a day.")),
+                    _ => Err(Error::encode("Expected a year, a month and a day.")),
                 },
-                _ => Err(Error::Encode("Expected a year, a month and a day.")),
+                _ => Err(Error::encode("Expected a year, a month and a day.")),
             };
         }
 
@@ -747,7 +747,7 @@ impl ser::Serializer for ValueSerializer {
                 }));
             }
 
-            return Err(Error::Encode("Expected a date and a time."));
+            return Err(Error::encode("Expected a date and a time."));
         }
 
         if name == BIT_STRING {
@@ -757,7 +757,7 @@ impl ser::Serializer for ValueSerializer {
                 return Ok(Value::Bits(data.clone(), *bits as usize));
             }
 
-            return Err(Error::Encode(
+            return Err(Error::encode(
                 "Expected the bytes and the number of bits of a BIT STRING.",
             ));
         }
@@ -898,7 +898,7 @@ impl ser::SerializeMap for MapState {
 
                 Ok(())
             }
-            _ => Err(Error::Encode("The name of a member has to be a string.")),
+            _ => Err(Error::encode("The name of a member has to be a string.")),
         }
     }
 
@@ -906,7 +906,7 @@ impl ser::SerializeMap for MapState {
         let name = self
             .key
             .take()
-            .ok_or(Error::Encode("A value comes after its name."))?;
+            .ok_or(Error::encode("A value comes after its name."))?;
 
         self.members.push((name, value.serialize(ValueSerializer)?));
 
@@ -998,7 +998,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                 value,
                 done: false,
             }),
-            _ => Err(Error::Decode("The value is not supported by serde.", 0)),
+            _ => Err(Error::decode("The value is not supported by serde.", 0)),
         }
     }
 
@@ -1024,7 +1024,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         if name == BIG_INT {
             return match self.0.to_twos_complement() {
                 Some(bytes) => visitor.visit_newtype_struct(OwnedDeserializer(Value::Bytes(bytes))),
-                None => Err(Error::Decode("Expected an INTEGER.", 0)),
+                None => Err(Error::decode("Expected an INTEGER.", 0)),
             };
         }
 
@@ -1051,7 +1051,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                 Value::Date(date) => {
                     visitor.visit_newtype_struct(SeqValueDeserializer(date_parts(date)))
                 }
-                _ => Err(Error::Decode("Expected a DATE.", 0)),
+                _ => Err(Error::decode("Expected a DATE.", 0)),
             };
         }
 
@@ -1060,7 +1060,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                 Value::Time(time) => {
                     visitor.visit_newtype_struct(SeqValueDeserializer(parts(time)))
                 }
-                _ => Err(Error::Decode("Expected a TIME-OF-DAY.", 0)),
+                _ => Err(Error::decode("Expected a TIME-OF-DAY.", 0)),
             };
         }
 
@@ -1072,7 +1072,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                         Value::List(parts(&value.time)),
                     ]))
                 }
-                _ => Err(Error::Decode("Expected a date and a time.", 0)),
+                _ => Err(Error::decode("Expected a date and a time.", 0)),
             };
         }
 
@@ -1084,7 +1084,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                         Value::Integer(*bits as i128)
                     ]))
                 }
-                _ => Err(Error::Decode("Expected a BIT STRING.", 0)),
+                _ => Err(Error::decode("Expected a BIT STRING.", 0)),
             };
         }
 
@@ -1100,7 +1100,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         match self.0 {
             Value::Text(name) => visitor.visit_enum(name.as_str().into_deserializer()),
             Value::Choice(name, value) => visitor.visit_enum(ChoiceAccess { name, value }),
-            _ => Err(Error::Decode(
+            _ => Err(Error::decode(
                 "Expected an alternative of a CHOICE or an enumerated value.",
                 0,
             )),
@@ -1170,7 +1170,7 @@ impl<'de> de::Deserializer<'de> for OwnedDeserializer {
             },
             Value::Boolean(value) => visitor.visit_bool(value),
             Value::List(items) => visitor.visit_seq(SeqDeserializer { items, position: 0 }),
-            _ => Err(Error::Decode("Expected bytes, a number or a list.", 0)),
+            _ => Err(Error::decode("Expected bytes, a number or a list.", 0)),
         }
     }
 
@@ -1179,7 +1179,7 @@ impl<'de> de::Deserializer<'de> for OwnedDeserializer {
             Value::Bytes(bytes) => visitor.visit_seq(de::value::SeqDeserializer::<_, Error>::new(
                 bytes.into_iter(),
             )),
-            _ => Err(Error::Decode("Expected bytes.", 0)),
+            _ => Err(Error::decode("Expected bytes.", 0)),
         }
     }
 
@@ -1237,7 +1237,7 @@ impl<'de> de::MapAccess<'de> for RefMap<'de> {
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, Error> {
         match self.value.take() {
             Some(value) => seed.deserialize(ValueDeserializer(value)),
-            None => Err(Error::Decode("A value comes after its name.", 0)),
+            None => Err(Error::decode("A value comes after its name.", 0)),
         }
     }
 
@@ -1302,7 +1302,7 @@ impl<'de> de::VariantAccess<'de> for ChoiceVariant<'de> {
     fn unit_variant(self) -> Result<(), Error> {
         match self.0 {
             Value::Null => Ok(()),
-            _ => Err(Error::Decode("Expected NULL.", 0)),
+            _ => Err(Error::decode("Expected NULL.", 0)),
         }
     }
 

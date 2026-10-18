@@ -196,6 +196,8 @@ th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; t
 th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--row-hover); }
+tbody tr.encode-only { cursor: default; }
+tbody tr.encode-only:hover { background: none; }
 tbody tr.current { box-shadow: inset 3px 0 var(--accent); }
 td.codec { font-weight: 600; white-space: nowrap; }
 td.codec small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }

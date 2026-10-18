@@ -42,7 +42,7 @@ impl Json {
 }
 
 fn error<T>(what: &'static str, offset: usize) -> Result<T> {
-    Err(Error::Decode(what, offset))
+    Err(Error::decode(what, offset))
 }
 
 struct Parser<'a> {

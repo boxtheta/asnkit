@@ -124,6 +124,10 @@ class Real(Type):
         super(Real, self).__init__(name, "REAL")
 
     def encode(self, data, _separator, _indent):
+        # An integer is written as the float it is, as a runtime with
+        # numbers that are all floats can only give it.
+        data = float(data)
+
         if data == float("inf"):
             data = "PLUS-INFINITY"
         elif data == float("-inf"):

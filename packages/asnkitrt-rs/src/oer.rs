@@ -26,11 +26,11 @@ use crate::{Error, Result};
 const MAX_DEPTH: usize = 128;
 
 fn encode_error<T>(what: &'static str) -> Result<T> {
-    Err(Error::Encode(what))
+    Err(Error::encode(what))
 }
 
 fn decode_error<T>(what: &'static str, position: usize) -> Result<T> {
-    Err(Error::Decode(what, position))
+    Err(Error::decode(what, position))
 }
 
 pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
@@ -141,7 +141,7 @@ fn get_duration_field(r: &mut Reader<'_>) -> Result<Value> {
             Ok(Value::from_twos_complement(&twos_complement))
         }
         #[cfg(not(feature = "bigint"))]
-        None => Err(Error::Unsupported(time::ELEMENT_TOO_LARGE)),
+        None => Err(Error::unsupported(time::ELEMENT_TOO_LARGE)),
     }
 }
 
@@ -393,8 +393,9 @@ impl Coder<'_> {
 
                 put_unsigned(w, items.len() as u128)?;
 
-                for item in items {
-                    self.encode_type(*element, item, w, depth + 1)?;
+                for (index, item) in items.iter().enumerate() {
+                    self.encode_type(*element, item, w, depth + 1)
+                        .map_err(|error| error.in_element(index))?;
                 }
 
                 Ok(())
@@ -600,12 +601,15 @@ impl Coder<'_> {
         put_tag(w, class, number);
 
         if index < root_count {
-            return self.encode_type(member.ty, inner, w, depth + 1);
+            return self
+                .encode_type(member.ty, inner, w, depth + 1)
+                .map_err(|error| error.in_member(name));
         }
 
         let mut open = Writer::new(false);
 
-        self.encode_type(member.ty, inner, &mut open, depth + 1)?;
+        self.encode_type(member.ty, inner, &mut open, depth + 1)
+            .map_err(|error| error.in_member(name))?;
         put_length(w, open.number_of_bytes())?;
         w.append(&open);
 
@@ -660,7 +664,7 @@ impl Coder<'_> {
                 .chars()
                 .map(|c| {
                     u8::try_from(u32::from(c))
-                        .map_err(|_| Error::Encode("A character is not Latin-1."))
+                        .map_err(|_| Error::encode("A character is not Latin-1."))
                 })
                 .collect::<Result<_>>()?,
         };
@@ -817,10 +821,11 @@ impl Coder<'_> {
                 if !member.has_default() || !is_default(self.types, member, value) || encode_default
                 {
                     match self.types.defined_by(member.ty, map) {
-                        Some(Some(ty)) => self.encode_open_type(ty, value, w, depth)?,
-                        Some(None) => return encode_error("Bad AnyDefinedBy choice."),
-                        None => self.encode_type(member.ty, value, w, depth + 1)?,
+                        Some(Some(ty)) => self.encode_open_type(ty, value, w, depth),
+                        Some(None) => encode_error("Bad AnyDefinedBy choice."),
+                        None => self.encode_type(member.ty, value, w, depth + 1),
                     }
+                    .map_err(|error| error.in_member(&member.name))?;
                 }
 
                 Ok(())
@@ -873,7 +878,7 @@ impl Coder<'_> {
                         presence |= 1;
                     }
                 }
-                Err(Error::Encode(_)) => break,
+                Err(Error::Encode(..)) => break,
                 Err(error) => return Err(error),
             }
         }
@@ -1007,13 +1012,16 @@ impl Coder<'_> {
             Kind::SequenceOf(element) | Kind::SetOf(element) => {
                 let length = get_unsigned(r)?;
                 let length = usize::try_from(length)
-                    .map_err(|_| Error::Decode("A length is too large.", r.position))?;
+                    .map_err(|_| Error::decode("A length is too large.", r.position))?;
                 let mut items = Vec::new();
 
                 r.spend(length)?;
 
                 for _ in 0..length {
-                    items.push(self.decode_type(*element, r, depth + 1)?);
+                    items.push(
+                        self.decode_type(*element, r, depth + 1)
+                            .map_err(|error| error.in_element(items.len()))?,
+                    );
                 }
 
                 Ok(Value::List(items))
@@ -1128,7 +1136,9 @@ impl Coder<'_> {
                     get_length(r)?;
                 }
 
-                let value = self.decode_type(member.ty, r, depth + 1)?;
+                let value = self
+                    .decode_type(member.ty, r, depth + 1)
+                    .map_err(|error| error.in_member(&member.name))?;
 
                 Ok(Value::Choice(member.name.clone(), value.into()))
             }
@@ -1161,7 +1171,7 @@ impl Coder<'_> {
         match kind {
             StrKind::Utf8 => core::str::from_utf8(&bytes)
                 .map(String::from)
-                .map_err(|_| Error::Decode("The string is not UTF-8.", r.position)),
+                .map_err(|_| Error::decode("The string is not UTF-8.", r.position)),
             StrKind::Bmp => crate::ber::bmp_text(&bytes, r.position),
             StrKind::Universal => {
                 if bytes.len() % 4 != 0 {
@@ -1174,7 +1184,7 @@ impl Coder<'_> {
                         char::from_u32(u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
                     })
                     .collect::<Option<String>>()
-                    .ok_or(Error::Decode("The string is not UTF-32.", r.position))
+                    .ok_or(Error::decode("The string is not UTF-32.", r.position))
             }
             StrKind::Numeric | StrKind::Printable | StrKind::Ia5 | StrKind::Visible => {
                 if bytes.is_ascii() {
@@ -1239,13 +1249,13 @@ impl Coder<'_> {
             let nod = get_duration_field(r)?;
             let fv = get_duration_field(r)?;
             let field = |value| {
-                time::fraction_field(value).map_err(|message| Error::Decode(message, r.position))
+                time::fraction_field(value).map_err(|message| Error::decode(message, r.position))
             };
 
             c.fractional_part = Some((field(nod)?, field(fv)?));
         }
 
-        time::components_to_duration(&c).map_err(|message| Error::Decode(message, r.position))
+        time::components_to_duration(&c).map_err(|message| Error::decode(message, r.position))
     }
 
     fn decode_members(
@@ -1320,6 +1330,7 @@ impl Coder<'_> {
             Some(None) => decode_error("Bad AnyDefinedBy choice.", r.position),
             None => self.decode_type(member.ty, r, depth + 1),
         }
+        .map_err(|error| error.in_member(&member.name))
     }
 
     /// The value of an open type of the type `id`, see `encode_open_type`.
@@ -1360,7 +1371,7 @@ impl Coder<'_> {
 
         let count = (8 * (length - 1))
             .checked_sub(unused)
-            .ok_or(Error::Decode("Bad unused bits.", r.position))?;
+            .ok_or(Error::decode("Bad unused bits.", r.position))?;
         let mut presence = Vec::new();
 
         r.spend(count)?;

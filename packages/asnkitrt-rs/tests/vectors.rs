@@ -41,7 +41,7 @@ fn vectors() {
         HashMap::<String, usize>::new(),
     );
     let mut failures: Vec<String> = Vec::new();
-    let unsupported = |error: &asnkitrt::Error| matches!(error, asnkitrt::Error::Unsupported(_));
+    let unsupported = |error: &asnkitrt::Error| matches!(error, asnkitrt::Error::Unsupported(..));
 
     for line in text.lines() {
         let vector: Json = serde_json::from_str(line).unwrap();

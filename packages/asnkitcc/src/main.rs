@@ -22,9 +22,9 @@ const USAGE: &str = "usage: asnkitcc {compile,parse,generate} [-v] [-o OUTPUT] [
        asnkitcc convert -t [MODULE.]TYPE [--from CODEC] [--to CODEC] [-i INPUT] [-o OUTPUT] [--input-hex] [--output-hex]
        [--indent N] [--lenient] [--encryption-key-file FILE] [-v] [-e ENCODING] {FILE.asni | FILE.asn [FILE.asn ...]}
 
-The codecs are ber, der, oer, per, uper, jer and xer. Without --from or --to, the codec is told by the
-extension of the input or the output (.json is jer, .xml is xer). The input is read from standard input
-and the output written to standard output when not given.";
+The codecs are ber, der, oer, per, uper, jer, xer and gser, which is written only. Without --from or
+--to, the codec is told by the extension of the input or the output (.json is jer, .xml is xer). The
+input is read from standard input and the output written to standard output when not given.";
 
 struct Arguments {
     command: String,

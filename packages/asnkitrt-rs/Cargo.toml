@@ -19,7 +19,7 @@ categories = ["encoding", "no-std", "parser-implementations"]
 exclude = ["tests/", "fuzz/", "benches/", "examples/"]
 
 [features]
-default = ["std", "signing", "encryption", "serde", "jer", "xer", "bigint"]
+default = ["std", "signing", "encryption", "serde", "jer", "xer", "gser", "bigint"]
 std = ["sha2?/std", "ed25519-dalek?/std", "aes-gcm?/std", "serde?/std"]
 # To load signed and encrypted .asni files. Nothing else needs them.
 signing = ["dep:sha2", "dep:ed25519-dalek"]
@@ -30,6 +30,8 @@ serde = ["dep:serde"]
 jer = []
 # XML is read with quick-xml, which needs std.
 xer = ["std", "dep:quick-xml"]
+# GSER (RFC 3641), for debug output: it is encoded and not decoded.
+gser = []
 # Bounds of constraints of more than 128 bits, and time elements of a
 # DURATION of more than 128 bits in PER and OER, with num-bigint.
 bigint = ["std", "dep:num-bigint"]

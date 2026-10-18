@@ -192,6 +192,7 @@ jobs:
       run: |
         cargo build --locked -p asnkitrt --no-default-features --target thumbv7em-none-eabi
         cargo build --locked -p asnkitrt --no-default-features --features signing,encryption,serde --target thumbv7em-none-eabi
+        cargo build --locked -p asnkitrt --no-default-features --features jer,gser --target thumbv7em-none-eabi
 
   # What the plugin makes with `no_std=true` has to build where there is no std.
   plugin-no-std:

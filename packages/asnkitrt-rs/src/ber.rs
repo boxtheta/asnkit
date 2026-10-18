@@ -38,7 +38,7 @@ pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
 pub fn decode_with_length(types: &Types, id: TypeId, data: &[u8]) -> Result<(Value, usize)> {
     match Coder::new(types).decode_type(id, data, 0, None, 0)? {
         Some(decoded) => Ok(decoded),
-        None => Err(Error::Decode("Expected a tag that the type has.", 0)),
+        None => Err(Error::decode("Expected a tag that the type has.", 0)),
     }
 }
 
@@ -47,7 +47,7 @@ pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
     let (value, length) = decode_with_length(types, id, data)?;
 
     if length != data.len() {
-        return Err(Error::Decode(
+        return Err(Error::decode(
             "Expected the data to be all of the value.",
             length,
         ));
@@ -62,7 +62,7 @@ pub fn decode_length(data: &[u8]) -> Option<usize> {
 
     match read_length(data, start, true, false) {
         Ok((Some(length), offset)) => Some(offset + length),
-        Err(Error::Decode(_, _)) => {
+        Err(Error::Decode(..)) => {
             // Not all there: the length it says, if it can be read.
             let (length, offset) = read_length_only(data, start)?;
 
@@ -94,11 +94,11 @@ fn read_length_only(data: &[u8], offset: usize) -> Option<(usize, usize)> {
 }
 
 fn decode_error<T>(what: &'static str, offset: usize) -> Result<T> {
-    Err(Error::Decode(what, offset))
+    Err(Error::decode(what, offset))
 }
 
 fn encode_error<T>(what: &'static str) -> Result<T> {
-    Err(Error::Encode(what))
+    Err(Error::encode(what))
 }
 
 fn write_length(length: usize, out: &mut Vec<u8>) {
@@ -151,7 +151,7 @@ fn write_tlv(tag: &WireTag, contents: &[u8], out: &mut Vec<u8>) {
 fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u64, usize)> {
     let first = *data
         .get(offset)
-        .ok_or(Error::Decode("Ran out of data when reading tag", offset))?;
+        .ok_or(Error::decode("Ran out of data when reading tag", offset))?;
     let class = match first >> 6 {
         0 => TagClass::Universal,
         1 => TagClass::Application,
@@ -168,7 +168,7 @@ fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u64, usize)> 
         loop {
             let byte = *data
                 .get(at)
-                .ok_or(Error::Decode("Ran out of data when reading tag", at))?;
+                .ok_or(Error::decode("Ran out of data when reading tag", at))?;
 
             at += 1;
 
@@ -207,7 +207,7 @@ fn read_length(
     enforce_definite: bool,
     enforce_minimal: bool,
 ) -> Result<(Option<usize>, usize)> {
-    let first = *data.get(offset).ok_or(Error::Decode(
+    let first = *data.get(offset).ok_or(Error::decode(
         "Ran out of data when trying to read length",
         offset,
     ))?;
@@ -224,7 +224,7 @@ fn read_length(
         return Ok((None, at));
     } else {
         let count = usize::from(first & 0x7f);
-        let bytes = data.get(at..at + count).ok_or(Error::Decode(
+        let bytes = data.get(at..at + count).ok_or(Error::decode(
             "Ran out of data when trying to read length",
             at,
         ))?;
@@ -270,7 +270,7 @@ fn string_bytes(kind: StrKind, text: &str) -> Result<Vec<u8>> {
             .chars()
             .map(|character| {
                 u8::try_from(u32::from(character))
-                    .map_err(|_| Error::Encode("A character is not Latin-1."))
+                    .map_err(|_| Error::encode("A character is not Latin-1."))
             })
             .collect(),
         StrKind::Bmp => bmp_bytes(text),
@@ -293,7 +293,7 @@ pub(crate) fn bmp_bytes(text: &str) -> Result<Vec<u8>> {
 
     for character in text.chars() {
         let unit = u16::try_from(u32::from(character))
-            .map_err(|_| Error::Encode("A character is not in the BMP."))?;
+            .map_err(|_| Error::encode("A character is not in the BMP."))?;
 
         bytes.extend_from_slice(&unit.to_be_bytes());
     }
@@ -312,14 +312,14 @@ pub(crate) fn bmp_text(bytes: &[u8], offset: usize) -> Result<String> {
         .chunks(2)
         .map(|pair| char::from_u32(u32::from(u16::from_be_bytes([pair[0], pair[1]]))))
         .collect::<Option<String>>()
-        .ok_or(Error::Decode("The string is not a BMPString.", offset))
+        .ok_or(Error::decode("The string is not a BMPString.", offset))
 }
 
 fn string_text(kind: StrKind, bytes: &[u8], offset: usize) -> Result<String> {
     match kind {
         StrKind::Utf8 => core::str::from_utf8(bytes)
             .map(String::from)
-            .map_err(|_| Error::Decode("The string is not UTF-8.", offset)),
+            .map_err(|_| Error::decode("The string is not UTF-8.", offset)),
         StrKind::Numeric | StrKind::Printable | StrKind::Ia5 | StrKind::Visible => {
             if bytes.is_ascii() {
                 Ok(bytes.iter().map(|byte| char::from(*byte)).collect())
@@ -344,7 +344,7 @@ fn string_text(kind: StrKind, bytes: &[u8], offset: usize) -> Result<String> {
                     char::from_u32(u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
                 })
                 .collect::<Option<String>>()
-                .ok_or(Error::Decode("The string is not UTF-32.", offset))
+                .ok_or(Error::decode("The string is not UTF-32.", offset))
         }
     }
 }
@@ -694,7 +694,7 @@ pub(crate) fn decode_real(data: &[u8], offset: usize, strict: bool) -> Result<f6
     } else {
         decimal_real(control, rest, strict)
     }
-    .map_err(|what| Error::Decode(what, offset))
+    .map_err(|what| Error::decode(what, offset))
 }
 
 pub(crate) fn encode_object_identifier(text: &str) -> Result<Vec<u8>> {
@@ -703,7 +703,7 @@ pub(crate) fn encode_object_identifier(text: &str) -> Result<Vec<u8>> {
     for part in text.split('.') {
         arcs.push(
             part.parse::<u128>()
-                .map_err(|_| Error::Encode("Expected an OBJECT IDENTIFIER."))?,
+                .map_err(|_| Error::encode("Expected an OBJECT IDENTIFIER."))?,
         );
     }
 
@@ -909,6 +909,7 @@ impl<'a> Coder<'a> {
                 };
 
                 self.encode_type(member.ty, inner, out, None, depth + 1)
+                    .map_err(|error| error.in_member(name))
             }
             Kind::Any => match value {
                 Value::Bytes(bytes) => {
@@ -1053,10 +1054,11 @@ impl<'a> Coder<'a> {
                 };
                 let mut encoded = Vec::new();
 
-                for item in items {
+                for (index, item) in items.iter().enumerate() {
                     let mut one = Vec::new();
 
-                    self.encode_type(*element, item, &mut one, None, depth + 1)?;
+                    self.encode_type(*element, item, &mut one, None, depth + 1)
+                        .map_err(|error| error.in_element(index))?;
                     encoded.push(one);
                 }
 
@@ -1162,7 +1164,7 @@ impl<'a> Coder<'a> {
 
                 match self.encode_member(member, map, &mut encoded, depth) {
                     Ok(()) => encoded_group.push(encoded),
-                    Err(Error::Encode(_)) => break 'additions,
+                    Err(Error::Encode(..)) => break 'additions,
                     Err(error) => return Err(error),
                 }
             }
@@ -1195,7 +1197,8 @@ impl<'a> Coder<'a> {
         match map.iter().find(|(name, _)| name == &member.name) {
             Some((_, value)) => {
                 if !self.is_default(member, value) {
-                    self.encode_type(member.ty, value, out, Some(map), depth + 1)?;
+                    self.encode_type(member.ty, value, out, Some(map), depth + 1)
+                        .map_err(|error| error.in_member(&member.name))?;
                 }
 
                 Ok(())
@@ -1314,7 +1317,7 @@ impl<'a> Coder<'a> {
                 )
                 .map(Some)
             } else {
-                let length = length.ok_or(Error::Decode("Expected definite length.", after_tag))?;
+                let length = length.ok_or(Error::decode("Expected definite length.", after_tag))?;
                 let value =
                     self.decode_content(kind, concrete, data, start, length, siblings, depth)?;
 
@@ -1355,7 +1358,10 @@ impl<'a> Coder<'a> {
 
                 for member in members.all() {
                     if self.types.accepts(member.ty, class, number) {
-                        return match self.decode_type(member.ty, data, offset, None, depth + 1)? {
+                        return match self
+                            .decode_type(member.ty, data, offset, None, depth + 1)
+                            .map_err(|error| error.in_member(&member.name))?
+                        {
                             Some((value, end)) => Ok(Some((
                                 Value::Choice(member.name.clone(), value.into()),
                                 end,
@@ -1523,10 +1529,10 @@ impl<'a> Coder<'a> {
                 let mut text = String::from("P");
                 text.push_str(raw);
                 time::validate_duration(&text)
-                    .map_err(|_| Error::Decode("Invalid DURATION.", offset))?;
+                    .map_err(|_| Error::decode("Invalid DURATION.", offset))?;
                 if self.der && self.strict {
                     let canonical = time::duration_to_canonical(&text)
-                        .map_err(|_| Error::Decode("Invalid DURATION.", offset))?;
+                        .map_err(|_| Error::decode("Invalid DURATION.", offset))?;
                     if canonical != text {
                         return decode_error("The DURATION is not in canonical form.", offset);
                     }
@@ -1672,7 +1678,7 @@ impl<'a> Coder<'a> {
                 at = next;
             } else {
                 let inner_length =
-                    inner_length.ok_or(Error::Decode("Expected definite length.", after_tag))?;
+                    inner_length.ok_or(Error::decode("Expected definite length.", after_tag))?;
                 let contents = &data[inner_start..inner_start + inner_length];
 
                 segments.push(match segment_kind {
@@ -1762,7 +1768,10 @@ impl<'a> Coder<'a> {
             }
 
             let start = at;
-            let Some((item, next)) = self.decode_type(element, data, at, None, depth + 1)? else {
+            let Some((item, next)) = self
+                .decode_type(element, data, at, None, depth + 1)
+                .map_err(|error| error.in_element(items.len()))?
+            else {
                 return decode_error("Expected the tag of the element.", at);
             };
 
@@ -1923,7 +1932,10 @@ impl<'a> Coder<'a> {
 
                 let start = at;
 
-                match self.decode_type(member.ty, data, at, Some(values), depth + 1)? {
+                match self
+                    .decode_type(member.ty, data, at, Some(values), depth + 1)
+                    .map_err(|error| error.in_member(&member.name))?
+                {
                     None => undecoded.push((*index, *member)),
                     Some((value, next)) => {
                         if self.strict && by_tags {
@@ -1994,5 +2006,5 @@ fn ascii(contents: &[u8], offset: usize) -> Result<&str> {
         return decode_error("The string is not ASCII.", offset);
     }
 
-    core::str::from_utf8(contents).map_err(|_| Error::Decode("The string is not ASCII.", offset))
+    core::str::from_utf8(contents).map_err(|_| Error::decode("The string is not ASCII.", offset))
 }

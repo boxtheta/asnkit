@@ -137,6 +137,9 @@ pub struct Members {
     /// The additions of a CHOICE, as `all()` gives them after the root,
     /// in the canonical order of their tags. Empty for the others.
     pub addition_order: Vec<usize>,
+    /// How many of the root members are after the additions, after the
+    /// second extension marker.
+    pub root_after_additions: usize,
 }
 
 impl Members {
@@ -153,6 +156,19 @@ impl Members {
                         Addition::Group(group) => group.iter(),
                     }),
             )
+    }
+
+    /// All members, in the order they are defined in: the additions
+    /// between the root members before and after them.
+    pub fn defined(&self) -> impl Iterator<Item = &MemberInfo> {
+        let (before, after) = self
+            .root
+            .split_at(self.root.len() - self.root_after_additions);
+
+        before
+            .iter()
+            .chain(self.all().skip(self.root.len()))
+            .chain(after)
     }
 }
 
@@ -273,6 +289,9 @@ pub enum Codec {
     Jer,
     /// XML Encoding Rules, with the feature `xer`.
     Xer,
+    /// Generic String Encoding Rules, with the feature `gser`. Encoding
+    /// only.
+    Gser,
 }
 
 /// The types of a specification.
@@ -543,7 +562,7 @@ fn integer_range(elements: Option<&[Element]>) -> Result<IntegerRange> {
             big: None,
         }),
         #[cfg(feature = "bigint")]
-        (Err(Error::Unsupported(TOO_LARGE)), _) => Ok(IntegerRange {
+        (Err(Error::Unsupported(TOO_LARGE, _)), _) => Ok(IntegerRange {
             big: Some(crate::bigint::range_of(elements)?),
             ..IntegerRange::default()
         }),
@@ -579,7 +598,7 @@ fn bound(bound: &Bound, is_range: bool, is_lower: bool) -> Result<Option<i128>> 
             let Value::Integer(number) =
                 Value::from_twos_complement(&twos_complement_of(*negative, magnitude))
             else {
-                return Err(Error::Unsupported(TOO_LARGE));
+                return Err(Error::unsupported(TOO_LARGE));
             };
             let adjust = match (excluded, is_lower) {
                 (false, _) => 0,
@@ -713,6 +732,10 @@ impl Lowering<'_> {
                 MemberItem::Member(member) => {
                     let info = self.lower_member(member, module)?;
                     members.root.push(info);
+
+                    if members.additions.is_some() {
+                        members.root_after_additions += 1;
+                    }
                 }
                 MemberItem::Group(group) => {
                     let mut infos = Vec::new();
@@ -992,6 +1015,7 @@ impl Lowering<'_> {
                 additions: None,
                 order: Vec::new(),
                 addition_order: Vec::new(),
+                root_after_additions: 0,
             }),
             None,
         );
@@ -1006,6 +1030,7 @@ impl Lowering<'_> {
             additions: None,
             order: Vec::new(),
             addition_order: Vec::new(),
+            root_after_additions: 0,
         }
     }
 

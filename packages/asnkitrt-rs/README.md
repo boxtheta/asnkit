@@ -4,8 +4,9 @@ The asnkit runtime for Rust. It loads the `.asni` files produced by
 `asnkitcc` and uses them to encode and decode ASN.1. It contains no
 parser, needs `alloc` but not `std`, and builds for embedded targets.
 
-The codecs are BER, DER, OER, PER and UPER, plus JER (feature `jer`) and
-XER (feature `xer`). It can also check values against their constraints.
+The codecs are BER, DER, OER, PER and UPER, plus JER (feature `jer`),
+XER (feature `xer`) and GSER (feature `gser`), which is encoded only,
+for debug output. It can also check values against their constraints.
 
 ```rust
 use asnkitrt::container::Checks;
@@ -42,10 +43,17 @@ let decoded = foo.decode("Question", &encoded)?;
 | `serde` | `serde_value::{to_value, from_value}` and related types | yes |
 | `jer` | JSON Encoding Rules, with no extra dependency | yes |
 | `xer` | XML Encoding Rules, using `quick-xml`; needs `std` | yes |
+| `gser` | Generic String Encoding Rules, encoding only, with no extra dependency | yes |
 | `bigint` | Bounds of constraints of more than 128 bits, and `DURATION` time elements of more than 128 bits in PER and OER, using `num-bigint`; needs `std` | yes |
 
 Requesting a codec that is not compiled in returns
 `Error::Unsupported`.
+
+An error with a value, encoding, decoding or checking it, tells where
+in the value it is, as `Message.tags[1]: Expected data of type str.`;
+`Error::location()` gives the steps. So does an `Error::Unsupported`
+found in a value, as an `ANY` in JER, but not one of the codec, as a
+codec that is not compiled in.
 
 ## Limitations
 

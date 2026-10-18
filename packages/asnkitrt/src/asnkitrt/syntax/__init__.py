@@ -9,13 +9,7 @@ dictionaries the Python compiler returned, which is gone.
 
 """
 
-from .convert import (
-    ConvertError,
-    compiled_from_dict,
-    compiled_to_dict,
-    from_dict,
-    to_dict,
-)
+from .convert import ConvertError
 from .nodes import (
     SCHEMA_VERSION,
     AnyDefinedByChoice,
@@ -153,20 +147,16 @@ __all__ = [
     "UnresolvedObject",
     "UnsupportedValue",
     "ValueAssignment",
-    "compiled_from_dict",
-    "compiled_to_dict",
     "from_asni",
     "from_asni_file",
     "from_asnst",
     "from_asnst_file",
     "from_compact",
-    "from_dict",
     "from_primitive",
     "read_header",
     "to_asni",
     "to_asnst",
     "to_compact",
-    "to_dict",
     "to_json",
     "to_primitive",
 ]

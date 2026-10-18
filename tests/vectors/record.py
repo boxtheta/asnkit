@@ -26,8 +26,9 @@ does not support is left out. ``tests/test_vectors.py`` holds the
 runtime for Python to them.
 
 Only the codecs a runtime in another language has are kept: ``ber``,
-``der``, ``oer``, ``per``, ``uper``, ``jer`` and ``xer``. The encoded
-bytes of ``jer`` and ``xer`` are UTF-8 text. ``values.py`` tells how a
+``der``, ``oer``, ``per``, ``uper``, ``jer``, ``xer`` and ``gser``,
+which is encoded only. The encoded bytes of ``jer``, ``xer`` and
+``gser`` are UTF-8 text. ``values.py`` tells how a
 value is written.
 
 """
@@ -60,6 +61,7 @@ TEST_MODULES = [
     "tests.test_uper",
     "tests.test_jer",
     "tests.test_xer",
+    "tests.test_gser",
     "tests.test_codecs",
     "tests.test_codecs_consistency",
     "tests.test_duration",
@@ -70,7 +72,7 @@ TEST_MODULES = [
     "tests.test_constraints_checker",
 ]
 
-CODECS = ("ber", "der", "oer", "per", "uper", "jer", "xer")
+CODECS = ("ber", "der", "oer", "per", "uper", "jer", "xer", "gser")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

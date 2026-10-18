@@ -38,21 +38,36 @@ fn runtime_error(runtime: asnkitrt::Error) -> JsValue {
     use asnkitrt::Error::*;
 
     let message = runtime.to_string();
-
-    match runtime {
-        Encode(_) => error("EncodeError", &message),
-        Decode(_, offset) => {
+    let thrown = match &runtime {
+        Encode(..) => error("EncodeError", &message),
+        Decode(_, offset, _) => {
             let decode = error("DecodeError", &message);
-            let _ = js_sys::Reflect::set(&decode, &"offset".into(), &JsValue::from(offset));
+            let _ = js_sys::Reflect::set(&decode, &"offset".into(), &JsValue::from(*offset));
 
             decode
         }
-        Constraints(_) => error("ConstraintsError", &message),
-        Unsupported(_) => error("UnsupportedError", &message),
+        Constraints(..) => error("ConstraintsError", &message),
+        Unsupported(..) => error("UnsupportedError", &message),
         NoSuchType => error("NoSuchTypeError", &message),
         // Everything else is about the file.
         _ => error("LoadError", &message),
+    };
+
+    // Where in the value: names of types, members and alternatives, and
+    // indexes of elements.
+    if let Some(location) = runtime.location() {
+        let path: Array = location
+            .steps()
+            .iter()
+            .map(|step| match step {
+                asnkitrt::Step::Name(name) => JsValue::from_str(name),
+                asnkitrt::Step::Index(index) => JsValue::from(*index),
+            })
+            .collect();
+        let _ = js_sys::Reflect::set(&thrown, &"path".into(), &path);
     }
+
+    thrown
 }
 
 fn codec_of(name: &str) -> Result<Codec, JsValue> {
@@ -64,9 +79,10 @@ fn codec_of(name: &str) -> Result<Codec, JsValue> {
         "uper" => Codec::Uper,
         "jer" => Codec::Jer,
         "xer" => Codec::Xer,
+        "gser" => Codec::Gser,
         _ => {
             return Err(type_error(&format!(
-                "Unsupported codec '{name}': expected ber, der, oer, per, uper, jer or xer."
+                "Unsupported codec '{name}': expected ber, der, oer, per, uper, jer, xer or gser."
             )));
         }
     })

@@ -81,7 +81,13 @@ string for JER and XER.
 Errors are thrown as `Error`s named `EncodeError`, `DecodeError` (with
 the `offset` of the error, in bytes, or in bits for PER and UPER),
 `ConstraintsError`, `UnsupportedError`, `NoSuchTypeError` and
-`LoadError`, or as a `TypeError` for wrong arguments. TypeScript types
+`LoadError`, or as a `TypeError` for wrong arguments. An
+`EncodeError`, a `DecodeError` and a `ConstraintsError`, and an
+`UnsupportedError` found in a value, as an `ANY` in JER, also have the
+`path` to where in the value it is, from the type in: the names of
+types, members and alternatives, and the indexes of elements, as
+`['Message', 'tags', 1]`. Their message starts with it, as
+`Message.tags[1]: ...`. TypeScript types
 are in `js/index.d.ts`.
 
 ## Building and testing

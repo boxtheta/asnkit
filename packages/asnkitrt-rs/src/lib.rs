@@ -43,6 +43,8 @@
 //!   specifications builds with `default-features = false` and these.
 //! - `serde`, on by default, for [`serde_value::to_value`] and
 //!   [`serde_value::from_value`].
+//! - `jer`, `xer` and `gser`, on by default, for the text codecs. GSER
+//!   is for debug output, and is encoded only.
 //!
 //! # What is not done
 //!
@@ -62,9 +64,11 @@ pub mod bigint;
 pub mod cbor;
 pub mod check;
 pub mod container;
-#[cfg(any(feature = "jer", feature = "xer"))]
+#[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
 mod decimal;
 mod error;
+#[cfg(feature = "gser")]
+pub mod gser;
 #[cfg(feature = "jer")]
 pub mod jer;
 #[cfg(feature = "jer")]
@@ -84,4 +88,4 @@ pub mod xer;
 #[cfg(feature = "xer")]
 mod xml;
 
-pub use error::{Error, Result};
+pub use error::{Error, Location, Result, Step};

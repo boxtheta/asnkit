@@ -12,7 +12,6 @@ dictionary `d` returned by the parser.
 
 import contextvars
 import re
-import warnings
 from typing import Any, Dict, List
 
 from ..constants import CString, Located, ValueRange
@@ -1252,72 +1251,3 @@ def _compiled_to_dict(compiled: CompiledSpecification) -> Dict[str, Any]:
         }
     finally:
         IS_RESOLVED.reset(token)
-
-
-# The dictionaries are what the Python compiler, which is gone, worked
-# with. The codecs of the runtime for Python still compile from them, but
-# they are not part of the API: they are deprecated, and go in 2.0.
-
-
-@warnings.deprecated(
-    "asnkitrt.syntax.from_dict() is deprecated and will be removed in 2.0. "
-    "Read a syntax tree from an .asnst file with asnkitrt.syntax.from_asnst()."
-)
-def from_dict(specification: Dict[str, Any]) -> SyntaxTree:
-    """Convert given specification dictionary, in the form the Python
-    parser returned (which is gone), to a syntax tree.
-
-    Deprecated, and removed in 2.0: read a syntax tree from an `.asnst`
-    file with `from_asnst()`.
-
-    """
-
-    return _tree_from_dict(specification)
-
-
-@warnings.deprecated(
-    "asnkitrt.syntax.to_dict() is deprecated and will be removed in 2.0. "
-    "Use the nodes of the syntax tree."
-)
-def to_dict(tree: SyntaxTree) -> Dict[str, Any]:
-    """Convert given syntax tree to a specification dictionary, in the
-    form the Python parser returned (which is gone).
-
-    Deprecated, and removed in 2.0: use the nodes of the syntax tree.
-
-    """
-
-    return _tree_to_dict(tree)
-
-
-@warnings.deprecated(
-    "asnkitrt.syntax.compiled_from_dict() is deprecated and will be removed "
-    "in 2.0. Read a compiled specification from an .asni file with "
-    "asnkitrt.syntax.from_asni()."
-)
-def compiled_from_dict(resolved: Dict[str, Any]) -> CompiledSpecification:
-    """Convert given resolved specification dictionary, as
-    `compiled_to_dict()` returns, to a compiled specification.
-
-    Deprecated, and removed in 2.0: read a compiled specification from
-    an `.asni` file with `from_asni()`.
-
-    """
-
-    return _compiled_from_dict(resolved)
-
-
-@warnings.deprecated(
-    "asnkitrt.syntax.compiled_to_dict() is deprecated and will be removed "
-    "in 2.0. Use the nodes of the compiled specification."
-)
-def compiled_to_dict(compiled: CompiledSpecification) -> Dict[str, Any]:
-    """Convert given compiled specification to a resolved specification
-    dictionary.
-
-    Deprecated, and removed in 2.0: use the nodes of the compiled
-    specification.
-
-    """
-
-    return _compiled_to_dict(compiled)

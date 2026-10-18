@@ -12,7 +12,7 @@ use crate::value::{Date, DateTime, Time, Value};
 use crate::{Error, Result};
 
 fn bad() -> Error {
-    Error::Encode("Expected a time string.")
+    Error::encode("Expected a time string.")
 }
 
 fn is_leap(year: i32) -> bool {
@@ -269,7 +269,7 @@ pub fn utc_time_to_string(value: &DateTime, restricted: bool) -> String {
 }
 
 pub fn utc_time_from_string(string: &str, restricted: bool) -> Result<DateTime> {
-    let error = || Error::Decode("Expected a UTC time string.", 0);
+    let error = || Error::decode("Expected a UTC time string.", 0);
     let mut cursor = Cursor {
         bytes: string.as_bytes(),
         at: 0,
@@ -357,7 +357,7 @@ pub fn generalized_time_to_string(value: &DateTime, restricted: bool) -> String 
 }
 
 pub fn generalized_time_from_string(string: &str, restricted: bool) -> Result<DateTime> {
-    let error = || Error::Decode("Expected a generalized time string.", 0);
+    let error = || Error::decode("Expected a generalized time string.", 0);
     let bytes = string.as_bytes();
 
     if restricted {
@@ -466,7 +466,7 @@ pub fn date_from_string(string: &str) -> Result<Date> {
 /// are a local time to the second (X.680 38.4.2, 38.4.3).
 pub fn check_local_time(value: &Time) -> Result<()> {
     if value.microsecond != 0 || value.offset.is_some() {
-        return Err(Error::Encode(
+        return Err(Error::encode(
             "A TIME-OF-DAY or a DATE-TIME has no fraction of a second and no offset.",
         ));
     }
@@ -539,7 +539,7 @@ pub fn date_time_from_string(string: &str) -> Result<DateTime> {
 
 /// The text codecs write dates and times as `str()` of Python does,
 /// and read them with `%Y-%m-%d`, `%H:%M:%S` and `%Y-%m-%dT%H:%M:%S`.
-#[cfg(any(feature = "jer", feature = "xer"))]
+#[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
 pub(crate) mod iso {
     use super::*;
 
@@ -565,6 +565,7 @@ pub(crate) mod iso {
     }
 
     /// One or two digits, as many as there are.
+    #[cfg(any(feature = "jer", feature = "xer"))]
     fn number(cursor: &mut Cursor<'_>) -> Result<u32> {
         let mut value = 0;
         let mut digits = 0;
@@ -581,6 +582,7 @@ pub(crate) mod iso {
         if digits == 0 { Err(bad()) } else { Ok(value) }
     }
 
+    #[cfg(any(feature = "jer", feature = "xer"))]
     fn expect(cursor: &mut Cursor<'_>, byte: u8) -> Result<()> {
         if cursor.bytes.get(cursor.at) == Some(&byte) {
             cursor.at += 1;
@@ -591,6 +593,7 @@ pub(crate) mod iso {
         }
     }
 
+    #[cfg(any(feature = "jer", feature = "xer"))]
     fn read_date(cursor: &mut Cursor<'_>) -> Result<Date> {
         let year = cursor.number(4)? as i32;
 
@@ -605,6 +608,7 @@ pub(crate) mod iso {
         checked_date(year, month, day)
     }
 
+    #[cfg(any(feature = "jer", feature = "xer"))]
     fn read_time(cursor: &mut Cursor<'_>) -> Result<Time> {
         let hour = number(cursor)? as u8;
 
@@ -619,6 +623,7 @@ pub(crate) mod iso {
         checked_time(hour, minute, second, 0, None)
     }
 
+    #[cfg(any(feature = "jer", feature = "xer"))]
     pub fn date_from_string(string: &str) -> Result<Date> {
         let mut cursor = Cursor {
             bytes: string.as_bytes(),
@@ -629,6 +634,7 @@ pub(crate) mod iso {
         if cursor.done() { Ok(date) } else { Err(bad()) }
     }
 
+    #[cfg(any(feature = "jer", feature = "xer"))]
     pub fn time_from_string(string: &str) -> Result<Time> {
         let mut cursor = Cursor {
             bytes: string.as_bytes(),
@@ -639,6 +645,7 @@ pub(crate) mod iso {
         if cursor.done() { Ok(time) } else { Err(bad()) }
     }
 
+    #[cfg(any(feature = "jer", feature = "xer"))]
     pub fn date_time_from_string(string: &str) -> Result<DateTime> {
         let mut cursor = Cursor {
             bytes: string.as_bytes(),
@@ -696,7 +703,7 @@ fn element_of_digits(digits: &str) -> Result<Value> {
         return Ok(crate::bigint::to_value(&number));
     }
 
-    Err(Error::Unsupported(ELEMENT_TOO_LARGE))
+    Err(Error::unsupported(ELEMENT_TOO_LARGE))
 }
 
 /// A time element written as its digits.
@@ -954,7 +961,7 @@ pub fn duration_to_components(text: &str) -> Result<DurationComponents> {
             }
             if let Some(frac) = c.frac {
                 if frac.len() > MAX_FRACTION_DIGITS {
-                    return Err(Error::Encode(
+                    return Err(Error::encode(
                         "A fractional part of a DURATION can have at most 38 digits in PER and OER.",
                     ));
                 }

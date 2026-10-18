@@ -65,7 +65,7 @@ fn every_specification_is_lowered() {
 
                 // What needs a feature that is not built in, such as bigint.
                 #[cfg(not(feature = "bigint"))]
-                if matches!(error, asnkitrt::Error::Unsupported(_)) {
+                if matches!(error, asnkitrt::Error::Unsupported(..)) {
                     continue;
                 }
 

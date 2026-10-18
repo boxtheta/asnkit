@@ -37,7 +37,7 @@ fn record(spec: &Result<Specification, asnkitrt::Error>, mut vector: Json) -> Js
             vector["value"] = to_json(&value);
             vector["error"] = Json::Null;
         }
-        Err(asnkitrt::Error::Unsupported(_)) => return Json::Null,
+        Err(asnkitrt::Error::Unsupported(..)) => return Json::Null,
         Err(error) => {
             if vector["operation"] == "encode" {
                 vector["encoded"] = "".into();

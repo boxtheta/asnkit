@@ -116,31 +116,14 @@ class SyntaxTest(unittest.TestCase):
 
         self.assertEqual(str(cm.exception), "Unsupported key(s) 'foo' in type 'NULL'.")
 
-    def test_dict_functions_are_deprecated(self):
+    def test_dict_functions_are_removed(self):
         import asnkitrt
-        from tests import compiled as fixtures
 
-        tree = _tree_from_dict({"A": {"types": {"B": {"type": "NULL"}}}})
-        compiled = syntax.from_asni(
-            fixtures.compile_string_to_asni("A DEFINITIONS ::= BEGIN B ::= NULL END")
-        )
+        for name in ["from_dict", "to_dict", "compiled_from_dict", "compiled_to_dict"]:
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(syntax, name))
 
-        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
-            self.assertEqual(syntax.from_dict(_tree_to_dict(tree)), tree)
-
-        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
-            self.assertEqual(syntax.to_dict(tree), _tree_to_dict(tree))
-
-        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
-            resolved = syntax.compiled_to_dict(compiled)
-
-        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
-            self.assertEqual(syntax.compiled_from_dict(resolved), compiled)
-
-        with self.assertWarnsRegex(DeprecationWarning, "removed in 2.0"):
-            loaded = asnkitrt.runtime.load_dict(resolved)
-
-        self.assertEqual(loaded.encode("B", None), b"\x05\x00")
+        self.assertFalse(hasattr(asnkitrt.runtime, "load_dict"))
 
 
 if __name__ == "__main__":
