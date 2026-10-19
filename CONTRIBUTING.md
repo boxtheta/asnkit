@@ -135,6 +135,19 @@ that you are allowed to.
    A difference of a few percent is usually noise; run the benchmark
    again before you trust it.
 
+   To find out where the runtime for Rust spends its time, profile it
+   encoding or decoding the certificate of its benchmark with one
+   codec. On macOS, `run` takes the profile with Instruments and prints
+   the functions that take the most time, and the allocations of a
+   call. Elsewhere, take a profile of `examples/profile.rs` as folded
+   stacks and give them to `report`, as the script tells:
+
+   ```text
+   python3 packages/asnkitrt-rs/examples/profile.py run der decode
+   python3 packages/asnkitrt-rs/examples/profile.py run uper encode --callers malloc
+   python3 packages/asnkitrt-rs/examples/profile.py report der.folded
+   ```
+
 9. Open a pull request, with every commit signed off (see
    [Developer Certificate of Origin](#developer-certificate-of-origin)).
 
