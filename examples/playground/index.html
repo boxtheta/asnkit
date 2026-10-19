@@ -40,6 +40,7 @@ SPDX-License-Identifier: Apache-2.0
         <button id="compile" class="primary">Compile</button>
       </div>
     </div>
+    <div class="hint" id="example-description" hidden></div>
     <textarea id="spec" wrap="off" spellcheck="false" aria-label="ASN.1 specification"></textarea>
     <div id="compile-status" class="status" role="status"></div>
     <div class="compile-meta" id="compile-meta" hidden>
@@ -71,12 +72,13 @@ SPDX-License-Identifier: Apache-2.0
   <section class="panel wide" aria-labelledby="out-heading">
     <div class="panel-head">
       <h2 id="out-heading"><span class="step">3</span> Every codec</h2>
-      <span class="hint">Click a row to use it as the input.</span>
+      <span class="hint">Click a row or focus its codec button and press Enter or Space to use it as the input.</span>
     </div>
+    <div class="hint">Times measure single encode/decode calls in this browser's WebAssembly runtime, excluding display formatting; not a benchmark. Native runtime execution is typically faster.</div>
     <div class="table-wrap">
       <table id="outputs">
         <thead>
-          <tr><th>Codec</th><th class="num">Bytes</th><th class="bar-col">Size</th><th>Encoding</th></tr>
+          <tr><th>Codec</th><th class="num">Bytes</th><th class="num">Encode</th><th class="num">Decode</th><th class="bar-col">Size</th><th>Encoding</th></tr>
         </thead>
         <tbody></tbody>
       </table>

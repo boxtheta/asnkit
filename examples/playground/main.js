@@ -11,6 +11,7 @@
 // they are.
 import * as compiler from 'asnkit-compiler';
 import * as runtime from 'asnkitrt';
+import { protocols } from './protocols.js';
 
 const CODECS = [
   ['ber', 'BER', 'Basic Encoding Rules'],
@@ -87,6 +88,7 @@ END
 `,
     value: { id: 1, question: 'Is 1+1=3?' },
   },
+  ...protocols,
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -96,6 +98,7 @@ const state = {
   specs: null,
   asni: null,
   name: 'specification',
+  inputCodec: 'ber',
   // The encodings of the last value, by codec, to use as the input.
   outputs: new Map(),
 };
@@ -124,9 +127,7 @@ function showStatus(element, message, kind) {
   element.className = `status ${kind ?? ''}`;
 }
 
-function describe(error) {
-  const codec = $('input-codec').value;
-
+function describe(error, codec = $('input-codec').value) {
   // The text codecs do not tell where an error is.
   if (error?.name === 'DecodeError' && error.offset !== undefined && !TEXT_CODECS.has(codec)) {
     const unit = ['per', 'uper'].includes(codec) ? 'bit' : 'byte';
@@ -168,10 +169,13 @@ async function compileSpecification() {
     const { asni, modules } = await compiler.compileWithSummary(text);
     const compiled = performance.now() - started;
     const specs = {};
+    const loadStarted = performance.now();
 
     for (const [codec] of CODECS) {
       specs[codec] = await runtime.load(asni, codec);
     }
+
+    const loaded = performance.now() - loadStarted;
 
     freeSpecs();
     state.specs = specs;
@@ -180,7 +184,7 @@ async function compileSpecification() {
 
     showStatus(
       status,
-      `Compiled in ${compiled.toFixed(1)} ms to ${asni.length.toLocaleString()} bytes of .asni, loaded for ${CODECS.length} codecs.`,
+      `Compiled in ${compiled.toFixed(1)} ms to ${asni.length.toLocaleString()} bytes of .asni, loaded in ${loaded.toFixed(1)} ms for ${CODECS.length} codecs.`,
       'ok',
     );
 
@@ -270,14 +274,30 @@ function renderOutputs(value, type, options) {
     try {
       // The size is that of the encoding as it is sent, and the text
       // codecs are shown indented, to be read.
+      const encodeStarted = performance.now();
       const encoded = state.specs[codec].encode(type, value, options);
+      const encodeMs = performance.now() - encodeStarted;
+      let decodeMs;
+      let decodeError;
+
+      if (!ENCODE_ONLY.has(codec)) {
+        try {
+          const decodeStarted = performance.now();
+
+          state.specs[codec].decode(type, encoded, options);
+          decodeMs = performance.now() - decodeStarted;
+        } catch (error) {
+          decodeError = error;
+        }
+      }
+
       const shown = TEXT_CODECS.has(codec)
         ? state.specs[codec].encode(type, value, { ...options, indent: 2 })
         : encoded;
 
       state.outputs.set(codec, shown);
 
-      return { codec, label, title, encoded, shown };
+      return { codec, label, title, encoded, shown, encodeMs, decodeMs, decodeError };
     } catch (error) {
       return { codec, label, title, error };
     }
@@ -286,24 +306,53 @@ function renderOutputs(value, type, options) {
   const current = $('input-codec').value;
 
   body.replaceChildren(
-    ...results.map(({ codec, label, title, encoded, shown, error }) => {
+    ...results.map(({ codec, label, title, encoded, shown, encodeMs, decodeMs, decodeError, error }) => {
       const row = document.createElement('tr');
       const name = document.createElement('td');
       const size = document.createElement('td');
+      const encodeTime = document.createElement('td');
+      const decodeTime = document.createElement('td');
       const barCell = document.createElement('td');
       const out = document.createElement('td');
 
       if (ENCODE_ONLY.has(codec)) {
         row.className = 'encode-only';
-      } else {
+      } else if (!error) {
         row.dataset.codec = codec;
         row.classList.toggle('current', codec === current);
       }
 
       name.className = 'codec';
-      name.textContent = label;
+
+      if (!error && !ENCODE_ONLY.has(codec)) {
+        const button = document.createElement('button');
+
+        button.type = 'button';
+        button.className = 'codec-button';
+        button.textContent = label;
+        button.setAttribute('aria-label', `Use the ${label} encoding as the input`);
+        name.append(button);
+      } else {
+        name.textContent = label;
+      }
+
       name.append(Object.assign(document.createElement('small'), { textContent: title }));
       size.className = 'num';
+      encodeTime.className = 'num timing';
+      encodeTime.dataset.label = 'Encode';
+      encodeTime.textContent = encodeMs === undefined ? '–' : `${encodeMs.toFixed(3)} ms`;
+      decodeTime.className = 'num timing';
+      decodeTime.dataset.label = 'Decode';
+      decodeTime.textContent = decodeMs === undefined ? '–' : `${decodeMs.toFixed(3)} ms`;
+
+      if (decodeError) {
+        decodeTime.textContent = 'Error';
+        decodeTime.classList.add('timing-error');
+        decodeTime.title = describe(decodeError, codec);
+      } else if (ENCODE_ONLY.has(codec)) {
+        decodeTime.title = 'GSER is encode-only.';
+      }
+
       barCell.className = 'bar-col';
       out.className = 'out';
 
@@ -328,7 +377,7 @@ function renderOutputs(value, type, options) {
         }));
       }
 
-      row.append(name, size, barCell, out);
+      row.append(name, size, encodeTime, decodeTime, barCell, out);
       row.title = error || ENCODE_ONLY.has(codec) ? '' : `Use the ${label} encoding as the input`;
       size.title = TEXT_CODECS.has(codec) && !error ? 'Without indentation' : '';
 
@@ -340,6 +389,7 @@ function renderOutputs(value, type, options) {
 /** Makes the encoding of a codec the input. */
 function useAsInput(codec) {
   const encoded = state.outputs.get(codec);
+  const restoreFocus = document.activeElement.closest('tr[data-codec]')?.dataset.codec === codec;
 
   if (!encoded) {
     return;
@@ -351,11 +401,16 @@ function useAsInput(codec) {
     : spacedHex(encoded);
   updateHint();
   decodeInput();
+
+  if (restoreFocus) {
+    $('outputs').querySelector(`tr[data-codec="${codec}"] button`)?.focus({ preventScroll: true });
+  }
 }
 
 function updateHint() {
   const codec = $('input-codec').value;
 
+  state.inputCodec = codec;
   $('input-hint').textContent = TEXT_CODECS.has(codec)
     ? `${codec.toUpperCase()} text`
     : 'Hexadecimal bytes; spaces are ignored';
@@ -363,11 +418,13 @@ function updateHint() {
 
 async function loadExample(example) {
   $('spec').value = example.specification;
+  $('example-description').textContent = example.description ?? '';
+  $('example-description').hidden = !example.description;
 
   if (await compileSpecification()) {
     $('type').value = example.type;
-    $('input-codec').value = 'jer';
-    $('input').value = new TextDecoder().decode(
+    $('input-codec').value = example.codec ?? 'jer';
+    $('input').value = example.input ?? new TextDecoder().decode(
       state.specs.jer.encode(example.type, example.value, { indent: 2 }),
     );
     updateHint();
@@ -412,8 +469,18 @@ async function main() {
   $('example').addEventListener('change', () => loadExample(EXAMPLES[$('example').value]));
   $('type').addEventListener('change', decodeInput);
   $('input-codec').addEventListener('change', () => {
-    updateHint();
+    const codec = $('input-codec').value;
+
+    $('input-codec').value = state.inputCodec;
     decodeInput();
+    $('input-codec').value = codec;
+
+    if (state.outputs.has(codec)) {
+      useAsInput(codec);
+    } else {
+      updateHint();
+      decodeInput();
+    }
   });
   $('check-constraints').addEventListener('change', decodeInput);
   $('input').addEventListener('input', debounce(decodeInput, 250));

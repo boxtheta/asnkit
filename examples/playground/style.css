@@ -194,14 +194,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
 th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-tbody tr { cursor: pointer; }
-tbody tr:hover { background: var(--row-hover); }
-tbody tr.encode-only { cursor: default; }
-tbody tr.encode-only:hover { background: none; }
+tbody tr[data-codec] { cursor: pointer; }
+tbody tr[data-codec]:hover, tbody tr[data-codec]:focus-within { background: var(--row-hover); }
 tbody tr.current { box-shadow: inset 3px 0 var(--accent); }
 td.codec { font-weight: 600; white-space: nowrap; }
+.codec-button { padding: 0; border: none; border-radius: 2px; background: none; font: inherit; }
 td.codec small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.timing-error { color: var(--error); }
 .bar-col { width: 18%; min-width: 80px; }
 .bar { height: 10px; border-radius: 3px; background: var(--bar); margin-top: 6px; }
 td.out {
@@ -221,10 +221,15 @@ footer a { color: var(--muted); }
   main { grid-template-columns: 1fr; }
   textarea { min-height: 220px; }
   .bar-col { display: none; }
+  table { table-layout: fixed; }
   thead { display: none; }
   /* Each encoding goes under its codec, which has the whole width. */
-  tbody tr { display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid var(--border); }
+  tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid var(--border); }
   tbody td { border-bottom: none; }
+  td.codec small { white-space: normal; }
   td.codec, td.num { padding-bottom: 2px; }
+  td.timing { padding-top: 0; padding-bottom: 6px; }
+  td.timing[data-label="Encode"] { text-align: left; }
+  td.timing::before { content: attr(data-label) " "; color: var(--muted); font-size: 12px; }
   td.out { grid-column: 1 / -1; width: auto; max-width: none; padding-top: 0; }
 }

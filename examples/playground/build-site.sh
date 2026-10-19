@@ -17,7 +17,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 packages=$here/../../packages
 
 mkdir -p "$out/packages"
-cp "$here/index.html" "$here/main.js" "$here/style.css" "$out/"
+cp "$here/index.html" "$here/main.js" "$here/protocols.js" "$here/style.css" "$out/"
 
 for package in asnkit-compiler-wasm asnkitrt-wasm; do
     if [ ! -d "$packages/$package/pkg" ]; then
