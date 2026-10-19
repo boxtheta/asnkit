@@ -384,7 +384,7 @@ impl Encoder<'_> {
                     out.push(' ');
 
                     let ty = member_type(self.types, member, map)
-                        .ok_or(Error::encode("Bad AnyDefinedBy choice."))?;
+                        .ok_or_else(|| Error::encode("Bad AnyDefinedBy choice."))?;
 
                     self.encode(ty, value, &inner, out, depth + 1)
                         .map_err(|error| error.in_member(&member.name))?;

@@ -175,30 +175,28 @@ fn to_seconds(value: &DateTime) -> i64 {
 }
 
 fn from_seconds(mut seconds: i64, microsecond: u32) -> DateTime {
-    let mut days = seconds.div_euclid(86400);
+    let days = seconds.div_euclid(86400);
 
     seconds = seconds.rem_euclid(86400);
 
-    // Whole years, then months.
-    let mut year = 1;
-
-    loop {
-        let length = if is_leap(year) { 366 } else { 365 };
-
-        if days < length {
-            break;
-        }
-
-        days -= length;
-        year += 1;
-    }
-
-    let mut month = 1;
-
-    while days >= i64::from(days_in(year, month)) {
-        days -= i64::from(days_in(year, month));
-        month += 1;
-    }
+    // The days from 0000-03-01, so that a leap day is the last of its
+    // year, in eras of 400 years, which all have as many days. (This
+    // is `civil_from_days` of Howard Hinnant.)
+    let days = days + 306;
+    let era = days.div_euclid(146_097);
+    let day_of_era = days.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    // From March.
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let days = day_of_year - (153 * shifted_month + 2) / 5;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    } as u8;
+    let year = (era * 400 + year_of_era + i64::from(month <= 2)) as i32;
 
     DateTime {
         date: Date {
@@ -219,6 +217,10 @@ fn from_seconds(mut seconds: i64, microsecond: u32) -> DateTime {
 /// The date and time in UTC, as a naive one.
 /// The time in UTC, with no offset.
 pub(crate) fn to_utc(value: &DateTime) -> DateTime {
+    if value.time.offset.is_none() {
+        return *value;
+    }
+
     from_seconds(to_seconds(value), value.time.microsecond)
 }
 
@@ -1228,6 +1230,19 @@ mod tests {
 
         // 00:30 at UTC+1 is 23:30 the day before in UTC.
         assert_eq!(to_utc(&value), naive(2017, 12, 31, 23, 30, 0));
+    }
+
+    #[test]
+    fn every_day_is_the_day_of_its_seconds() {
+        for year in 1..=9999 {
+            for month in 1..=12 {
+                for day in 1..=days_in(year, month) {
+                    let value = naive(year, month, day, 23, 59, 59);
+
+                    assert_eq!(from_seconds(to_seconds(&value), 0), value);
+                }
+            }
+        }
     }
 
     #[test]

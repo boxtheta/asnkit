@@ -12,6 +12,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 
 use crate::node::TagClass;
 use crate::time;
@@ -101,18 +102,6 @@ fn encode_error<T>(what: &'static str) -> Result<T> {
     Err(Error::encode(what))
 }
 
-fn write_length(length: usize, out: &mut Vec<u8>) {
-    if length <= 127 {
-        out.push(length as u8);
-    } else {
-        let bytes = length.to_be_bytes();
-        let skip = bytes.iter().take_while(|byte| **byte == 0).count();
-
-        out.push(0x80 | (bytes.len() - skip) as u8);
-        out.extend_from_slice(&bytes[skip..]);
-    }
-}
-
 fn write_tag(tag: &WireTag, out: &mut Vec<u8>) {
     let flags = match tag.class {
         TagClass::Universal => 0x00,
@@ -140,10 +129,34 @@ fn write_tag(tag: &WireTag, out: &mut Vec<u8>) {
     }
 }
 
-fn write_tlv(tag: &WireTag, contents: &[u8], out: &mut Vec<u8>) {
+/// A TLV of `tag`, of which `contents` writes the contents after the
+/// tag and the length, which is made longer after them if it has to be.
+fn write_tlv(
+    tag: &WireTag,
+    out: &mut Vec<u8>,
+    contents: impl FnOnce(&mut Vec<u8>) -> Result<()>,
+) -> Result<()> {
     write_tag(tag, out);
-    write_length(contents.len(), out);
-    out.extend_from_slice(contents);
+
+    let at = out.len();
+
+    // Most lengths are a byte.
+    out.push(0);
+    contents(out)?;
+
+    let length = out.len() - at - 1;
+
+    if length <= 127 {
+        out[at] = length as u8;
+    } else {
+        let bytes = length.to_be_bytes();
+        let skip = bytes.iter().take_while(|byte| **byte == 0).count();
+
+        out[at] = 0x80 | (bytes.len() - skip) as u8;
+        out.splice(at + 1..at + 1, bytes[skip..].iter().copied());
+    }
+
+    Ok(())
 }
 
 /// The tag at `offset`: the class, if it is constructed, the number
@@ -151,7 +164,7 @@ fn write_tlv(tag: &WireTag, contents: &[u8], out: &mut Vec<u8>) {
 fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u64, usize)> {
     let first = *data
         .get(offset)
-        .ok_or(Error::decode("Ran out of data when reading tag", offset))?;
+        .ok_or_else(|| Error::decode("Ran out of data when reading tag", offset))?;
     let class = match first >> 6 {
         0 => TagClass::Universal,
         1 => TagClass::Application,
@@ -168,7 +181,7 @@ fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u64, usize)> 
         loop {
             let byte = *data
                 .get(at)
-                .ok_or(Error::decode("Ran out of data when reading tag", at))?;
+                .ok_or_else(|| Error::decode("Ran out of data when reading tag", at))?;
 
             at += 1;
 
@@ -207,10 +220,9 @@ fn read_length(
     enforce_definite: bool,
     enforce_minimal: bool,
 ) -> Result<(Option<usize>, usize)> {
-    let first = *data.get(offset).ok_or(Error::decode(
-        "Ran out of data when trying to read length",
-        offset,
-    ))?;
+    let first = *data
+        .get(offset)
+        .ok_or_else(|| Error::decode("Ran out of data when trying to read length", offset))?;
     let mut at = offset + 1;
     let length;
 
@@ -224,10 +236,9 @@ fn read_length(
         return Ok((None, at));
     } else {
         let count = usize::from(first & 0x7f);
-        let bytes = data.get(at..at + count).ok_or(Error::decode(
-            "Ran out of data when trying to read length",
-            at,
-        ))?;
+        let bytes = data
+            .get(at..at + count)
+            .ok_or_else(|| Error::decode("Ran out of data when trying to read length", at))?;
 
         if count > core::mem::size_of::<usize>()
             && bytes.iter().take(count - 8).any(|byte| *byte != 0)
@@ -312,7 +323,7 @@ pub(crate) fn bmp_text(bytes: &[u8], offset: usize) -> Result<String> {
         .chunks(2)
         .map(|pair| char::from_u32(u32::from(u16::from_be_bytes([pair[0], pair[1]]))))
         .collect::<Option<String>>()
-        .ok_or(Error::decode("The string is not a BMPString.", offset))
+        .ok_or_else(|| Error::decode("The string is not a BMPString.", offset))
 }
 
 fn string_text(kind: StrKind, bytes: &[u8], offset: usize) -> Result<String> {
@@ -344,7 +355,7 @@ fn string_text(kind: StrKind, bytes: &[u8], offset: usize) -> Result<String> {
                     char::from_u32(u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
                 })
                 .collect::<Option<String>>()
-                .ok_or(Error::decode("The string is not UTF-32.", offset))
+                .ok_or_else(|| Error::decode("The string is not UTF-32.", offset))
         }
     }
 }
@@ -698,47 +709,86 @@ pub(crate) fn decode_real(data: &[u8], offset: usize, strict: bool) -> Result<f6
 }
 
 pub(crate) fn encode_object_identifier(text: &str) -> Result<Vec<u8>> {
-    let mut arcs = Vec::new();
+    // Most arcs are a byte or two.
+    let mut out = Vec::with_capacity(text.len());
 
-    for part in text.split('.') {
-        arcs.push(
-            part.parse::<u128>()
-                .map_err(|_| Error::encode("Expected an OBJECT IDENTIFIER."))?,
-        );
-    }
-
-    if arcs.len() < 2 {
-        return encode_error("Expected an OBJECT IDENTIFIER of at least two arcs.");
-    }
-
-    let mut out = Vec::new();
-    let mut push = |mut arc: u128| {
-        let mut groups = alloc::vec![(arc & 0x7f) as u8];
-
-        arc >>= 7;
-
-        while arc > 0 {
-            groups.push(0x80 | (arc & 0x7f) as u8);
-            arc >>= 7;
-        }
-
-        groups.reverse();
-        out.extend_from_slice(&groups);
-    };
-
-    push(arcs[0] * 40 + arcs[1]);
-
-    for arc in &arcs[2..] {
-        push(*arc);
-    }
+    encode_object_identifier_into(text, &mut out)?;
 
     Ok(out)
 }
 
-pub(crate) fn decode_object_identifier(data: &[u8], offset: usize, strict: bool) -> Result<String> {
-    use core::fmt::Write;
+fn encode_object_identifier_into(text: &str, out: &mut Vec<u8>) -> Result<()> {
+    let mut parts = text.split('.');
+    let mut arc = || -> Result<Option<u128>> {
+        parts
+            .next()
+            .map(|part| {
+                // Parsing a u64 is faster, and an arc is all but always one.
+                part.parse::<u64>()
+                    .map(u128::from)
+                    .or_else(|_| part.parse::<u128>())
+                    .map_err(|_| Error::encode("Expected an OBJECT IDENTIFIER."))
+            })
+            .transpose()
+    };
+    let (Some(first), Some(second)) = (arc()?, arc()?) else {
+        return encode_error("Expected an OBJECT IDENTIFIER of at least two arcs.");
+    };
+    push_subidentifier(first * 40 + second, out);
 
-    let mut text = String::new();
+    while let Some(arc) = arc()? {
+        push_subidentifier(arc, out);
+    }
+
+    Ok(())
+}
+
+/// A subidentifier: groups of 7 bits, the most significant first, all
+/// but the last with the high bit set.
+fn push_subidentifier(arc: u128, out: &mut Vec<u8>) {
+    let groups = (128 - arc.leading_zeros() as usize).div_ceil(7).max(1);
+
+    for group in (0..groups).rev() {
+        let bits = (arc >> (7 * group)) as u8 & 0x7f;
+
+        out.push(if group == 0 { bits } else { 0x80 | bits });
+    }
+}
+
+/// The digits of `value`, as `write!` has them, without its machinery.
+pub(crate) fn push_decimal(value: u128, text: &mut String) {
+    let mut digits = [0u8; 39];
+    let mut at = digits.len();
+
+    if let Ok(mut value) = u64::try_from(value) {
+        loop {
+            at -= 1;
+            digits[at] = b'0' + (value % 10) as u8;
+            value /= 10;
+
+            if value == 0 {
+                break;
+            }
+        }
+    } else {
+        let mut value = value;
+
+        while value > 0 {
+            at -= 1;
+            digits[at] = b'0' + (value % 10) as u8;
+            value /= 10;
+        }
+    }
+
+    for digit in &digits[at..] {
+        text.push(char::from(*digit));
+    }
+}
+
+pub(crate) fn decode_object_identifier(data: &[u8], offset: usize, strict: bool) -> Result<String> {
+    // A byte is 7 bits of an arc, which are at most 3 digits, and the
+    // first arc is two.
+    let mut text = String::with_capacity(3 * data.len() + 2);
     let mut arc: u128 = 0;
     let mut start = true;
     let mut first = true;
@@ -773,10 +823,13 @@ pub(crate) fn decode_object_identifier(data: &[u8], offset: usize, strict: bool)
                     (2, arc - 80)
                 };
 
-                write!(text, "{a}.{b}").unwrap();
+                push_decimal(a, &mut text);
+                text.push('.');
+                push_decimal(b, &mut text);
                 first = false;
             } else {
-                write!(text, ".{arc}").unwrap();
+                text.push('.');
+                push_decimal(arc, &mut text);
             }
 
             arc = 0;
@@ -877,17 +930,14 @@ impl<'a> Coder<'a> {
         };
 
         if rest.is_empty() && kind_has_base_tag(kind) {
-            let contents = self.encode_content(kind, concrete, value, siblings, depth)?;
-
-            write_tlv(tag, &contents, out);
+            write_tlv(tag, out, |out| {
+                self.encode_content(kind, concrete, value, siblings, out, depth)
+            })
         } else {
-            let mut inner = Vec::new();
-
-            self.encode_tags(rest, concrete, value, &mut inner, siblings, depth)?;
-            write_tlv(tag, &inner, out);
+            write_tlv(tag, out, |out| {
+                self.encode_tags(rest, concrete, value, out, siblings, depth)
+            })
         }
-
-        Ok(())
     }
 
     /// A type with no tag of its own: a CHOICE is its alternative.
@@ -952,13 +1002,44 @@ impl<'a> Coder<'a> {
         }
     }
 
+    /// The contents of a value of a type with a tag of its own.
     fn encode_content(
         &self,
         kind: &Kind,
         id: TypeId,
         value: &Value,
         siblings: Option<&[(String, Value)]>,
+        out: &mut Vec<u8>,
         depth: usize,
+    ) -> Result<()> {
+        match (kind, value) {
+            (Kind::Sequence(members) | Kind::External(members) | Kind::Set(members), _) => {
+                self.encode_members(members, matches!(kind, Kind::Set(_)), value, out, depth)
+            }
+            (Kind::SequenceOf(element) | Kind::SetOf(element), _) => {
+                self.encode_elements(*element, matches!(kind, Kind::SetOf(_)), value, out, depth)
+            }
+            (Kind::OctetString, Value::Bytes(bytes)) => {
+                out.extend_from_slice(bytes);
+
+                Ok(())
+            }
+            (Kind::ObjectIdentifier, Value::Text(text)) => encode_object_identifier_into(text, out),
+            _ => {
+                out.extend_from_slice(&self.encode_primitive(kind, id, value, siblings)?);
+
+                Ok(())
+            }
+        }
+    }
+
+    /// The contents of a value of a type with no others in it.
+    fn encode_primitive(
+        &self,
+        kind: &Kind,
+        id: TypeId,
+        value: &Value,
+        siblings: Option<&[(String, Value)]>,
     ) -> Result<Vec<u8>> {
         let _ = siblings;
 
@@ -1045,31 +1126,6 @@ impl<'a> Coder<'a> {
                     None => encode_error("Expected an enumeration value."),
                 }
             }
-            Kind::Sequence(members) | Kind::External(members) | Kind::Set(members) => {
-                self.encode_members(members, matches!(kind, Kind::Set(_)), value, depth)
-            }
-            Kind::SequenceOf(element) | Kind::SetOf(element) => {
-                let Value::List(items) = value else {
-                    return encode_error("Expected data of type list.");
-                };
-                let mut encoded = Vec::new();
-
-                for (index, item) in items.iter().enumerate() {
-                    let mut one = Vec::new();
-
-                    self.encode_type(*element, item, &mut one, None, depth + 1)
-                        .map_err(|error| error.in_element(index))?;
-                    encoded.push(one);
-                }
-
-                // X.690 11.6: sorted as octet strings, the shorter padded
-                // with zero octets.
-                if self.der && matches!(kind, Kind::SetOf(_)) {
-                    encoded.sort_by(|a, b| padded_compare(a, b));
-                }
-
-                Ok(encoded.concat())
-            }
             Kind::Str(string) => match value {
                 Value::Text(text) => string_bytes(*string, text),
                 _ => encode_error("Expected data of type str."),
@@ -1110,7 +1166,13 @@ impl<'a> Coder<'a> {
                 }
                 _ => encode_error("Expected data of type str."),
             },
-            Kind::Choice(_)
+            // See `encode_content`.
+            Kind::Sequence(_)
+            | Kind::External(_)
+            | Kind::Set(_)
+            | Kind::SequenceOf(_)
+            | Kind::SetOf(_)
+            | Kind::Choice(_)
             | Kind::Any
             | Kind::AnyDefinedBy { .. }
             | Kind::OpenType
@@ -1122,32 +1184,75 @@ impl<'a> Coder<'a> {
         }
     }
 
+    fn encode_elements(
+        &self,
+        element: TypeId,
+        is_set: bool,
+        value: &Value,
+        out: &mut Vec<u8>,
+        depth: usize,
+    ) -> Result<()> {
+        let Value::List(items) = value else {
+            return encode_error("Expected data of type list.");
+        };
+
+        if !(self.der && is_set) {
+            for (index, item) in items.iter().enumerate() {
+                self.encode_type(element, item, out, None, depth + 1)
+                    .map_err(|error| error.in_element(index))?;
+            }
+
+            return Ok(());
+        }
+
+        let mut encoded = Vec::with_capacity(items.len());
+
+        for (index, item) in items.iter().enumerate() {
+            let mut one = Vec::new();
+
+            self.encode_type(element, item, &mut one, None, depth + 1)
+                .map_err(|error| error.in_element(index))?;
+            encoded.push(one);
+        }
+
+        // X.690 11.6: sorted as octet strings, the shorter padded with
+        // zero octets.
+        encoded.sort_by(|a, b| padded_compare(a, b));
+
+        for one in encoded {
+            out.extend_from_slice(&one);
+        }
+
+        Ok(())
+    }
+
     fn encode_members(
         &self,
         members: &Members,
         is_set: bool,
         value: &Value,
+        out: &mut Vec<u8>,
         depth: usize,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<()> {
         let Value::Map(map) = value else {
             return encode_error("Expected data of type dict.");
         };
-        // The encoding of each member, which DER sorts in a SET.
-        let mut parts: Vec<Vec<u8>> = Vec::new();
+        // DER sorts the members of a SET: where each ends.
+        let sorted = is_set && self.der;
+        let start = out.len();
+        let mut ends = Vec::new();
 
         if is_set {
             for index in &members.order {
-                let mut encoded = Vec::new();
+                self.encode_member(&members.root[*index], map, out, depth)?;
 
-                self.encode_member(&members.root[*index], map, &mut encoded, depth)?;
-                parts.push(encoded);
+                if sorted {
+                    ends.push(out.len());
+                }
             }
         } else {
             for member in &members.root {
-                let mut encoded = Vec::new();
-
-                self.encode_member(member, map, &mut encoded, depth)?;
-                parts.push(encoded);
+                self.encode_member(member, map, out, depth)?;
             }
         }
 
@@ -1157,34 +1262,52 @@ impl<'a> Coder<'a> {
                 Addition::Member(member) => core::slice::from_ref(member),
                 Addition::Group(group) => group.as_slice(),
             };
-            let mut encoded_group = Vec::new();
+            let before = out.len();
 
             for member in group {
-                let mut encoded = Vec::new();
+                match self.encode_member(member, map, out, depth) {
+                    Ok(()) => {}
+                    Err(Error::Encode(..)) => {
+                        out.truncate(before);
+                        ends.retain(|end| *end <= before);
 
-                match self.encode_member(member, map, &mut encoded, depth) {
-                    Ok(()) => encoded_group.push(encoded),
-                    Err(Error::Encode(..)) => break 'additions,
+                        break 'additions;
+                    }
                     Err(error) => return Err(error),
                 }
-            }
 
-            parts.extend(encoded_group);
+                if sorted {
+                    ends.push(out.len());
+                }
+            }
         }
 
         // DER writes the members of a SET in the order of the tags they
         // are encoded with, which for an untagged CHOICE is that of the
         // alternative there (X.690 10.3).
-        if is_set && self.der {
+        if sorted {
+            let encoded = out.split_off(start);
+            let mut parts = Vec::with_capacity(ends.len());
+            let mut from = 0;
+
+            for end in ends {
+                parts.push(&encoded[from..end - start]);
+                from = end - start;
+            }
+
             parts.retain(|part| !part.is_empty());
             parts.sort_by_key(|part| {
                 read_tag(part, 0).map_or((TagClass::Private, u64::MAX), |(class, _, number, _)| {
                     (class, number)
                 })
             });
+
+            for part in parts {
+                out.extend_from_slice(part);
+            }
         }
 
-        Ok(parts.concat())
+        Ok(())
     }
 
     fn encode_member(
@@ -1317,7 +1440,8 @@ impl<'a> Coder<'a> {
                 )
                 .map(Some)
             } else {
-                let length = length.ok_or(Error::decode("Expected definite length.", after_tag))?;
+                let length =
+                    length.ok_or_else(|| Error::decode("Expected definite length.", after_tag))?;
                 let value =
                     self.decode_content(kind, concrete, data, start, length, siblings, depth)?;
 
@@ -1677,8 +1801,8 @@ impl<'a> Coder<'a> {
                 segments.push(value);
                 at = next;
             } else {
-                let inner_length =
-                    inner_length.ok_or(Error::decode("Expected definite length.", after_tag))?;
+                let inner_length = inner_length
+                    .ok_or_else(|| Error::decode("Expected definite length.", after_tag))?;
                 let contents = &data[inner_start..inner_start + inner_length];
 
                 segments.push(match segment_kind {
@@ -1810,8 +1934,8 @@ impl<'a> Coder<'a> {
         end: Option<usize>,
         depth: usize,
     ) -> Result<(Value, usize)> {
-        let mut values: Vec<(String, Value)> = Vec::new();
-        let additions: Vec<&MemberInfo> = members.all().skip(members.root.len()).collect();
+        let mut values: Vec<(String, Value)> = Vec::with_capacity(members.root.len());
+        let additions = || -> Vec<&MemberInfo> { members.all().skip(members.root.len()).collect() };
         let (at, out_of_data) = if is_set {
             // The members of a SET are in any order, the additions among
             // them, and DER has them in the order of their tags.
@@ -1822,7 +1946,7 @@ impl<'a> Coder<'a> {
                 .collect();
             let additions_from = all.len();
 
-            all.extend(additions);
+            all.extend(additions());
 
             self.decode_member_list(
                 &all,
@@ -1835,10 +1959,9 @@ impl<'a> Coder<'a> {
                 depth,
             )?
         } else {
-            let root: Vec<&MemberInfo> = members.root.iter().collect();
             let (mut at, mut out_of_data) = self.decode_member_list(
-                &root,
-                root.len(),
+                &members.root,
+                members.root.len(),
                 false,
                 data,
                 offset,
@@ -1851,7 +1974,7 @@ impl<'a> Coder<'a> {
             // added.
             if members.additions.is_some() {
                 (at, out_of_data) = self.decode_member_list(
-                    &additions,
+                    &additions(),
                     0,
                     false,
                     data,
@@ -1898,9 +2021,9 @@ impl<'a> Coder<'a> {
     /// additions, which may be missing. With `by_tags`, the members of a
     /// SET, DER has them in the order of their tags, and else in the
     /// order they are declared in.
-    fn decode_member_list<'m>(
+    fn decode_member_list<M: Borrow<MemberInfo>>(
         &self,
-        members: &[&'m MemberInfo],
+        members: &[M],
         additions_from: usize,
         by_tags: bool,
         data: &[u8],
@@ -1909,8 +2032,7 @@ impl<'a> Coder<'a> {
         values: &mut Vec<(String, Value)>,
         depth: usize,
     ) -> Result<(usize, bool)> {
-        let mut remaining: Vec<(usize, &'m MemberInfo)> =
-            members.iter().copied().enumerate().collect();
+        let mut decoded = Decoded::new(members.len());
         let mut at = offset;
         let mut success_earlier = false;
         let mut last_tag: Option<(TagClass, u64)> = None;
@@ -1920,60 +2042,56 @@ impl<'a> Coder<'a> {
 
         // More than one pass lets the members be in any order.
         loop {
-            let mut undecoded = Vec::new();
             let mut success = false;
 
-            for (index, member) in &remaining {
-                if out_of_data {
-                    undecoded.push((*index, *member));
+            for (index, member) in members.iter().enumerate() {
+                let member = member.borrow();
 
+                if out_of_data || decoded.has(index) {
                     continue;
                 }
 
                 let start = at;
 
-                match self
+                if let Some((value, next)) = self
                     .decode_type(member.ty, data, at, Some(values), depth + 1)
                     .map_err(|error| error.in_member(&member.name))?
                 {
-                    None => undecoded.push((*index, *member)),
-                    Some((value, next)) => {
-                        if self.strict && by_tags {
-                            let (class, _, number, _) = read_tag(data, start)?;
+                    if self.strict && by_tags {
+                        let (class, _, number, _) = read_tag(data, start)?;
 
-                            if last_tag.is_some_and(|last| last >= (class, number)) {
-                                return decode_error(
-                                    "The members of a SET are not in the order of their tags.",
-                                    start,
-                                );
-                            }
-
-                            last_tag = Some((class, number));
-                        } else if success_earlier && self.strict {
+                        if last_tag.is_some_and(|last| last >= (class, number)) {
                             return decode_error(
-                                "A member is not in the order it is declared in.",
-                                next,
+                                "The members of a SET are not in the order of their tags.",
+                                start,
                             );
                         }
 
-                        // A member with its default is left out in DER.
-                        if self.strict && member.has_default() && self.is_default(member, &value) {
-                            return decode_error(
-                                "A member is encoded with its default value, which DER leaves out.",
-                                next,
-                            );
-                        }
-
-                        success = true;
-                        at = next;
-                        values.push((member.name.clone(), value));
+                        last_tag = Some((class, number));
+                    } else if success_earlier && self.strict {
+                        return decode_error(
+                            "A member is not in the order it is declared in.",
+                            next,
+                        );
                     }
+
+                    // A member with its default is left out in DER.
+                    if self.strict && member.has_default() && self.is_default(member, &value) {
+                        return decode_error(
+                            "A member is encoded with its default value, which DER leaves out.",
+                            next,
+                        );
+                    }
+
+                    success = true;
+                    at = next;
+                    decoded.set(index);
+                    values.push((member.name.clone(), value));
                 }
 
                 (out_of_data, at) = self.is_end(data, at, end)?;
             }
 
-            remaining = undecoded;
             success_earlier = success_earlier || success;
 
             if out_of_data || !success {
@@ -1981,8 +2099,10 @@ impl<'a> Coder<'a> {
             }
         }
 
-        for (index, member) in remaining {
-            if member.optional {
+        for (index, member) in members.iter().enumerate() {
+            let member = member.borrow();
+
+            if decoded.has(index) || member.optional {
                 continue;
             }
 
@@ -1998,6 +2118,35 @@ impl<'a> Coder<'a> {
         }
 
         Ok((at, out_of_data))
+    }
+}
+
+/// Which members are decoded, with no allocation for up to 128 of them.
+struct Decoded {
+    first: u128,
+    rest: Vec<bool>,
+}
+
+impl Decoded {
+    fn new(count: usize) -> Decoded {
+        Decoded {
+            first: 0,
+            rest: alloc::vec![false; count.saturating_sub(128)],
+        }
+    }
+
+    fn has(&self, index: usize) -> bool {
+        match index.checked_sub(128) {
+            None => self.first >> index & 1 == 1,
+            Some(index) => self.rest[index],
+        }
+    }
+
+    fn set(&mut self, index: usize) {
+        match index.checked_sub(128) {
+            None => self.first |= 1 << index,
+            Some(index) => self.rest[index] = true,
+        }
     }
 }
 

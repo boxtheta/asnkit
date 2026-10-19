@@ -9,6 +9,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 
 use crate::ber::{
     decode_object_identifier, decode_real, encode_object_identifier, encode_real,
@@ -93,7 +94,7 @@ fn put_integer(w: &mut Writer, bytes: &[u8]) -> Result<()> {
 
 fn get_integer(r: &mut Reader<'_>) -> Result<Value> {
     let length = get_length(r)?;
-    let bytes = r.bytes(length)?;
+    let bytes = r.octets(length)?;
 
     Ok(Value::from_twos_complement(&bytes))
 }
@@ -124,7 +125,7 @@ fn oer_range(node: &crate::types::TypeNode) -> Option<crate::types::Range> {
 /// if it does not fit in an `i128`, which needs the feature `bigint`.
 fn get_duration_field(r: &mut Reader<'_>) -> Result<Value> {
     let length = get_length(r)?;
-    let bytes = r.bytes(length)?;
+    let bytes = r.octets(length)?;
     let significant = &bytes[bytes.iter().take_while(|byte| **byte == 0).count()..];
     let value = significant.iter().try_fold(0i128, |value, byte| {
         value.checked_mul(256)?.checked_add(i128::from(*byte))
@@ -164,7 +165,7 @@ fn get_unsigned(r: &mut Reader<'_>) -> Result<u128> {
 
     if length > 16 {
         // Leading zeros are fine, anything else does not fit.
-        let bytes = r.bytes(length)?;
+        let bytes = r.octets(length)?;
 
         if bytes[..length - 16].iter().any(|byte| *byte != 0) {
             return decode_error("An unsigned integer is too large.", r.position);
@@ -744,23 +745,28 @@ impl Coder<'_> {
         let Value::Map(map) = value else {
             return encode_error("Expected data of type dict.");
         };
-        let root: Vec<&MemberInfo> = if is_set {
-            members
-                .order
-                .iter()
-                .map(|index| &members.root[*index])
-                .collect()
-        } else {
-            members.root.iter().collect()
+        // A SET is encoded in the order of its tags.
+        let encode_root = |w: &mut Writer| {
+            if is_set {
+                let root: Vec<&MemberInfo> = members
+                    .order
+                    .iter()
+                    .map(|index| &members.root[*index])
+                    .collect();
+
+                self.encode_root(&root, map, w, depth)
+            } else {
+                self.encode_root(&members.root, map, w, depth)
+            }
         };
 
         match &members.additions {
-            None => self.encode_root(&root, map, w, depth),
+            None => encode_root(w),
             Some(additions) => {
                 let marker = w.bits;
 
                 w.bit(false);
-                self.encode_root(&root, map, w, depth)?;
+                encode_root(w)?;
 
                 let flat: Vec<&MemberInfo> = additions
                     .iter()
@@ -779,15 +785,16 @@ impl Coder<'_> {
         }
     }
 
-    fn encode_root(
+    fn encode_root<M: Borrow<MemberInfo>>(
         &self,
-        root: &[&MemberInfo],
+        root: &[M],
         map: &[(String, Value)],
         w: &mut Writer,
         depth: usize,
     ) -> Result<()> {
         for member in root
             .iter()
+            .map(Borrow::<MemberInfo>::borrow)
             .filter(|member| member.optional || member.has_default())
         {
             let present = map.iter().find(|(name, _)| name == &member.name);
@@ -802,7 +809,7 @@ impl Coder<'_> {
         w.align_always();
 
         for member in root {
-            self.encode_member(member, map, w, false, depth)?;
+            self.encode_member(member.borrow(), map, w, false, depth)?;
         }
 
         Ok(())
@@ -922,20 +929,20 @@ impl Coder<'_> {
             Kind::Real => match self.types.node(node.concrete).real {
                 None => {
                     let length = get_length(r)?;
-                    let bytes = r.bytes(length)?;
+                    let bytes = r.octets(length)?;
 
                     // The contents of CER and DER (X.696 12.4).
                     decode_real(&bytes, r.position / 8, true).map(Value::Real)
                 }
                 Some(RealFormat::Binary32) => {
-                    let bytes = r.bytes(4)?;
+                    let bytes = r.octets(4)?;
 
                     Ok(Value::Real(f64::from(f32::from_be_bytes([
                         bytes[0], bytes[1], bytes[2], bytes[3],
                     ]))))
                 }
                 Some(RealFormat::Binary64) => {
-                    let bytes = r.bytes(8)?;
+                    let bytes = r.octets(8)?;
                     let mut array = [0u8; 8];
 
                     array.copy_from_slice(&bytes);
@@ -976,7 +983,7 @@ impl Coder<'_> {
             }
             Kind::ObjectIdentifier => {
                 let length = get_length(r)?;
-                let bytes = r.bytes(length)?;
+                let bytes = r.octets(length)?;
 
                 decode_object_identifier(&bytes, r.position / 8, false).map(Value::Text)
             }
@@ -984,7 +991,7 @@ impl Coder<'_> {
                 let first = r.uint(8)? as i128;
                 let number = if first & 0x80 != 0 {
                     let length = (first & 0x7f) as usize;
-                    let bytes = r.bytes(length)?;
+                    let bytes = r.octets(length)?;
 
                     match Value::from_twos_complement(&bytes) {
                         Value::Integer(number) => number,
@@ -1112,7 +1119,7 @@ impl Coder<'_> {
         }
 
         let length = get_length(r)?;
-        let bytes = r.bytes(length)?;
+        let bytes = r.octets(length)?;
         let mut padded = alloc::vec![0u8];
 
         padded.extend_from_slice(&bytes);
@@ -1166,7 +1173,7 @@ impl Coder<'_> {
             Some((width, characters)) => width * characters,
             None => get_length(r)?,
         };
-        let bytes = r.bytes(length)?;
+        let bytes = r.octets(length)?;
 
         match kind {
             StrKind::Utf8 => core::str::from_utf8(&bytes)
@@ -1184,7 +1191,7 @@ impl Coder<'_> {
                         char::from_u32(u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
                     })
                     .collect::<Option<String>>()
-                    .ok_or(Error::decode("The string is not UTF-32.", r.position))
+                    .ok_or_else(|| Error::decode("The string is not UTF-32.", r.position))
             }
             StrKind::Numeric | StrKind::Printable | StrKind::Ia5 | StrKind::Visible => {
                 if bytes.is_ascii() {
@@ -1265,34 +1272,32 @@ impl Coder<'_> {
         r: &mut Reader<'_>,
         depth: usize,
     ) -> Result<Value> {
-        let root: Vec<&MemberInfo> = if is_set {
-            members
-                .order
-                .iter()
-                .map(|index| &members.root[*index])
-                .collect()
+        let root = |index: usize| match is_set {
+            true => &members.root[members.order[index]],
+            false => &members.root[index],
+        };
+        let count = if is_set {
+            members.order.len()
         } else {
-            members.root.iter().collect()
+            members.root.len()
         };
         let has_additions = members.additions.is_some() && r.bit()?;
-        let mut values = Vec::new();
-        let mut present = Vec::new();
-
-        for member in &root {
-            if member.optional || member.has_default() {
-                present.push(r.bit()?);
-            }
-        }
+        let mut values = Vec::with_capacity(count);
+        // The bits of the members that may be left out, which are read
+        // where they are.
+        let mut next = r.presence(
+            (0..count)
+                .filter(|index| root(*index).optional || root(*index).has_default())
+                .count(),
+        )?;
 
         r.align_always();
 
-        let mut next = 0;
-
-        for member in &root {
+        for member in (0..count).map(root) {
             let is_present = if member.optional || member.has_default() {
                 next += 1;
 
-                present[next - 1]
+                r.bit_at(next - 1)
             } else {
                 true
             };
@@ -1337,7 +1342,7 @@ impl Coder<'_> {
     /// It has to fill the length it is in.
     fn decode_open_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value> {
         let length = get_length(r)?;
-        let data = r.bytes(length)?;
+        let data = r.octets(length)?;
         let mut inner = Reader {
             data: &data,
             position: 0,
@@ -1371,20 +1376,16 @@ impl Coder<'_> {
 
         let count = (8 * (length - 1))
             .checked_sub(unused)
-            .ok_or(Error::decode("Bad unused bits.", r.position))?;
-        let mut presence = Vec::new();
-
+            .ok_or_else(|| Error::decode("Bad unused bits.", r.position))?;
         r.spend(count)?;
 
-        for _ in 0..count {
-            presence.push(r.bit()?);
-        }
+        let presence = r.presence(count)?;
 
         r.align_always();
 
         // The bits that are left of the last byte are padding.
-        for (index, present) in presence.iter().enumerate() {
-            if !present {
+        for index in 0..count {
+            if !r.bit_at(presence + index) {
                 continue;
             }
 

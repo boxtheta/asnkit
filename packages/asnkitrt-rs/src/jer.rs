@@ -352,7 +352,7 @@ impl Coder<'_> {
                     out.push(':');
                     let ty = self
                         .member_type(member, map)
-                        .ok_or(Error::encode("Bad AnyDefinedBy choice."))?;
+                        .ok_or_else(|| Error::encode("Bad AnyDefinedBy choice."))?;
 
                     self.encode(ty, value, out, depth + 1)
                         .map_err(|error| error.in_member(&member.name))?;
@@ -554,7 +554,7 @@ impl Coder<'_> {
                 Some(inner) => {
                     let ty = self
                         .member_type(member, &map)
-                        .ok_or(Error::decode("Bad AnyDefinedBy choice.", 0))?;
+                        .ok_or_else(|| Error::decode("Bad AnyDefinedBy choice.", 0))?;
 
                     let value = self
                         .decode(ty, inner, depth + 1)

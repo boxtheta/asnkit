@@ -33,6 +33,16 @@ security fixes.
   messages of the C API and `asnkitcc convert` start with the location,
   and the errors of the runtime for WebAssembly have it as `path`, as
   `['Certificate', 'tbsCertificate', 'extensions', 1, 'critical']`.
+- The Rust runtime, and so the runtime for WebAssembly, the C API and
+  `asnkitcc`, is faster, with the same bytes encoded and decoded: an
+  X.509 certificate is decoded 1.7 to 2 times as fast in BER, DER, OER,
+  PER and UPER, and encoded 1.8 to 4.3 times as fast. It no longer
+  copies the encoding of each value of BER and DER into the one around
+  it, reads and writes the bits of PER and UPER a byte at a time and
+  not a bit at a time, converts the time of a UTCTime or a
+  GeneralizedTime to UTC without counting the years from year 1, and
+  allocates less, as for OBJECT IDENTIFIERs and the members of a
+  SEQUENCE or a SET.
 - GSER writes a REAL given as an integer as the float it is, `8.0E0`
   and not `8E0`, in the runtime for Python too, so that the runtime for
   WebAssembly, where every number is a float, writes the same.

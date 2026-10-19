@@ -906,7 +906,7 @@ impl ser::SerializeMap for MapState {
         let name = self
             .key
             .take()
-            .ok_or(Error::encode("A value comes after its name."))?;
+            .ok_or_else(|| Error::encode("A value comes after its name."))?;
 
         self.members.push((name, value.serialize(ValueSerializer)?));
 

@@ -127,14 +127,14 @@ impl Coder<'_> {
             _ => None,
         };
 
-        found.ok_or(Error::encode("Expected an enumeration value."))
+        found.ok_or_else(|| Error::encode("Expected an enumeration value."))
     }
 
     fn integer_text(&self, value: &Value) -> Result<String> {
         match value {
             Value::Integer(number) => Ok(format!("{number}")),
             Value::BigInteger(bytes) => decimal::twos_complement_to_decimal(bytes)
-                .ok_or(Error::encode("The integer has too many digits.")),
+                .ok_or_else(|| Error::encode("The integer has too many digits.")),
             _ => encode_error("Expected an integer."),
         }
     }
@@ -283,7 +283,7 @@ impl Coder<'_> {
                         Some((_, value)) => element.children.push(
                             self.encode(
                                 self.member_type(member, map)
-                                    .ok_or(Error::encode("Bad AnyDefinedBy choice."))?,
+                                    .ok_or_else(|| Error::encode("Bad AnyDefinedBy choice."))?,
                                 &member.name,
                                 value,
                                 depth + 1,
@@ -538,7 +538,7 @@ impl Coder<'_> {
                         Some(inner) => {
                             let ty = self
                                 .member_type(member, &map)
-                                .ok_or(Error::decode("Bad AnyDefinedBy choice.", 0))?;
+                                .ok_or_else(|| Error::decode("Bad AnyDefinedBy choice.", 0))?;
 
                             let value = self
                                 .decode(ty, inner, depth + 1)

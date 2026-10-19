@@ -9,8 +9,10 @@
 //! It does what the runtime for Python does, also where that is not all
 //! of the standard.
 
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 
 use crate::ber::{decode_object_identifier, decode_real, encode_object_identifier, encode_real};
 use crate::time;
@@ -237,17 +239,70 @@ impl Writer {
         self.bits += 1;
     }
 
+    /// The `count` low bits of `chunk`, at most 8, the most significant
+    /// first.
+    fn chunk(&mut self, chunk: u8, count: usize) {
+        let chunk = chunk & (0xff >> (8 - count));
+        let used = self.bits % 8;
+
+        if used == 0 {
+            self.bytes.push(0);
+        }
+
+        let free = 8 - used;
+        let last = self.bytes.len() - 1;
+
+        if count <= free {
+            self.bytes[last] |= chunk << (free - count);
+        } else {
+            self.bytes[last] |= chunk >> (count - free);
+            self.bytes.push(chunk << (8 - (count - free)));
+        }
+
+        self.bits += count;
+    }
+
+    /// `count` zero bits.
+    fn zeros(&mut self, count: usize) {
+        self.bits += count;
+        // The bits after the last are zero.
+        self.bytes.resize(self.bits.div_ceil(8), 0);
+    }
+
     /// The `count` low bits of `value`, the most significant first.
-    pub(crate) fn uint(&mut self, value: u128, count: usize) {
-        for index in (0..count).rev() {
-            self.bit(index < 128 && (value >> index) & 1 == 1);
+    pub(crate) fn uint(&mut self, value: u128, mut count: usize) {
+        if count > 128 {
+            self.zeros(count - 128);
+            count = 128;
+        }
+
+        // Up to the end of the last byte, then a byte at a time.
+        while count > 0 {
+            let take = count.min(8 - self.bits % 8);
+
+            count -= take;
+            self.chunk((value >> count) as u8, take);
         }
     }
 
     /// The first `count` bits of `data`.
     pub(crate) fn bits_of(&mut self, data: &[u8], count: usize) {
-        for index in 0..count {
-            self.bit(data[index / 8] & (0x80 >> (index % 8)) != 0);
+        let whole = &data[..count / 8];
+        let rest = count % 8;
+
+        if self.bits.is_multiple_of(8) {
+            self.bytes.extend_from_slice(whole);
+            self.bits += 8 * whole.len();
+        } else {
+            self.bytes.reserve(whole.len() + 1);
+
+            for byte in whole {
+                self.chunk(*byte, 8);
+            }
+        }
+
+        if rest > 0 {
+            self.chunk(data[count / 8] >> (8 - rest), rest);
         }
     }
 
@@ -261,9 +316,7 @@ impl Writer {
     }
 
     pub(crate) fn align_always(&mut self) {
-        while !self.bits.is_multiple_of(8) {
-            self.bit(false);
-        }
+        self.zeros((8 - self.bits % 8) % 8);
     }
 
     fn align(&mut self) {
@@ -465,9 +518,17 @@ impl<'a> Reader<'a> {
         }
 
         let mut value = 0u128;
+        let mut count = count;
 
-        for _ in 0..count {
-            value = (value << 1) | u128::from(self.bit()?);
+        // Up to the end of a byte, then a byte at a time.
+        while count > 0 {
+            let used = self.position % 8;
+            let take = count.min(8 - used);
+            let byte = self.data[self.position / 8] << used;
+
+            value = (value << take) | u128::from(byte >> (8 - take));
+            self.position += take;
+            count -= take;
         }
 
         Ok(value)
@@ -479,13 +540,31 @@ impl<'a> Reader<'a> {
             return out_of_data(self.position);
         }
 
-        let mut bytes = alloc::vec![0u8; count.div_ceil(8)];
+        let start = self.position / 8;
+        let shift = self.position % 8;
+        let length = count.div_ceil(8);
+        let mut bytes = if shift == 0 {
+            Vec::from(&self.data[start..start + length])
+        } else {
+            // A byte is the end of one and the start of the next, which
+            // is there unless the bits end before it.
+            (0..length)
+                .map(|index| {
+                    let next = self.data.get(start + index + 1).copied().unwrap_or(0);
 
-        for index in 0..count {
-            if self.bit()? {
-                bytes[index / 8] |= 0x80 >> (index % 8);
-            }
+                    self.data[start + index] << shift | next >> (8 - shift)
+                })
+                .collect()
+        };
+
+        // The bits after the last are zero.
+        if !count.is_multiple_of(8)
+            && let Some(last) = bytes.last_mut()
+        {
+            *last &= 0xff << (8 - count % 8);
         }
+
+        self.position += count;
 
         Ok(bytes)
     }
@@ -504,6 +583,39 @@ impl<'a> Reader<'a> {
         }
 
         self.bits(8 * count)
+    }
+
+    /// The same, borrowed from the data when they are whole bytes of it.
+    pub(crate) fn octets(&mut self, count: usize) -> Result<Cow<'a, [u8]>> {
+        if self.position.is_multiple_of(8) && count <= self.left() / 8 {
+            let start = self.position / 8;
+
+            self.position += 8 * count;
+
+            return Ok(Cow::Borrowed(&self.data[start..start + count]));
+        }
+
+        self.bytes(count).map(Cow::Owned)
+    }
+
+    /// Skips the `count` bits that tell which members are there, which
+    /// `bit_at` reads from where it returns. It runs out of data where
+    /// reading them one at a time does.
+    pub(crate) fn presence(&mut self, count: usize) -> Result<usize> {
+        if count > self.left() {
+            return out_of_data(8 * self.data.len());
+        }
+
+        let start = self.position;
+
+        self.position += count;
+
+        Ok(start)
+    }
+
+    /// The bit at `position`, which is one that was skipped.
+    pub(crate) fn bit_at(&self, position: usize) -> bool {
+        self.data[position / 8] & (0x80 >> (position % 8)) != 0
     }
 
     pub(crate) fn skip(&mut self, count: usize) -> Result<()> {
@@ -694,9 +806,9 @@ impl Alphabet {
             return Ok(code);
         }
 
-        self.characters.index(code).ok_or(Error::encode(
-            "Expected a character in the permitted alphabet.",
-        ))
+        self.characters
+            .index(code)
+            .ok_or_else(|| Error::encode("Expected a character in the permitted alphabet."))
     }
 
     fn decode(&self, value: u32, position: usize) -> Result<u32> {
@@ -1264,7 +1376,7 @@ impl Coder<'_> {
         let index = additions
             .iter()
             .position(|entry| find(&entry))
-            .ok_or(Error::encode("Expected an enumeration value."))?;
+            .ok_or_else(|| Error::encode("Expected an enumeration value."))?;
 
         w.bit(true);
         w.normally_small_whole_number(index as u128);
@@ -1641,23 +1753,28 @@ impl Coder<'_> {
         let Value::Map(map) = value else {
             return encode_error("Expected data of type dict.");
         };
-        let root: Vec<&MemberInfo> = if is_set {
-            members
-                .order
-                .iter()
-                .map(|index| &members.root[*index])
-                .collect()
-        } else {
-            members.root.iter().collect()
+        // A SET is encoded in the order of its tags.
+        let encode_root = |w: &mut Writer| {
+            if is_set {
+                let root: Vec<&MemberInfo> = members
+                    .order
+                    .iter()
+                    .map(|index| &members.root[*index])
+                    .collect();
+
+                self.encode_root(&root, map, w, depth)
+            } else {
+                self.encode_root(&members.root, map, w, depth)
+            }
         };
 
         match &members.additions {
-            None => self.encode_root(&root, map, w, depth),
+            None => encode_root(w),
             Some(additions) => {
                 let marker = w.bits;
 
                 w.bit(false);
-                self.encode_root(&root, map, w, depth)?;
+                encode_root(w)?;
 
                 if !additions.is_empty() && self.encode_additions(additions, map, w, depth)? {
                     w.set_bit(marker);
@@ -1668,15 +1785,16 @@ impl Coder<'_> {
         }
     }
 
-    fn encode_root(
+    fn encode_root<M: Borrow<MemberInfo>>(
         &self,
-        root: &[&MemberInfo],
+        root: &[M],
         map: &[(String, Value)],
         w: &mut Writer,
         depth: usize,
     ) -> Result<()> {
         for member in root
             .iter()
+            .map(Borrow::<MemberInfo>::borrow)
             .filter(|member| member.optional || member.has_default())
         {
             let present = map.iter().find(|(name, _)| name == &member.name);
@@ -1689,7 +1807,7 @@ impl Coder<'_> {
         }
 
         for member in root {
-            self.encode_member(member, map, w, false, depth)?;
+            self.encode_member(member.borrow(), map, w, false, depth)?;
         }
 
         Ok(())
@@ -1742,13 +1860,12 @@ impl Coder<'_> {
             let mut sub = w.sub();
             let result = match addition {
                 Addition::Group(group) => {
-                    let members: Vec<&MemberInfo> = group.iter().collect();
-                    let optionals = members
+                    let optionals = group
                         .iter()
                         .filter(|m| m.optional || m.has_default())
                         .count();
 
-                    self.encode_root(&members, map, &mut sub, depth).map(|()| {
+                    self.encode_root(group, map, &mut sub, depth).map(|()| {
                         // A group with none of its members is not there.
                         if sub.are_all_bits_zero() && sub.bits == optionals {
                             sub = w.sub();
@@ -1812,7 +1929,7 @@ impl Coder<'_> {
                 r.align();
 
                 let length = r.length()?;
-                let bytes = r.bytes(length)?;
+                let bytes = r.octets(length)?;
 
                 // The contents of CER and DER (X.691 15.2).
                 decode_real(&bytes, r.position / 8, true).map(Value::Real)
@@ -1824,7 +1941,7 @@ impl Coder<'_> {
                 r.align();
 
                 let length = r.length()?;
-                let bytes = r.bytes(length)?;
+                let bytes = r.octets(length)?;
 
                 decode_object_identifier(&bytes, r.position / 8, false).map(Value::Text)
             }
@@ -1883,7 +2000,7 @@ impl Coder<'_> {
             return match lower {
                 Some(min) => {
                     let length = r.length()?;
-                    let bytes = r.bytes(length)?;
+                    let bytes = r.octets(length)?;
 
                     Ok(plus(&bytes, min))
                 }
@@ -1938,7 +2055,7 @@ impl Coder<'_> {
             r.align();
 
             let length = r.length()?;
-            let bytes = r.bytes(length)?;
+            let bytes = r.octets(length)?;
 
             return Ok(bigint::to_value(
                 &(min + BigInt::from(BigUint::from_bytes_be(&bytes))),
@@ -2064,7 +2181,13 @@ impl Coder<'_> {
             let length = r.length()?;
 
             r.align();
-            data.extend_from_slice(&r.bytes(length)?);
+
+            // Most are a fragment.
+            if data.is_empty() && length < 16384 {
+                return r.octets(length).map(Cow::into_owned);
+            }
+
+            data.extend_from_slice(&r.octets(length)?);
 
             if length < 16384 {
                 break;
@@ -2289,7 +2412,7 @@ impl Coder<'_> {
                 loop {
                     let length = r.length()?;
 
-                    bytes.extend_from_slice(&r.bytes(length * multiplier)?);
+                    bytes.extend_from_slice(&r.octets(length * multiplier)?);
 
                     if length < 16384 {
                         break;
@@ -2307,7 +2430,7 @@ impl Coder<'_> {
                         })
                         .collect::<Option<String>>()
                         .map(Value::Text)
-                        .ok_or(Error::decode("The string is not UTF-32.", r.position)),
+                        .ok_or_else(|| Error::decode("The string is not UTF-32.", r.position)),
                     _ => Ok(Value::Text(
                         bytes.iter().map(|byte| char::from(*byte)).collect(),
                     )),
@@ -2334,7 +2457,10 @@ impl Coder<'_> {
                 let value = r.uint(known.bits_per_character)? as u32;
                 let code = known.alphabet.decode(value, r.position)?;
 
-                text.push(char::from_u32(code).ok_or(Error::decode("Bad character.", r.position))?);
+                text.push(
+                    char::from_u32(code)
+                        .ok_or_else(|| Error::decode("Bad character.", r.position))?,
+                );
             }
 
             Ok(())
@@ -2502,17 +2628,18 @@ impl Coder<'_> {
         r: &mut Reader<'_>,
         depth: usize,
     ) -> Result<Value> {
-        let root: Vec<&MemberInfo> = if is_set {
-            members
+        let has_additions = members.additions.is_some() && r.bit()?;
+        let mut values = if is_set {
+            let root: Vec<&MemberInfo> = members
                 .order
                 .iter()
                 .map(|index| &members.root[*index])
-                .collect()
+                .collect();
+
+            self.decode_root(&root, &[], r, depth)?
         } else {
-            members.root.iter().collect()
+            self.decode_root(&members.root, &[], r, depth)?
         };
-        let has_additions = members.additions.is_some() && r.bit()?;
-        let mut values = self.decode_root(&root, &[], r, depth)?;
 
         if has_additions {
             let additions = members.additions.as_deref().unwrap_or(&[]);
@@ -2525,29 +2652,27 @@ impl Coder<'_> {
 
     /// The members of `root`, after the members `before` of the same
     /// SEQUENCE or SET, which an ANY DEFINED BY may be defined by.
-    fn decode_root(
+    fn decode_root<M: Borrow<MemberInfo>>(
         &self,
-        root: &[&MemberInfo],
+        root: &[M],
         before: &[(String, Value)],
         r: &mut Reader<'_>,
         depth: usize,
     ) -> Result<Vec<(String, Value)>> {
-        let mut values = Vec::new();
-        let mut present = Vec::new();
+        let mut values = Vec::with_capacity(root.len());
+        let mut next = r.presence(
+            root.iter()
+                .map(Borrow::<MemberInfo>::borrow)
+                .filter(|member| member.optional || member.has_default())
+                .count(),
+        )?;
 
         for member in root {
-            if member.optional || member.has_default() {
-                present.push(r.bit()?);
-            }
-        }
-
-        let mut next = 0;
-
-        for member in root {
+            let member = member.borrow();
             let is_present = if member.optional || member.has_default() {
                 next += 1;
 
-                present[next - 1]
+                r.bit_at(next - 1)
             } else {
                 true
             };
@@ -2605,10 +2730,8 @@ impl Coder<'_> {
 
             match additions.get(index) {
                 Some(Addition::Group(group)) => {
-                    let members: Vec<&MemberInfo> = group.iter().collect();
-                    let decoded = self.get_open_type(r, |inner| {
-                        self.decode_root(&members, values, inner, depth)
-                    })?;
+                    let decoded = self
+                        .get_open_type(r, |inner| self.decode_root(group, values, inner, depth))?;
 
                     values.extend(decoded);
                 }
@@ -2627,5 +2750,92 @@ impl Coder<'_> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Bytes with every pattern of bits in them.
+    const DATA: [u8; 8] = [0xa5, 0x3c, 0xff, 0x00, 0x81, 0x7e, 0x96, 0x69];
+
+    fn bit_of(data: &[u8], index: usize) -> bool {
+        data[index / 8] & (0x80 >> (index % 8)) != 0
+    }
+
+    #[test]
+    fn bits_are_written_as_one_at_a_time() {
+        for offset in 0..16 {
+            for count in 0..=40 {
+                let mut writer = Writer::new(false);
+
+                writer.uint(0b101, offset);
+                writer.bits_of(&DATA, count);
+                writer.uint(0x1234_5678, count);
+                writer.align_always();
+
+                let mut expected = Writer::new(false);
+
+                for index in (0..offset).rev() {
+                    expected.bit(index < 128 && (0b101u128 >> index) & 1 == 1);
+                }
+
+                for index in 0..count {
+                    expected.bit(bit_of(&DATA, index));
+                }
+
+                for index in (0..count).rev() {
+                    expected.bit(index < 128 && (0x1234_5678u128 >> index) & 1 == 1);
+                }
+
+                while !expected.bits.is_multiple_of(8) {
+                    expected.bit(false);
+                }
+
+                assert_eq!((writer.bytes, writer.bits), (expected.bytes, expected.bits));
+            }
+        }
+    }
+
+    #[test]
+    fn bits_are_read_as_one_at_a_time() {
+        for offset in 0..16 {
+            for count in 0..=(8 * DATA.len() - offset) {
+                let mut expected = alloc::vec![0u8; count.div_ceil(8)];
+
+                for index in 0..count {
+                    if bit_of(&DATA, offset + index) {
+                        expected[index / 8] |= 0x80 >> (index % 8);
+                    }
+                }
+
+                let mut r = reader_at(offset);
+
+                assert_eq!(r.bits(count), Ok(expected.clone()));
+                assert_eq!(r.position, offset + count);
+
+                if count <= 128 {
+                    let value = (0..count).fold(0u128, |value, index| {
+                        (value << 1) | u128::from(bit_of(&expected, index))
+                    });
+
+                    assert_eq!(reader_at(offset).uint(count), Ok(value));
+                }
+            }
+
+            let mut r = reader_at(offset);
+
+            assert!(r.bits(8 * DATA.len() - offset + 1).is_err());
+        }
+    }
+
+    fn reader_at(position: usize) -> Reader<'static> {
+        Reader {
+            data: &DATA,
+            position,
+            aligned: false,
+            budget: usize::MAX,
+        }
     }
 }
