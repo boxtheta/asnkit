@@ -123,6 +123,35 @@ impl Value {
     }
 }
 
+/// Looks the members of a map up by name, in the order they are
+/// declared. A map built by a decoder, by serde or by most callers has
+/// them in that order, so the entry after the last one found is tried
+/// before the others are searched.
+pub(crate) struct Lookup<'m> {
+    pub map: &'m [(String, Value)],
+    next: usize,
+}
+
+impl<'m> Lookup<'m> {
+    pub fn new(map: &'m [(String, Value)]) -> Lookup<'m> {
+        Lookup { map, next: 0 }
+    }
+
+    pub fn find(&mut self, name: &str) -> Option<&'m Value> {
+        let index = match self.map.get(self.next) {
+            Some((candidate, _)) if candidate == name => self.next,
+            _ => self
+                .map
+                .iter()
+                .position(|(candidate, _)| candidate == name)?,
+        };
+
+        self.next = index + 1;
+
+        Some(&self.map[index].1)
+    }
+}
+
 /// The two's complement of `value`, as few bytes as it can be.
 pub fn integer_to_twos_complement(value: i128) -> Vec<u8> {
     let bytes = value.to_be_bytes();
@@ -182,5 +211,24 @@ mod tests {
             Value::BigInteger(Vec::from(big)).to_twos_complement(),
             Some(Vec::from(big))
         );
+    }
+
+    #[test]
+    fn lookup() {
+        let map = [
+            (String::from("a"), Value::Integer(1)),
+            (String::from("c"), Value::Integer(3)),
+            (String::from("b"), Value::Integer(2)),
+        ];
+        let mut lookup = Lookup::new(&map);
+
+        // In order, out of order, absent, and again after the end.
+        assert_eq!(lookup.find("a"), Some(&Value::Integer(1)));
+        assert_eq!(lookup.find("b"), Some(&Value::Integer(2)));
+        assert_eq!(lookup.find("x"), None);
+        assert_eq!(lookup.find("c"), Some(&Value::Integer(3)));
+        assert_eq!(lookup.find("b"), Some(&Value::Integer(2)));
+        assert_eq!(lookup.find("a"), Some(&Value::Integer(1)));
+        assert_eq!(Lookup::new(&[]).find("a"), None);
     }
 }

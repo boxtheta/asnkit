@@ -20,7 +20,7 @@ use crate::types::{
     Addition, Codec, Kind, MemberInfo, Members, StrKind, TypeId, Types, WireTag, clean_bits,
     const_matches, is_default,
 };
-use crate::value::{Value, integer_to_twos_complement};
+use crate::value::{Lookup, Value, integer_to_twos_complement};
 use crate::{Error, Result};
 
 const MAX_DEPTH: usize = 128;
@@ -1241,10 +1241,11 @@ impl<'a> Coder<'a> {
         let sorted = is_set && self.der;
         let start = out.len();
         let mut ends = Vec::new();
+        let mut lookup = Lookup::new(map);
 
         if is_set {
             for index in &members.order {
-                self.encode_member(&members.root[*index], map, out, depth)?;
+                self.encode_member(&members.root[*index], &mut lookup, out, depth)?;
 
                 if sorted {
                     ends.push(out.len());
@@ -1252,7 +1253,7 @@ impl<'a> Coder<'a> {
             }
         } else {
             for member in &members.root {
-                self.encode_member(member, map, out, depth)?;
+                self.encode_member(member, &mut lookup, out, depth)?;
             }
         }
 
@@ -1265,7 +1266,7 @@ impl<'a> Coder<'a> {
             let before = out.len();
 
             for member in group {
-                match self.encode_member(member, map, out, depth) {
+                match self.encode_member(member, &mut lookup, out, depth) {
                     Ok(()) => {}
                     Err(Error::Encode(..)) => {
                         out.truncate(before);
@@ -1313,14 +1314,14 @@ impl<'a> Coder<'a> {
     fn encode_member(
         &self,
         member: &MemberInfo,
-        map: &[(String, Value)],
+        lookup: &mut Lookup<'_>,
         out: &mut Vec<u8>,
         depth: usize,
     ) -> Result<()> {
-        match map.iter().find(|(name, _)| name == &member.name) {
-            Some((_, value)) => {
+        match lookup.find(&member.name) {
+            Some(value) => {
                 if !self.is_default(member, value) {
-                    self.encode_type(member.ty, value, out, Some(map), depth + 1)
+                    self.encode_type(member.ty, value, out, Some(lookup.map), depth + 1)
                         .map_err(|error| error.in_member(&member.name))?;
                 }
 

@@ -21,7 +21,7 @@ use crate::time;
 use crate::types::{
     Addition, Kind, MemberInfo, Members, RealFormat, StrKind, TypeId, Types, clean_bits, is_default,
 };
-use crate::value::{Date, DateTime, Time, Value, integer_to_twos_complement};
+use crate::value::{Date, DateTime, Lookup, Time, Value, integer_to_twos_complement};
 use crate::{Error, Result};
 
 const MAX_DEPTH: usize = 128;
@@ -745,8 +745,9 @@ impl Coder<'_> {
         let Value::Map(map) = value else {
             return encode_error("Expected data of type dict.");
         };
+        let mut lookup = Lookup::new(map);
         // A SET is encoded in the order of its tags.
-        let encode_root = |w: &mut Writer| {
+        let encode_root = |w: &mut Writer, lookup: &mut Lookup<'_>| {
             if is_set {
                 let root: Vec<&MemberInfo> = members
                     .order
@@ -754,19 +755,19 @@ impl Coder<'_> {
                     .map(|index| &members.root[*index])
                     .collect();
 
-                self.encode_root(&root, map, w, depth)
+                self.encode_root(&root, lookup, w, depth)
             } else {
-                self.encode_root(&members.root, map, w, depth)
+                self.encode_root(&members.root, lookup, w, depth)
             }
         };
 
         match &members.additions {
-            None => encode_root(w),
+            None => encode_root(w, &mut lookup),
             Some(additions) => {
                 let marker = w.bits;
 
                 w.bit(false);
-                encode_root(w)?;
+                encode_root(w, &mut lookup)?;
 
                 let flat: Vec<&MemberInfo> = additions
                     .iter()
@@ -776,7 +777,7 @@ impl Coder<'_> {
                     })
                     .collect();
 
-                if !flat.is_empty() && self.encode_additions(&flat, map, w, depth)? {
+                if !flat.is_empty() && self.encode_additions(&flat, &mut lookup, w, depth)? {
                     w.set_bit(marker);
                 }
 
@@ -788,7 +789,7 @@ impl Coder<'_> {
     fn encode_root<M: Borrow<MemberInfo>>(
         &self,
         root: &[M],
-        map: &[(String, Value)],
+        lookup: &mut Lookup<'_>,
         w: &mut Writer,
         depth: usize,
     ) -> Result<()> {
@@ -797,19 +798,23 @@ impl Coder<'_> {
             .map(Borrow::<MemberInfo>::borrow)
             .filter(|member| member.optional || member.has_default())
         {
-            let present = map.iter().find(|(name, _)| name == &member.name);
+            let present = lookup
+                .map
+                .iter()
+                .find(|(name, _)| name == &member.name)
+                .map(|(_, value)| value);
 
             if member.optional {
                 w.bit(present.is_some());
             } else {
-                w.bit(present.is_some_and(|(_, value)| !is_default(self.types, member, value)));
+                w.bit(present.is_some_and(|value| !is_default(self.types, member, value)));
             }
         }
 
         w.align_always();
 
         for member in root {
-            self.encode_member(member.borrow(), map, w, false, depth)?;
+            self.encode_member(member.borrow(), lookup, w, false, depth)?;
         }
 
         Ok(())
@@ -818,16 +823,16 @@ impl Coder<'_> {
     fn encode_member(
         &self,
         member: &MemberInfo,
-        map: &[(String, Value)],
+        lookup: &mut Lookup<'_>,
         w: &mut Writer,
         encode_default: bool,
         depth: usize,
-    ) -> Result<()> {
-        match map.iter().find(|(name, _)| name == &member.name) {
-            Some((_, value)) => {
+    ) -> Result<bool> {
+        match lookup.find(&member.name) {
+            Some(value) => {
                 if !member.has_default() || !is_default(self.types, member, value) || encode_default
                 {
-                    match self.types.defined_by(member.ty, map) {
+                    match self.types.defined_by(member.ty, lookup.map) {
                         Some(Some(ty)) => self.encode_open_type(ty, value, w, depth),
                         Some(None) => encode_error("Bad AnyDefinedBy choice."),
                         None => self.encode_type(member.ty, value, w, depth + 1),
@@ -835,9 +840,9 @@ impl Coder<'_> {
                     .map_err(|error| error.in_member(&member.name))?;
                 }
 
-                Ok(())
+                Ok(true)
             }
-            None if member.optional || member.has_default() => Ok(()),
+            None if member.optional || member.has_default() => Ok(false),
             None => encode_error("A member is not found in the SEQUENCE or SET."),
         }
     }
@@ -863,7 +868,7 @@ impl Coder<'_> {
     fn encode_additions(
         &self,
         additions: &[&MemberInfo],
-        map: &[(String, Value)],
+        lookup: &mut Lookup<'_>,
         w: &mut Writer,
         depth: usize,
     ) -> Result<bool> {
@@ -878,9 +883,9 @@ impl Coder<'_> {
 
             let mut sub = Writer::new(false);
 
-            match self.encode_member(addition, map, &mut sub, true, depth) {
-                Ok(()) => {
-                    if sub.bits > 0 || map.iter().any(|(name, _)| name == &addition.name) {
+            match self.encode_member(addition, lookup, &mut sub, true, depth) {
+                Ok(named) => {
+                    if sub.bits > 0 || named {
                         encoders.push(sub);
                         presence |= 1;
                     }
