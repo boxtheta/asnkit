@@ -1,0 +1,4 @@
+interface:
+  display_name: "asnkit"
+  short_description: "Compile ASN.1 and integrate asnkit runtimes"
+  default_prompt: "Use $asnkit to compile my ASN.1 schema and integrate encoding, decoding, and constraint checks into my application."

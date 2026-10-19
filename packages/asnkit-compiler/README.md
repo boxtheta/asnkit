@@ -22,3 +22,14 @@ with it.
 
 Licensed under the Apache License 2.0 (`LICENSE-COMPILER`). What it
 produces is yours to use under terms of your choice.
+
+## ANY DEFINED BY choices
+
+`CompileOptions::from_toml()` reads explicit selector-to-type mappings.
+Pass the options to `compile_with_options()`,
+`compile_to_asni_with_options()` or
+`compile_to_asni_with_summary_and_options()`. The original functions
+continue to compile without mappings. Options can also be constructed
+with `AnyDefinedBy` entries directly. See
+[ANY DEFINED BY](../../docs/any_defined_by.md) for the configuration and
+runtime behavior.

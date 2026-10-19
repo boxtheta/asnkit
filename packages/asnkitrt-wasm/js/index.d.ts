@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
-/** The codecs a specification can be loaded for. GSER is encoded only. */
+/** The codecs a specification can be loaded for. */
 export type Codec = 'ber' | 'der' | 'oer' | 'per' | 'uper' | 'jer' | 'xer' | 'gser';
 
 /** A date: DATE. */

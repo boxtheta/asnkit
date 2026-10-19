@@ -6,6 +6,11 @@ This folder contains executable example scripts.
 ``x509_to_json``
    Dump an X.509 certificate, in PEM or DER, as JSON.
 
+``any_defined_by``
+   Compile TOML selector-to-type mappings, convert typed payloads between
+   codecs, and generate models. Includes all four selector kinds, imported
+   types and OIDs, a nested collection, and a known raw OpenType choice.
+
 ``compiled``
    Compiled specifications (``.asni``) and syntax trees (``.asnst``),
    and how to make and load them.

@@ -30,8 +30,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 sha2 = "0.10"
 winnow = "1"
+toml = "0.8"
 
 [dev-dependencies]
+asnkitrt = { path = "../asnkitrt-rs" }
 flate2 = "1"
 tempfile = "3"
 

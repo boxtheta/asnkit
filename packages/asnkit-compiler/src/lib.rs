@@ -42,6 +42,7 @@
 pub mod ast;
 pub mod compact;
 mod compile;
+pub use compile::any_defined_by::{AnyDefinedBy, CompileOptions};
 pub mod container;
 mod data;
 mod grammar;
@@ -215,7 +216,36 @@ pub fn compile_to_asni_with_summary(
     bound_to: Option<String>,
     protection: &container::Protection,
 ) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
-    let nodes = compile(input)?;
+    compile_to_asni_with_summary_and_options(
+        input,
+        nonce,
+        bound_to,
+        protection,
+        &CompileOptions::default(),
+    )
+}
+
+/// Compiles a container with explicit ANY DEFINED BY mappings.
+pub fn compile_to_asni_with_options(
+    input: &Input,
+    nonce: Option<u32>,
+    bound_to: Option<String>,
+    protection: &container::Protection,
+    options: &CompileOptions,
+) -> Result<Vec<u8>, Error> {
+    compile_to_asni_with_summary_and_options(input, nonce, bound_to, protection, options)
+        .map(|(data, _)| data)
+}
+
+/// Compiles a container and summary with explicit ANY DEFINED BY mappings.
+pub fn compile_to_asni_with_summary_and_options(
+    input: &Input,
+    nonce: Option<u32>,
+    bound_to: Option<String>,
+    protection: &container::Protection,
+    options: &CompileOptions,
+) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
+    let nodes = compile_with_options(input, options)?;
     let summary = summarize(&nodes);
     let mut metadata = metadata_of(input, false)?;
     metadata.bound_to = bound_to;
@@ -306,6 +336,11 @@ fn parse_tree(input: &Input) -> Result<ast::SyntaxTree, Error> {
 /// Compiles an input to the nodes of a compiled specification, in the
 /// compact form of a node.
 pub fn compile(input: &Input) -> Result<Value, Error> {
+    compile_with_options(input, &CompileOptions::default())
+}
+
+/// Compiles nodes with explicit ANY DEFINED BY mappings.
+pub fn compile_with_options(input: &Input, options: &CompileOptions) -> Result<Value, Error> {
     let tree = parse_tree(input)?;
     let mut compiler = compile::Compiler {
         modules: tree.modules,
@@ -315,6 +350,13 @@ pub fn compile(input: &Input) -> Result<Value, Error> {
         kind: "CompileError".to_string(),
         message,
     })?;
+
+    compiler
+        .apply_any_defined_by(options)
+        .map_err(|message| Error {
+            kind: "CompileError".to_string(),
+            message,
+        })?;
 
     Ok(compact::to_compact(&compile::compiled_specification(
         compiler.modules,

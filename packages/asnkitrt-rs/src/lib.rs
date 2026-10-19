@@ -43,8 +43,7 @@
 //!   specifications builds with `default-features = false` and these.
 //! - `serde`, on by default, for [`serde_value::to_value`] and
 //!   [`serde_value::from_value`].
-//! - `jer`, `xer` and `gser`, on by default, for the text codecs. GSER
-//!   is for debug output, and is encoded only.
+//! - `jer`, `xer` and `gser`, on by default, for the text codecs.
 //!
 //! # What is not done
 //!

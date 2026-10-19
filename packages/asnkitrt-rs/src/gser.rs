@@ -12,14 +12,15 @@
 //! `'0123'H`, a BIT STRING `'0101'B` and the strings and times between
 //! `"`, with a `"` in them written twice (RFC 3641 3.2).
 //!
-//! It is for reading by people, as debug output, and is not decoded.
+//! Decoding accepts both bare values and the assignments written above.
+//! Whitespace includes line breaks so indented output can be decoded too.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::decimal;
 use crate::time::{self, iso};
-use crate::types::{Kind, MemberInfo, Members, TypeId, Types};
+use crate::types::{Addition, Kind, MemberInfo, Members, TypeId, Types};
 use crate::value::Value;
 use crate::{Error, Result};
 
@@ -423,6 +424,504 @@ fn real(value: f64) -> String {
             alloc::format!("{mantissa}E{sign}{digits}")
         }
         None => alloc::format!("{repr}E0"),
+    }
+}
+
+/// Decodes a bare GSER value or the value assignment written by [`encode`].
+/// Errors carry byte offsets into `data`. Trailing data is rejected.
+pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
+    let text = core::str::from_utf8(data)
+        .map_err(|error| Error::decode("Expected UTF-8 GSER data.", error.valid_up_to()))?;
+    let mut decoder = Decoder {
+        types,
+        text,
+        pos: 0,
+    };
+    // An assignment starts with two words and ::=; bare values never do.
+    let start = decoder.pos;
+    if decoder.token().is_ok() {
+        if let Ok(name) = decoder.token() {
+            if decoder.take("::=") {
+                if !types
+                    .modules
+                    .iter()
+                    .flat_map(|(_, names)| names.iter())
+                    .any(|(candidate, ty)| candidate == name && *ty == id)
+                {
+                    return decoder.error("The assignment has a different type.");
+                }
+            } else {
+                decoder.pos = start;
+            }
+        } else {
+            decoder.pos = start;
+        }
+    }
+    let value = decoder.value(id, 0)?;
+    decoder.space();
+    if decoder.pos != text.len() {
+        return decoder.error("Unexpected data after the GSER value.");
+    }
+    Ok(value)
+}
+
+// The decimal forms in RFC 3641 have no leading plus or redundant zeroes.
+fn integer_token(text: &str) -> bool {
+    if text == "0" {
+        return true;
+    }
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn real_token(text: &str) -> bool {
+    if text == "0" {
+        return true;
+    }
+    let text = text.strip_prefix('-').unwrap_or(text);
+    let Some((mantissa, exponent)) = text.split_once('E') else {
+        return false;
+    };
+    if !integer_token(exponent) {
+        return false;
+    }
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    integer_token(whole)
+        && !whole.starts_with('-')
+        && fraction.bytes().all(|b| b.is_ascii_digit())
+        && mantissa.bytes().any(|b| matches!(b, b'1'..=b'9'))
+}
+
+struct Decoder<'a> {
+    types: &'a Types,
+    text: &'a str,
+    pos: usize,
+}
+
+impl<'a> Decoder<'a> {
+    fn error<T>(&self, message: &'static str) -> Result<T> {
+        Err(Error::decode(message, self.pos))
+    }
+
+    fn space(&mut self) {
+        while self
+            .text
+            .as_bytes()
+            .get(self.pos)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.pos += 1;
+        }
+    }
+
+    fn take(&mut self, token: &str) -> bool {
+        self.space();
+        if self.text[self.pos..].starts_with(token) {
+            self.pos += token.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn expect(&mut self, token: &str) -> Result<()> {
+        if self.take(token) {
+            Ok(())
+        } else {
+            self.error("Expected GSER punctuation.")
+        }
+    }
+
+    fn token(&mut self) -> Result<&'a str> {
+        self.space();
+        let start = self.pos;
+        while self
+            .text
+            .as_bytes()
+            .get(self.pos)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'+' | b'.'))
+        {
+            self.pos += 1;
+        }
+        if start == self.pos {
+            return self.error("Expected a GSER token.");
+        }
+        Ok(&self.text[start..self.pos])
+    }
+
+    fn string(&mut self) -> Result<String> {
+        self.expect("\"")?;
+        let mut out = String::new();
+        loop {
+            let start = self.pos;
+            let Some(end) = self.text[start..].find('"') else {
+                return self.error("Unterminated GSER string.");
+            };
+            out.push_str(&self.text[start..start + end]);
+            self.pos = start + end + 1;
+            if self.text.as_bytes().get(self.pos) != Some(&b'"') {
+                return Ok(out);
+            }
+            self.pos += 1;
+            out.push('"');
+        }
+    }
+
+    fn literal(&mut self) -> Result<(Vec<u8>, usize, u8)> {
+        self.expect("'")?;
+        let start = self.pos;
+        let Some(end) = self.text[start..].find('\'') else {
+            return self.error("Unterminated GSER bit or hex string.");
+        };
+        self.pos = start + end + 1;
+        let radix = match self.text.as_bytes().get(self.pos) {
+            Some(b'B') => 2,
+            Some(b'H') => 16,
+            _ => return self.error("Expected B or H after a GSER literal."),
+        };
+        self.pos += 1;
+        let width = if radix == 2 { 1 } else { 4 };
+        let bits = end * width;
+        let mut bytes = alloc::vec![0; bits.div_ceil(8)];
+        for (index, digit) in self.text[start..start + end].bytes().enumerate() {
+            let Some(number) = (digit as char).to_digit(radix) else {
+                return Err(Error::decode(
+                    "Invalid digit in GSER literal.",
+                    start + index,
+                ));
+            };
+            bytes[index * width / 8] |= (number as u8) << (8 - width - index * width % 8);
+        }
+        Ok((bytes, bits, radix as u8))
+    }
+
+    fn value(&mut self, id: TypeId, depth: usize) -> Result<Value> {
+        self.space();
+        if depth > MAX_DEPTH {
+            return self.error("The value is nested too deeply.");
+        }
+        match self.types.kind(id) {
+            Kind::Ref(_) => self.error("The type has no contents of its own."),
+            Kind::Boolean => match self.token()? {
+                "TRUE" => Ok(Value::Boolean(true)),
+                "FALSE" => Ok(Value::Boolean(false)),
+                _ => self.error("Expected TRUE or FALSE."),
+            },
+            Kind::Null => {
+                if self.token()? == "NULL" {
+                    Ok(Value::Null)
+                } else {
+                    self.error("Expected NULL.")
+                }
+            }
+            Kind::Integer(named) => {
+                let token = self.token()?;
+                if let Some((_, number)) = named.iter().find(|(name, _)| name == token) {
+                    return Ok(Value::Integer(*number));
+                }
+                if !integer_token(token) {
+                    return self.error("Expected an integer or a named number.");
+                }
+                decimal::decimal_to_value(token).ok_or_else(|| {
+                    Error::decode("Expected an integer or a named number.", self.pos)
+                })
+            }
+            Kind::Real if self.text[self.pos..].starts_with('{') => self.real_components(),
+            Kind::Real => {
+                let token = self.token()?;
+                let number = match token {
+                    "PLUS-INFINITY" => f64::INFINITY,
+                    "MINUS-INFINITY" => f64::NEG_INFINITY,
+                    _ if !real_token(token) => return self.error("Expected a GSER real number."),
+                    _ => match token.parse::<f64>() {
+                        Ok(value) if value.is_finite() => value,
+                        _ => return self.error("Expected a GSER real number."),
+                    },
+                };
+                Ok(Value::Real(number))
+            }
+            Kind::BitString(named) if self.text[self.pos..].starts_with('{') => {
+                self.expect("{")?;
+                let mut bytes = Vec::new();
+                let mut bits = 0;
+                if !self.take("}") {
+                    loop {
+                        let token = self.token()?;
+                        let Some((_, index)) = named.iter().find(|(name, _)| name == token) else {
+                            return self.error("Unknown named bit.");
+                        };
+                        let index = usize::try_from(*index)
+                            .map_err(|_| Error::decode("Invalid named bit index.", self.pos))?;
+                        // Do not allocate arbitrarily large buffers from a schema bit index.
+                        if index > self.text.len().saturating_mul(8).max(1_048_576) {
+                            return self.error("Named bit index is too large.");
+                        }
+                        bytes.resize(bytes.len().max(index / 8 + 1), 0);
+                        let mask = 0x80 >> (index % 8);
+                        if bytes[index / 8] & mask != 0 {
+                            return self.error("Duplicate named bit.");
+                        }
+                        bytes[index / 8] |= mask;
+                        bits = bits.max(index + 1);
+                        if self.take("}") {
+                            break;
+                        }
+                        self.expect(",")?;
+                    }
+                }
+                Ok(Value::Bits(bytes, bits))
+            }
+            Kind::BitString(_) => {
+                let (bytes, bits, _) = self.literal()?;
+                Ok(Value::Bits(bytes, bits))
+            }
+            Kind::OctetString | Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
+                let (bytes, _, radix) = self.literal()?;
+                if radix != 16 {
+                    return self.error("Expected a hexadecimal octet string.");
+                }
+                Ok(Value::Bytes(bytes))
+            }
+            Kind::ObjectIdentifier => {
+                let token = self.token()?;
+                if token.split('.').count() < 2
+                    || !token.split('.').all(|arc| {
+                        !arc.is_empty()
+                            && arc.bytes().all(|b| b.is_ascii_digit())
+                            && (arc == "0" || !arc.starts_with('0'))
+                    })
+                {
+                    return self.error("Expected a dotted object identifier.");
+                }
+                Ok(Value::Text(String::from(token)))
+            }
+            Kind::Str(_) => Ok(Value::Text(self.string()?)),
+            Kind::Enumerated { root, additions } => {
+                let token = self.token()?;
+                let Some((name, number)) = names(root, additions).find(|(name, _)| name == token)
+                else {
+                    return self.error("Unknown enumeration value.");
+                };
+                Ok(if self.types.numeric_enums {
+                    Value::Integer(i128::from(*number))
+                } else {
+                    Value::Text(name.clone())
+                })
+            }
+            Kind::Sequence(members) | Kind::Set(members) | Kind::External(members) => {
+                self.members(members, depth)
+            }
+            Kind::SequenceOf(element) | Kind::SetOf(element) => {
+                self.expect("{")?;
+                let mut items = Vec::new();
+                if !self.take("}") {
+                    loop {
+                        items.push(
+                            self.value(*element, depth + 1)
+                                .map_err(|error| error.in_element(items.len()))?,
+                        );
+                        if self.take("}") {
+                            break;
+                        }
+                        self.expect(",")?;
+                    }
+                }
+                Ok(Value::List(items))
+            }
+            Kind::Choice(members) => {
+                let name = self.token()?;
+                let Some(member) = members.all().find(|member| member.name == name) else {
+                    return self.error("Unknown CHOICE alternative.");
+                };
+                self.expect(":")?;
+                let value = self
+                    .value(member.ty, depth + 1)
+                    .map_err(|error| error.in_member(name))?;
+                Ok(Value::Choice(
+                    String::from(name),
+                    alloc::boxed::Box::new(value),
+                ))
+            }
+            kind @ (Kind::Utc
+            | Kind::Generalized
+            | Kind::Date
+            | Kind::TimeOfDay
+            | Kind::DateTime
+            | Kind::Duration) => {
+                let start = self.pos;
+                let text = self.string()?;
+                let result = match kind {
+                    Kind::Utc => time::utc_time_from_string(&text, false).map(Value::DateTime),
+                    Kind::Generalized => {
+                        time::generalized_time_from_string(&text, false).map(Value::DateTime)
+                    }
+                    Kind::Date => iso::date_from_string(&text).map(Value::Date),
+                    Kind::TimeOfDay => iso::time_from_string(&text).map(Value::Time),
+                    Kind::DateTime => iso::date_time_from_string(&text).map(Value::DateTime),
+                    _ => time::validate_duration(&text).map(|()| Value::Text(text)),
+                };
+                result.map_err(|_| Error::decode("Expected a valid date, time or duration.", start))
+            }
+        }
+    }
+
+    // The ASN.1 REAL value notation, { mantissa INTEGER, base 2|10,
+    // exponent INTEGER }, is also a GSER representation (RFC 3641 3.19).
+    fn real_components(&mut self) -> Result<Value> {
+        self.expect("{")?;
+        if self.token()? != "mantissa" {
+            return self.error("Expected the REAL mantissa.");
+        }
+        let mantissa = self.token()?;
+        if !integer_token(mantissa) {
+            return self.error("Expected an integer mantissa.");
+        }
+        let integer = decimal::decimal_to_value(mantissa)
+            .ok_or_else(|| Error::decode("Expected an integer mantissa.", self.pos))?;
+        self.expect(",")?;
+        if self.token()? != "base" {
+            return self.error("Expected the REAL base.");
+        }
+        let base = self.token()?;
+        if base != "2" && base != "10" {
+            return self.error("Expected REAL base 2 or 10.");
+        }
+        self.expect(",")?;
+        if self.token()? != "exponent" {
+            return self.error("Expected the REAL exponent.");
+        }
+        let exponent = self.token()?;
+        if !integer_token(exponent) {
+            return self.error("Expected an integer exponent.");
+        }
+        let exponent = exponent
+            .parse::<i64>()
+            .map_err(|_| Error::decode("Expected an integer exponent.", self.pos))?;
+        self.expect("}")?;
+        let number = if base == "10" {
+            alloc::format!("{mantissa}E{exponent}")
+                .parse::<f64>()
+                .map_err(|_| Error::decode("Invalid REAL value.", self.pos))?
+        } else {
+            let mut magnitude = integer.to_twos_complement().unwrap();
+            let negative = magnitude.first().is_some_and(|b| b & 0x80 != 0);
+            if negative {
+                let mut carry = true;
+                for byte in magnitude.iter_mut().rev() {
+                    *byte = !*byte;
+                    if carry {
+                        let (sum, overflow) = byte.overflowing_add(1);
+                        *byte = sum;
+                        carry = overflow;
+                    }
+                }
+            }
+            // Let the BER REAL reader do the rounding, including subnormals.
+            let exponent = crate::value::integer_to_twos_complement(i128::from(exponent));
+            let form = (exponent.len() - 1).min(3) as u8;
+            let mut binary = alloc::vec![(if negative { 0xc0 } else { 0x80 }) | form];
+            if form == 3 {
+                binary.push(exponent.len() as u8);
+            }
+            binary.extend_from_slice(&exponent);
+            binary.extend_from_slice(&magnitude);
+            crate::ber::decode_real(&binary, self.pos, false)?
+        };
+        if !number.is_finite() {
+            return self.error("The REAL is too large for a float.");
+        }
+        Ok(Value::Real(number))
+    }
+
+    fn members(&mut self, members: &Members, depth: usize) -> Result<Value> {
+        self.expect("{")?;
+        let mut map = Vec::new();
+        let mut next = 0;
+        let count = members.defined().count();
+        let mut present = alloc::vec![false; count];
+        let additions_start = members.root.len() - members.root_after_additions;
+        let additions_end = count - members.root_after_additions;
+        let is_addition = |index| (additions_start..additions_end).contains(&index);
+        if !self.take("}") {
+            loop {
+                let name = self.token()?;
+                let Some((index, member)) = members
+                    .defined()
+                    .enumerate()
+                    .find(|(_, member)| member.name == name)
+                else {
+                    return self.error("Unknown SEQUENCE or SET member.");
+                };
+                if index < next {
+                    return self.error("Duplicate or out-of-order member.");
+                }
+                for (index, missing) in members.defined().enumerate().skip(next).take(index - next)
+                {
+                    self.missing(missing, &mut map, is_addition(index))?;
+                }
+                present[index] = true;
+                next = index + 1;
+                let before = self.pos;
+                self.space();
+                if self.pos == before {
+                    return self.error("Expected whitespace after a member name.");
+                }
+                let ty = member_type(self.types, member, &map).ok_or_else(|| {
+                    Error::decode("Bad AnyDefinedBy choice.", self.pos).in_member(name)
+                })?;
+                let value = self
+                    .value(ty, depth + 1)
+                    .map_err(|error| error.in_member(name))?;
+                map.push((member.name.clone(), value));
+                if self.take("}") {
+                    break;
+                }
+                self.expect(",")?;
+            }
+        }
+        for (index, member) in members.defined().enumerate().skip(next) {
+            self.missing(member, &mut map, is_addition(index))?;
+        }
+        // A whole extension group may be absent. Once any of its members
+        // is supplied, its required members must also be present.
+        let mut index = additions_start;
+        for addition in members.additions.iter().flatten() {
+            match addition {
+                Addition::Member(_) => index += 1,
+                Addition::Group(group) => {
+                    let supplied = &present[index..index + group.len()];
+                    if supplied.iter().any(|present| *present) {
+                        for (member, present) in group.iter().zip(supplied) {
+                            if !present && !member.optional && !member.has_default() {
+                                return Err(Error::decode(
+                                    "A required member is missing.",
+                                    self.pos,
+                                )
+                                .in_member(&member.name));
+                            }
+                        }
+                    }
+                    index += group.len();
+                }
+            }
+        }
+        Ok(Value::Map(map))
+    }
+
+    fn missing(
+        &self,
+        member: &MemberInfo,
+        map: &mut Vec<(String, Value)>,
+        addition: bool,
+    ) -> Result<()> {
+        if let Some(default) = &member.default {
+            map.push((member.name.clone(), default.clone()));
+        } else if !member.optional && !addition {
+            return Err(
+                Error::decode("A required member is missing.", self.pos).in_member(&member.name)
+            );
+        }
+        Ok(())
     }
 }
 

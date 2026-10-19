@@ -30,7 +30,7 @@ serde = ["dep:serde"]
 jer = []
 # XML is read with quick-xml, which needs std.
 xer = ["std", "dep:quick-xml"]
-# GSER (RFC 3641), for debug output: it is encoded and not decoded.
+# GSER (RFC 3641), with no extra dependency.
 gser = []
 # Bounds of constraints of more than 128 bits, and time elements of a
 # DURATION of more than 128 bits in PER and OER, with num-bigint.

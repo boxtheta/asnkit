@@ -1,5 +1,194 @@
 export const protocols = [
   {
+    name: 'Sketch-Pad drawing journal',
+    type: 'Journal',
+    description: 'The Sketch-Pad test protocol: a floor-plan snapshot, nested shape groups, a mirrored path, and paint, erase and undo edits. Exercises implicit and application tags, recursion, defaults and extensions. Text fields contain UTF-8 octets.',
+    specification: `-- A made-up vector drawing format, used to test implicit tagging,
+-- application tags, implied extensibility and recursive types.
+--
+-- This module is original work written for the asn1tools-ext test
+-- suite and is covered by the project's MIT license.
+
+Sketch-Pad {2 999 7}
+DEFINITIONS
+IMPLICIT TAGS
+EXTENSIBILITY IMPLIED ::=
+
+BEGIN
+
+gridSize INTEGER ::= 4096
+
+Coordinate ::= INTEGER (0..gridSize)
+
+Text ::= OCTET STRING -- UTF-8 encoded
+
+LayerName ::= Text
+
+Colour ::= [APPLICATION 7] OCTET STRING (SIZE (3)) -- red, green, blue
+
+Eraser ::= [APPLICATION 12] NULL
+
+Point ::= SEQUENCE {
+    x  Coordinate,
+    y  Coordinate
+}
+
+Stroke ::= SEQUENCE {
+    colour  Colour,
+    width   INTEGER (1..64) DEFAULT 1,
+    dashed  BOOLEAN DEFAULT FALSE
+}
+
+Shape ::= CHOICE {
+    dot       [0] Point,
+    path      [1] SEQUENCE SIZE (2..MAX) OF vertex Point,
+    box       [3] Box,
+    label     [4] Label,
+    group     [8] SET SIZE (1..MAX) OF member Shape,
+    mirrored  [9] Shape,
+    ...
+}
+
+Box ::= SEQUENCE {
+    corner    Point,
+    opposite  Point,
+    COMPONENTS OF Stroke,
+    fill      [2] Colour OPTIONAL
+}
+
+Label ::= SEQUENCE {
+    anchor  Point,
+    runs    SEQUENCE SIZE (1..MAX) OF run CHOICE {
+        plain [0] Text,
+        bold  [1] Text,
+        glyph [2] INTEGER (0..gridSize)
+    },
+    align   ENUMERATED {
+        left      (0),
+        centre    (1),
+        right     (2),
+        justified (5),
+        ...
+    }
+}
+
+Layer ::= SEQUENCE {
+    name     LayerName,
+    hidden   [0] BOOLEAN DEFAULT FALSE,
+    opacity  [1] INTEGER (0..100) OPTIONAL,
+    shapes   SEQUENCE OF shape Shape
+}
+
+LockedLayer ::= Layer (WITH COMPONENTS {
+    ...,
+    shapes (SIZE (1..MAX))})
+
+Drawing ::= [APPLICATION 1] SEQUENCE {
+    title   Text,
+    units   ENUMERATED {
+        millimetre (1),
+        point      (3),
+        pixel      (10),
+        ...
+    },
+    layers  SEQUENCE OF layer Layer
+}
+
+Undo ::= [APPLICATION 30] SEQUENCE {
+    steps   INTEGER (1..64),
+    reason  Text OPTIONAL
+}
+
+Edit ::= CHOICE {
+    snapshot  Drawing,
+    addLayer  [0] Layer,
+    lock      [1] LockedLayer,
+    paint     Colour,
+    erase     Eraser,
+    ...,
+    undo      Undo
+}
+
+Journal ::= SEQUENCE {
+    revision  INTEGER (0..MAX),
+    edits     SEQUENCE OF edit Edit
+}
+
+END
+`,
+    value: {
+      revision: 70000,
+      edits: [
+        ['snapshot', {
+          title: new TextEncoder().encode('floor plan'),
+          units: 'pixel',
+          layers: [
+            {
+              name: new TextEncoder().encode('walls'),
+              hidden: false,
+              shapes: [
+                ['box', {
+                  corner: { x: 10, y: 10 },
+                  opposite: { x: 2000, y: 1200 },
+                  colour: Uint8Array.of(0x20, 0x20, 0x20),
+                  width: 4,
+                  dashed: false,
+                }],
+                ['group', [
+                  ['box', {
+                    corner: { x: 10, y: 600 },
+                    opposite: { x: 900, y: 1200 },
+                    colour: Uint8Array.of(0x20, 0x20, 0x20),
+                    width: 1,
+                    dashed: true,
+                    fill: Uint8Array.of(0xee, 0xee, 0xff),
+                  }],
+                  ['group', [
+                    ['dot', { x: 455, y: 900 }],
+                    ['mirrored', ['dot', { x: 455, y: 300 }]],
+                  ]],
+                ]],
+              ],
+            },
+            {
+              name: new TextEncoder().encode('notes'),
+              hidden: true,
+              opacity: 75,
+              shapes: [['label', {
+                anchor: { x: 460, y: 880 },
+                runs: [
+                  ['bold', new TextEncoder().encode('Kitchen')],
+                  ['plain', new TextEncoder().encode(' (north)')],
+                  ['glyph', 169],
+                ],
+                align: 'justified',
+              }]],
+            },
+            { name: new TextEncoder().encode('scratch'), hidden: false, shapes: [] },
+          ],
+        }],
+        ['addLayer', {
+          name: new TextEncoder().encode('grid'),
+          hidden: true,
+          opacity: 40,
+          shapes: [['dot', { x: 0, y: 4096 }]],
+        }],
+        ['lock', {
+          name: new TextEncoder().encode('ink'),
+          hidden: false,
+          shapes: [['mirrored', ['path', [
+            { x: 1, y: 2 },
+            { x: 300, y: 2 },
+            { x: 300, y: 150 },
+          ]]]],
+        }],
+        ['paint', Uint8Array.of(0xff, 0x80, 0x00)],
+        ['erase', null],
+        ['undo', { steps: 3, reason: new TextEncoder().encode('oops') }],
+      ],
+    },
+  },
+  {
     name: 'SNMPv1 get request',
     type: 'Message',
     description: 'A request for sysDescr.0. This subset covers request and response PDUs, without traps.',

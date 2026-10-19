@@ -1044,7 +1044,7 @@ fn any_defined_by_type(i: &mut Input) -> R<Type> {
     kw(i, "ANY DEFINED BY")?;
     let value = commit(word(i))?;
 
-    Ok(Type::new(Body::AnyDefinedBy(value)))
+    Ok(Type::new(Body::AnyDefinedBy(value, Vec::new())))
 }
 
 /// `CLASS.&field`

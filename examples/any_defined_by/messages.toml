@@ -1,0 +1,20 @@
+# One entry per ANY DEFINED BY member. Type names and choice values are strings.
+[[any_defined_by]]
+type = "Messages.Message"
+member = "payload"
+
+[any_defined_by.choices]
+text = "UTF8String"     # Named number: kind = 1.
+"2" = "INTEGER"        # The decimal value also works: kind = 2.
+raw = "OpenType"       # Known selector only; this is not a fallback.
+
+[[any_defined_by]]
+type = "Messages.Event"
+member = "payload"
+# ENUMERATED item names. Point is imported by Messages from Payloads.
+choices = { text = "UTF8String", point = "Point" }
+
+[[any_defined_by]]
+type = "Messages.Flagged"
+member = "payload"
+choices = { TRUE = "INTEGER", FALSE = "NULL" }

@@ -57,8 +57,8 @@ Also in the repository:
   guidelines for writing a runtime in another language.
 - [`docs/plugins.md`](docs/plugins.md): how plugins are run, and how to
   write one.
-- [`docs/any_defined_by.md`](docs/any_defined_by.md): a draft of how
-  to tell which types an `ANY DEFINED BY` can hold.
+- [`docs/any_defined_by.md`](docs/any_defined_by.md): how to configure
+  the types an `ANY DEFINED BY` can hold.
 - `tests/vectors`: encodings and decodings recorded from the Rust
   runtime, the one of reference, for testing a runtime in any language.
 - `examples/corpus`: `.asni` files for testing a reader of the format.
@@ -74,7 +74,7 @@ Also in the repository:
 | Unaligned Packed Encoding Rules (UPER) | yes | yes | yes |
 | JSON Encoding Rules (JER) | yes | yes, feature `jer` | yes |
 | XML Encoding Rules (XER) | yes | yes, feature `xer` | yes |
-| Generic String Encoding Rules (GSER) | encoding only | encoding only, feature `gser` | encoding only |
+| Generic String Encoding Rules (GSER) | encoding only | yes, feature `gser` | yes |
 
 The Rust runtime is the one of reference: the more than 5,300 vectors
 in `tests/vectors` are what it does, including constraint checks, and
@@ -102,10 +102,11 @@ runtime's options) to accept anything BER allows.
   write as they are and PER, UPER and OER as an open type. The bytes are
   in the codec's own encoding, so a value decoded with BER can't be
   encoded again with PER as is. JER and XER need the actual type, and
-  so reject them. There is no way yet to tell the compiler which types
-  an `ANY DEFINED BY` can hold ([`docs/any_defined_by.md`](docs/any_defined_by.md)
-  is a draft of how it will be done); when a specification has them, all the
-  codecs encode the value with its type.
+  so reject them. Use `asnkitcc compile --any-defined-by choices.toml` (also supported by
+  `generate`) to select types from defining member values; see
+  [`docs/any_defined_by.md`](docs/any_defined_by.md). Explicit mappings
+  let the codecs encode and decode the selected values. Fallback types
+  and runtime load-time overrides are not implemented.
 
 - The Rust runtime does not support `CHARACTER STRING`. Bounds of
   constraints of more than 128 bits need its feature `bigint`, which is

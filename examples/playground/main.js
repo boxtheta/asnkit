@@ -21,11 +21,9 @@ const CODECS = [
   ['uper', 'UPER', 'Packed Encoding Rules, unaligned'],
   ['jer', 'JER', 'JSON Encoding Rules'],
   ['xer', 'XER', 'XML Encoding Rules'],
-  ['gser', 'GSER', 'Generic String Encoding Rules, encoded only'],
+  ['gser', 'GSER', 'Generic String Encoding Rules'],
 ];
 const TEXT_CODECS = new Set(['jer', 'xer', 'gser']);
-// For reading only: they are not decoded, so are not an input.
-const ENCODE_ONLY = new Set(['gser']);
 
 const EXAMPLES = [
   {
@@ -280,15 +278,13 @@ function renderOutputs(value, type, options) {
       let decodeMs;
       let decodeError;
 
-      if (!ENCODE_ONLY.has(codec)) {
-        try {
-          const decodeStarted = performance.now();
+      try {
+        const decodeStarted = performance.now();
 
-          state.specs[codec].decode(type, encoded, options);
-          decodeMs = performance.now() - decodeStarted;
-        } catch (error) {
-          decodeError = error;
-        }
+        state.specs[codec].decode(type, encoded, options);
+        decodeMs = performance.now() - decodeStarted;
+      } catch (error) {
+        decodeError = error;
       }
 
       const shown = TEXT_CODECS.has(codec)
@@ -315,16 +311,14 @@ function renderOutputs(value, type, options) {
       const barCell = document.createElement('td');
       const out = document.createElement('td');
 
-      if (ENCODE_ONLY.has(codec)) {
-        row.className = 'encode-only';
-      } else if (!error) {
+      if (!error) {
         row.dataset.codec = codec;
         row.classList.toggle('current', codec === current);
       }
 
       name.className = 'codec';
 
-      if (!error && !ENCODE_ONLY.has(codec)) {
+      if (!error) {
         const button = document.createElement('button');
 
         button.type = 'button';
@@ -349,8 +343,6 @@ function renderOutputs(value, type, options) {
         decodeTime.textContent = 'Error';
         decodeTime.classList.add('timing-error');
         decodeTime.title = describe(decodeError, codec);
-      } else if (ENCODE_ONLY.has(codec)) {
-        decodeTime.title = 'GSER is encode-only.';
       }
 
       barCell.className = 'bar-col';
@@ -378,7 +370,7 @@ function renderOutputs(value, type, options) {
       }
 
       row.append(name, size, encodeTime, decodeTime, barCell, out);
-      row.title = error || ENCODE_ONLY.has(codec) ? '' : `Use the ${label} encoding as the input`;
+      row.title = error ? '' : `Use the ${label} encoding as the input`;
       size.title = TEXT_CODECS.has(codec) && !error ? 'Without indentation' : '';
 
       return row;
@@ -443,9 +435,7 @@ function debounce(action, delay) {
 
 async function main() {
   for (const [codec, label] of CODECS) {
-    if (!ENCODE_ONLY.has(codec)) {
-      $('input-codec').append(new Option(label, codec));
-    }
+    $('input-codec').append(new Option(label, codec));
   }
 
   for (const [index, example] of EXAMPLES.entries()) {

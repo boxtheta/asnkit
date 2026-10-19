@@ -197,8 +197,10 @@ impl Specification {
             Codec::Xer => crate::xer::decode(&self.types, id, data),
             #[cfg(not(feature = "xer"))]
             Codec::Xer => return Err(Error::unsupported("XER needs the feature xer.")),
-            // GSER is for debug output.
-            Codec::Gser => return Err(Error::unsupported("GSER is encoded only.")),
+            #[cfg(feature = "gser")]
+            Codec::Gser => crate::gser::decode(&self.types, id, data),
+            #[cfg(not(feature = "gser"))]
+            Codec::Gser => return Err(Error::unsupported("GSER needs the feature gser.")),
         };
 
         decoded.map_err(|error| error.in_type(name))

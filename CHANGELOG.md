@@ -12,6 +12,12 @@ security fixes.
 
 ### Added
 
+- Explicit `ANY DEFINED BY` type mappings in the compiler, with repeatable
+  `--any-defined-by` TOML files for `asnkitcc compile` and `generate`,
+  and `CompileOptions` entry points in the Rust compiler library. The
+  existing `.asni` choice nodes carry the mappings to the runtimes;
+  fallback types and load-time overrides are not yet supported.
+
 - GSER in the Rust runtime, with the feature `gser`, and so in the
   runtime for WebAssembly, the C API and `asnkitcc convert --to gser`.
   It is encoded only, for debug output, and written as the runtime for

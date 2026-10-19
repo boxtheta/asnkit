@@ -1,0 +1,9 @@
+# A second file, combined with messages.toml using another --any-defined-by.
+[[any_defined_by]]
+type = "Messages.Batch"
+member = "entries.parameters"
+
+[any_defined_by.choices]
+id-text = "UTF8String"                  # Imported ASN.1 OID value.
+"Payloads.id-point" = "Payloads.Point"   # Qualified value and type names.
+"1.3.6.1.4.1.99999.3" = "NULL"           # Literal OID; quote dots in TOML.

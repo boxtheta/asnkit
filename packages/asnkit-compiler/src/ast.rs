@@ -584,7 +584,7 @@ pub enum Body {
     Choice(Vec<MemberItem>),
     SequenceOf(Box<Type>, Option<String>),
     SetOf(Box<Type>, Option<String>),
-    AnyDefinedBy(String),
+    AnyDefinedBy(String, Vec<(Value, Type)>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -620,7 +620,7 @@ impl Type {
             Body::Choice(_) => "CHOICE".to_string(),
             Body::SequenceOf(..) => "SEQUENCE OF".to_string(),
             Body::SetOf(..) => "SET OF".to_string(),
-            Body::AnyDefinedBy(_) => "ANY DEFINED BY".to_string(),
+            Body::AnyDefinedBy(..) => "ANY DEFINED BY".to_string(),
         }
     }
 
@@ -683,9 +683,20 @@ impl Type {
                 fields.push(("element_name", opt_text(name)));
                 "SetOfType"
             }
-            Body::AnyDefinedBy(value) => {
+            Body::AnyDefinedBy(value, choices) => {
                 fields.push(("value", text(value)));
-                fields.push(("choices", Some(Json::Array(vec![]))));
+                fields.push((
+                    "choices",
+                    list(choices, |(value, type_)| {
+                        node(
+                            "AnyDefinedByChoice",
+                            vec![
+                                ("value", Some(value.to_tree())),
+                                ("type", Some(type_.to_tree())),
+                            ],
+                        )
+                    }),
+                ));
                 "AnyDefinedByType"
             }
         };

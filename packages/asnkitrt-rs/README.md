@@ -5,8 +5,11 @@ The asnkit runtime for Rust. It loads the `.asni` files produced by
 parser, needs `alloc` but not `std`, and builds for embedded targets.
 
 The codecs are BER, DER, OER, PER and UPER, plus JER (feature `jer`),
-XER (feature `xer`) and GSER (feature `gser`), which is encoded only,
-for debug output. It can also check values against their constraints.
+XER (feature `xer`) and GSER (feature `gser`). It can also check values
+against their constraints. GSER decoding accepts bare values and the value
+assignments produced by the encoder. It supports the generic value forms;
+LDAP variant encodings and symbolic object identifier descriptors are not
+supported. Unknown SEQUENCE and SET members are rejected.
 
 ```rust
 use asnkitrt::container::Checks;
@@ -43,7 +46,7 @@ let decoded = foo.decode("Question", &encoded)?;
 | `serde` | `serde_value::{to_value, from_value}` and related types | yes |
 | `jer` | JSON Encoding Rules, with no extra dependency | yes |
 | `xer` | XML Encoding Rules, using `quick-xml`; needs `std` | yes |
-| `gser` | Generic String Encoding Rules, encoding only, with no extra dependency | yes |
+| `gser` | Generic String Encoding Rules, with no extra dependency | yes |
 | `bigint` | Bounds of constraints of more than 128 bits, and `DURATION` time elements of more than 128 bits in PER and OER, using `num-bigint`; needs `std` | yes |
 
 Requesting a codec that is not compiled in returns

@@ -9,7 +9,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-#[cfg(any(feature = "jer", feature = "xer"))]
+#[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
 use crate::value::Value;
 
 /// The bytes in upper case hex.
@@ -138,7 +138,7 @@ pub(crate) fn twos_complement_to_decimal(bytes: &[u8]) -> Option<String> {
 
 /// An integer written in decimal, with an optional sign. `None` if it is
 /// not one, or has too many digits.
-#[cfg(any(feature = "jer", feature = "xer"))]
+#[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
 pub(crate) fn decimal_to_value(text: &str) -> Option<Value> {
     let (negative, digits) = match text.as_bytes().first()? {
         b'-' => (true, &text[1..]),
@@ -396,7 +396,7 @@ mod tests {
         }
     }
 
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     #[test]
     fn integers_of_any_size() {
         for text in [

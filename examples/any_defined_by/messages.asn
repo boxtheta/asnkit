@@ -1,0 +1,27 @@
+Messages DEFINITIONS ::= BEGIN
+    IMPORTS id-text, Point FROM Payloads;
+
+    Message ::= SEQUENCE {
+        kind INTEGER { text(1), number(2), raw(3) },
+        payload ANY DEFINED BY kind
+    }
+
+    EventKind ::= ENUMERATED { text(1), point(2) }
+    Event ::= SEQUENCE {
+        kind EventKind,
+        payload ANY DEFINED BY kind
+    }
+
+    Flagged ::= SEQUENCE {
+        hasNumber BOOLEAN,
+        payload ANY DEFINED BY hasNumber
+    }
+
+    -- A collection element consumes no component of the TOML member path.
+    Batch ::= SEQUENCE {
+        entries SEQUENCE OF SEQUENCE {
+            algorithm OBJECT IDENTIFIER,
+            parameters [0] EXPLICIT ANY DEFINED BY algorithm
+        }
+    }
+END

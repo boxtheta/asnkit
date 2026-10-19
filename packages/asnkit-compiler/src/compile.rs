@@ -21,6 +21,9 @@ pub type CompileResult<T> = Result<T, String>;
 #[path = "effective.rs"]
 mod effective;
 
+#[path = "any_defined_by.rs"]
+pub mod any_defined_by;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
     Types,
@@ -1341,10 +1344,10 @@ impl Compiler {
         self.write_all_effective()?;
 
         for module in self.modules.iter_mut() {
-            module.values.clear();
+            // Values and imports remain available for explicit ANY DEFINED BY
+            // mappings. compiled_specification omits them from the output.
             module.objects.clear();
             module.object_sets.clear();
-            module.imports.clear();
         }
 
         Ok(())
@@ -1440,6 +1443,8 @@ fn strip_locations(type_: &mut Type) {
 /// The compiled specification, as a node in the readable form.
 pub fn compiled_specification(mut modules: Vec<Module>) -> Json {
     for module in modules.iter_mut() {
+        module.values.clear();
+        module.imports.clear();
         for assignment in module.types.iter_mut() {
             assignment.location = None;
             strip_locations(&mut assignment.type_);

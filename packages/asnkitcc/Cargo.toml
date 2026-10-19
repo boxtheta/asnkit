@@ -21,3 +21,6 @@ path = "src/main.rs"
 [dependencies]
 asnkit-compiler = { version = "1.2.0", path = "../asnkit-compiler" }
 asnkitrt = { version = "1.2.0", path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "gser", "bigint"] }
+
+[dev-dependencies]
+tempfile = "3"

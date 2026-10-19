@@ -567,7 +567,7 @@ pub(crate) mod iso {
     }
 
     /// One or two digits, as many as there are.
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     fn number(cursor: &mut Cursor<'_>) -> Result<u32> {
         let mut value = 0;
         let mut digits = 0;
@@ -584,7 +584,7 @@ pub(crate) mod iso {
         if digits == 0 { Err(bad()) } else { Ok(value) }
     }
 
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     fn expect(cursor: &mut Cursor<'_>, byte: u8) -> Result<()> {
         if cursor.bytes.get(cursor.at) == Some(&byte) {
             cursor.at += 1;
@@ -595,7 +595,7 @@ pub(crate) mod iso {
         }
     }
 
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     fn read_date(cursor: &mut Cursor<'_>) -> Result<Date> {
         let year = cursor.number(4)? as i32;
 
@@ -610,7 +610,7 @@ pub(crate) mod iso {
         checked_date(year, month, day)
     }
 
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     fn read_time(cursor: &mut Cursor<'_>) -> Result<Time> {
         let hour = number(cursor)? as u8;
 
@@ -625,7 +625,7 @@ pub(crate) mod iso {
         checked_time(hour, minute, second, 0, None)
     }
 
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     pub fn date_from_string(string: &str) -> Result<Date> {
         let mut cursor = Cursor {
             bytes: string.as_bytes(),
@@ -636,7 +636,7 @@ pub(crate) mod iso {
         if cursor.done() { Ok(date) } else { Err(bad()) }
     }
 
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     pub fn time_from_string(string: &str) -> Result<Time> {
         let mut cursor = Cursor {
             bytes: string.as_bytes(),
@@ -647,7 +647,7 @@ pub(crate) mod iso {
         if cursor.done() { Ok(time) } else { Err(bad()) }
     }
 
-    #[cfg(any(feature = "jer", feature = "xer"))]
+    #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
     pub fn date_time_from_string(string: &str) -> Result<DateTime> {
         let mut cursor = Cursor {
             bytes: string.as_bytes(),

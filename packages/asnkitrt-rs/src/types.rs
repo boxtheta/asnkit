@@ -289,8 +289,7 @@ pub enum Codec {
     Jer,
     /// XML Encoding Rules, with the feature `xer`.
     Xer,
-    /// Generic String Encoding Rules, with the feature `gser`. Encoding
-    /// only.
+    /// Generic String Encoding Rules, with the feature `gser`.
     Gser,
 }
 

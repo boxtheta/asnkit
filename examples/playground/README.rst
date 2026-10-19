@@ -6,8 +6,8 @@ the compiler as WebAssembly (``packages/asnkit-compiler-wasm``), and
 loads what it makes with the runtime as WebAssembly
 (``packages/asnkitrt-wasm``). A value is decoded with one codec and
 encoded with all of them, BER, DER, OER, PER, UPER, JER, XER and
-GSER, to compare their sizes. Clicking an encoding makes it the input,
-except GSER, which is not decoded.
+GSER, to compare their sizes. Clicking any encoding makes it the input.
+GSER accepts both bare values and the value assignments shown in its row.
 Changing the input codec also converts a valid input to that encoding.
 If the input cannot be decoded or encoded with the selected codec, its
 text is preserved so it can be edited in the selected format.
@@ -20,10 +20,13 @@ from both timings. These are single-call measurements, not benchmarks.
 They measure the WebAssembly runtime in the browser, not native runtime
 performance. Native runtime execution is typically faster.
 Very short calls may show zero at the browser's timer resolution.
-GSER is encode-only, so its decode time is unavailable.
 
-Samples include sensor messages, the Foo protocol, an SNMPv1 get request,
-and an X.509 certificate. The SNMP schema covers request and response PDUs,
+Samples include sensor messages, the Foo protocol, a Sketch-Pad drawing
+journal, an SNMPv1 get request, and an X.509 certificate. The Sketch-Pad
+schema is the full ``tests/files/sketch.asn`` test protocol; its journal
+combines the drawing and edit test values, including recursive groups,
+mirrored shapes, defaults and extension alternatives. Text fields are
+UTF-8 encoded octet strings. The SNMP schema covers request and response PDUs,
 not traps. The X.509 schema contains the core certificate types from the
 repository's ``examples/compiled/rfc5280.asn``; it leaves attribute values
 and algorithm parameters as ``ANY``, and extension contents as octets.

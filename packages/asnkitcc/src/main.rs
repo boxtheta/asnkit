@@ -13,7 +13,9 @@
 mod convert;
 
 use asnkit_compiler::container::{KEY_ID_SIZE, KEY_SIZE, Key, Protection, derive_key_id};
-use asnkit_compiler::{Input, compile_to_asni_with_summary, parse_to_asnst, plugin};
+use asnkit_compiler::{
+    CompileOptions, Input, compile_to_asni_with_summary_and_options, parse_to_asnst, plugin,
+};
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -22,7 +24,8 @@ const USAGE: &str = "usage: asnkitcc {compile,parse,generate} [-v] [-o OUTPUT] [
        asnkitcc convert -t [MODULE.]TYPE [--from CODEC] [--to CODEC] [-i INPUT] [-o OUTPUT] [--input-hex] [--output-hex]
        [--indent N] [--lenient] [--encryption-key-file FILE] [-v] [-e ENCODING] {FILE.asni | FILE.asn [FILE.asn ...]}
 
-The codecs are ber, der, oer, per, uper, jer, xer and gser, which is written only. Without --from or
+--any-defined-by FILE adds TOML choice mappings to compile or generate; it can be repeated.
+The codecs are ber, der, oer, per, uper, jer, xer and gser. Without --from or
 --to, the codec is told by the extension of the input or the output (.json is jer, .xml is xer). The
 input is read from standard input and the output written to standard output when not given.";
 
@@ -48,6 +51,7 @@ struct Arguments {
     indent: Option<usize>,
     lenient: bool,
     files: Vec<PathBuf>,
+    any_defined_by: Vec<PathBuf>,
 }
 
 fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
@@ -80,6 +84,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
         indent: None,
         lenient: false,
         files: Vec::new(),
+        any_defined_by: Vec::new(),
     };
 
     while let Some(argument) = iterator.next() {
@@ -92,6 +97,9 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
 
         match argument.as_str() {
             "-v" | "--verbose" => parsed.verbose = true,
+            "--any-defined-by" => parsed
+                .any_defined_by
+                .push(PathBuf::from(value("--any-defined-by")?)),
             "--plugin" => parsed.plugin = Some(value("--plugin")?),
             "--plugin-opt" => parsed.plugin_options.push(value("--plugin-opt")?),
             "-o" | "--output" => parsed.output = Some(PathBuf::from(value("-o")?)),
@@ -134,6 +142,12 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
             }
             file => parsed.files.push(PathBuf::from(file)),
         }
+    }
+
+    if !parsed.any_defined_by.is_empty()
+        && !matches!(parsed.command.as_str(), "compile" | "generate")
+    {
+        return Err("error: --any-defined-by is for compile and generate.".into());
     }
 
     let converting = parsed.type_name.is_some()
@@ -262,13 +276,31 @@ fn read_key(id: Option<&str>, path: Option<&Path>, what: &str) -> Result<Option<
     }))
 }
 
+fn compile_options(arguments: &Arguments) -> Result<CompileOptions, String> {
+    let mut options = CompileOptions::default();
+    for path in &arguments.any_defined_by {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| format!("error: {}: {error}", path.display()))?;
+        let file = CompileOptions::from_toml(&text)
+            .map_err(|error| format!("error: {}: {}", path.display(), error.message))?;
+        options.any_defined_by.extend(file.any_defined_by);
+    }
+    Ok(options)
+}
+
 fn generate(arguments: &Arguments) -> Result<(), String> {
     let input = Input::Files {
         paths: arguments.files.clone(),
         encoding: arguments.encoding.clone(),
     };
-    let (asni, summary) = compile_to_asni_with_summary(&input, None, None, &Protection::default())
-        .map_err(|error| format!("error: {}", error.message))?;
+    let (asni, summary) = compile_to_asni_with_summary_and_options(
+        &input,
+        None,
+        None,
+        &Protection::default(),
+        &compile_options(arguments)?,
+    )
+    .map_err(|error| format!("error: {}", error.message))?;
     let asnst = parse_to_asnst(&input).map_err(|error| format!("error: {}", error.message))?;
 
     if arguments.verbose {
@@ -383,11 +415,12 @@ fn main() -> ExitCode {
                 iv: None,
             };
 
-            let (data, summary) = compile_to_asni_with_summary(
+            let (data, summary) = compile_to_asni_with_summary_and_options(
                 &input,
                 arguments.nonce,
                 arguments.bound_to.clone(),
                 &protection,
+                &compile_options(&arguments)?,
             )
             .map_err(|error| format!("error: {}", error.message))?;
 

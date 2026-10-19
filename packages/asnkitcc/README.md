@@ -45,3 +45,23 @@ the plugins with `cargo install asnkit-gen-rust` or
 
 Licensed under the Apache License 2.0 (`LICENSE-COMPILER`). What it
 produces is yours to use under terms of your choice.
+
+## ANY DEFINED BY choices
+
+Use `--any-defined-by choices.toml` with `compile` or `generate` to
+supply mappings from selector values to payload types. Repeat the option
+for multiple files. A minimal file is:
+
+```toml
+[[any_defined_by]]
+type = "Example.Message"
+member = "payload"
+choices = { "1" = "UTF8String", "2" = "INTEGER" }
+```
+
+The schema must define `payload ANY DEFINED BY` an INTEGER member.
+The resulting `.asni` carries the mappings for all runtimes. Unknown
+selectors are rejected. See [ANY DEFINED BY](../../docs/any_defined_by.md)
+for the TOML format, nested paths, named values and limitations.
+Runnable schemas, mapping files and messages are in
+[examples/any_defined_by](../../examples/any_defined_by/README.md).
