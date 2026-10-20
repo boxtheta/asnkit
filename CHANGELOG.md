@@ -71,18 +71,18 @@ security fixes.
   and the errors of the runtime for WebAssembly have it as `path`, as
   `['Certificate', 'tbsCertificate', 'extensions', 1, 'critical']`.
 - The Rust runtime, and so the runtime for WebAssembly, the C API and
-  `asnkitcc`, is faster, with the same bytes encoded and decoded: an
-  X.509 certificate is decoded 1.7 to 2 times as fast in BER, DER, OER,
-  PER and UPER, and encoded 1.8 to 4.3 times as fast. It no longer
-  copies the encoding of each value of BER and DER into the one around
-  it, reads and writes the bits of PER and UPER a byte at a time and
-  not a bit at a time, converts the time of a UTCTime or a
-  GeneralizedTime to UTC without counting the years from year 1, and
-  allocates less, as for OBJECT IDENTIFIERs and the members of a
-  SEQUENCE or a SET. As a decoded value borrows, a decode of the
-  certificate is then twice as fast again, with 42 allocations instead
-  of 155, and an encode 1.3 to 1.5 times as fast, as it looks a member
-  up in the order of the type.
+  `asnkitcc`, is faster, with the same bytes encoded and decoded.
+  Compared with 1.2.0, an X.509 certificate of 893 bytes is decoded
+  3.1 to 3.7 times as fast in BER, DER, OER, PER and UPER (DER from
+  5.5 µs to 1.7 µs), with 42 allocations instead of 155, and encoded
+  2.6 to 7.8 times as fast (DER from 12.7 µs to 1.6 µs). A small
+  SEQUENCE is decoded 1.5 to 2.5 times as fast. It no longer copies the
+  encoding of each value of BER and DER into the one around it, reads
+  and writes the bits of PER and UPER a byte at a time and not a bit at
+  a time, converts the time of a UTCTime or a GeneralizedTime to UTC
+  without counting the years from year 1, borrows the names, texts,
+  bytes and object identifiers of a decoded value, and looks a member
+  up in the order of the type when encoding.
 - GSER writes a REAL given as an integer as the float it is, `8.0E0`
   and not `8E0`, in the runtime for Python too, so that the runtime for
   WebAssembly, where every number is a float, writes the same.
