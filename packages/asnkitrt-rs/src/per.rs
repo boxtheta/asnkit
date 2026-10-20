@@ -587,6 +587,16 @@ impl<'a> Reader<'a> {
         self.bits(8 * count)
     }
 
+    /// `count` bits, borrowed from the data when they are whole bytes of
+    /// it.
+    pub(crate) fn bit_octets(&mut self, count: usize) -> Result<Cow<'a, [u8]>> {
+        if count.is_multiple_of(8) {
+            self.octets(count / 8)
+        } else {
+            self.bits(count).map(Cow::Owned)
+        }
+    }
+
     /// The same, borrowed from the data when they are whole bytes of it.
     pub(crate) fn octets(&mut self, count: usize) -> Result<Cow<'a, [u8]>> {
         if self.position.is_multiple_of(8) && count <= self.left() / 8 {
@@ -876,6 +886,14 @@ impl Known {
 
 /// The type of an item in the data: the kind, and where its constraints
 /// are.
+/// What an open type holds: a value of a type, of a member or the members
+/// of a group (as a map).
+enum Open<'a> {
+    Type(TypeId),
+    Member(&'a MemberInfo),
+    Group(&'a [MemberInfo]),
+}
+
 struct Coder<'a> {
     types: &'a Types,
     aligned: bool,
@@ -893,7 +911,7 @@ pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
     Ok(writer.bytes)
 }
 
-pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &'a [u8]) -> Result<Value<'a>> {
     let coder = Coder {
         types,
         aligned: types.codec == Codec::Per,
@@ -1920,7 +1938,7 @@ impl<'a> Coder<'a> {
 
     // Decoding.
 
-    fn decode_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
+    fn decode_type(&self, id: TypeId, r: &mut Reader<'a>, depth: usize) -> Result<Value<'a>> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.", r.position);
         }
@@ -1954,8 +1972,7 @@ impl<'a> Coder<'a> {
                 let length = r.length()?;
                 let bytes = r.octets(length)?;
 
-                ObjectIdentifier::decode(bytes.into_owned(), r.position / 8, false)
-                    .map(Value::ObjectIdentifier)
+                ObjectIdentifier::decode(bytes, r.position / 8, false).map(Value::ObjectIdentifier)
             }
             Kind::Enumerated { root, additions } => {
                 self.decode_enumerated(root, additions.as_deref(), r)
@@ -1986,7 +2003,9 @@ impl<'a> Coder<'a> {
 
                 Ok(Value::DateTime(DateTime { date, time }))
             }
-            Kind::Duration => self.decode_duration(r).map(Value::Text),
+            Kind::Duration => self
+                .decode_duration(r)
+                .map(|text| Value::Text(Cow::Owned(text))),
             Kind::AnyDefinedBy { choices, .. } if !choices.is_empty() => {
                 decode_error("Bad AnyDefinedBy choice.", r.position)
             }
@@ -1997,7 +2016,7 @@ impl<'a> Coder<'a> {
         }
     }
 
-    fn decode_integer(&self, range: Option<Range>, r: &mut Reader<'_>) -> Result<Value<'a>> {
+    fn decode_integer(&self, range: Option<Range>, r: &mut Reader<'a>) -> Result<Value<'a>> {
         if range.is_some_and(|range| range.extensible) && r.bit()? {
             r.align();
 
@@ -2047,7 +2066,7 @@ impl<'a> Coder<'a> {
     fn decode_big_integer(
         &self,
         range: &crate::bigint::BigRange,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
     ) -> Result<Value<'a>> {
         use crate::bigint;
         use num_bigint::{BigInt, BigUint};
@@ -2075,7 +2094,7 @@ impl<'a> Coder<'a> {
         };
         let size = (max - min).magnitude().clone();
         let count = bigint::bits(&size);
-        let get = |r: &mut Reader<'_>, count: usize| -> Result<BigUint> {
+        let get = |r: &mut Reader<'a>, count: usize| -> Result<BigUint> {
             let bytes = r.bits(count)?;
 
             Ok(BigUint::from_bytes_be(&bytes) >> (8 * bytes.len() - count))
@@ -2100,21 +2119,29 @@ impl<'a> Coder<'a> {
         Ok(bigint::to_value(&(min + BigInt::from(offset))))
     }
 
-    fn decode_bit_string(&self, size: Option<Range>, r: &mut Reader<'_>) -> Result<Value<'a>> {
+    fn decode_bit_string(&self, size: Option<Range>, r: &mut Reader<'a>) -> Result<Value<'a>> {
         let size = read_extended(size, r)?;
 
         if is_unbound(size) {
             r.align();
 
-            let mut data = Vec::new();
+            let mut data = Cow::Borrowed(&[][..]);
             let mut total = 0;
 
             loop {
                 let length = r.length()?;
-                let part = r.bits(length)?;
+                let part = r.bit_octets(length)?;
+
+                // Most are a fragment.
+                if total == 0 && length < 16384 {
+                    data = part;
+                    total = length;
+
+                    break;
+                }
 
                 // The parts are whole bytes but for the last.
-                data.extend_from_slice(&part);
+                data.to_mut().extend_from_slice(&part);
                 total += length;
 
                 if length < 16384 {
@@ -2145,12 +2172,12 @@ impl<'a> Coder<'a> {
 
         let bits = bits as usize;
 
-        r.bits(bits).map(|data| Value::Bits(data, bits))
+        r.bit_octets(bits).map(|data| Value::Bits(data, bits))
     }
 
-    fn decode_octet_string(&self, size: Option<Range>, r: &mut Reader<'_>) -> Result<Value<'a>> {
+    fn decode_octet_string(&self, size: Option<Range>, r: &mut Reader<'a>) -> Result<Value<'a>> {
         let size = read_extended(size, r)?;
-        let unbound = |r: &mut Reader<'_>| self.decode_unbound_octets(r).map(Value::Bytes);
+        let unbound = |r: &mut Reader<'a>| self.decode_unbound_octets(r).map(Value::Bytes);
         let Some((min, max)) = size_bounds(size).filter(|_| !is_unbound(size)) else {
             return unbound(r);
         };
@@ -2179,12 +2206,12 @@ impl<'a> Coder<'a> {
             r.align();
         }
 
-        r.bytes(length as usize).map(Value::Bytes)
+        r.octets(length as usize).map(Value::Bytes)
     }
 
     /// The octets of an unconstrained OCTET STRING, in fragments if there
     /// are 16384 or more.
-    fn decode_unbound_octets(&self, r: &mut Reader<'_>) -> Result<Vec<u8>> {
+    fn decode_unbound_octets(&self, r: &mut Reader<'a>) -> Result<Cow<'a, [u8]>> {
         r.align();
 
         let mut data = Vec::new();
@@ -2196,7 +2223,7 @@ impl<'a> Coder<'a> {
 
             // Most are a fragment.
             if data.is_empty() && length < 16384 {
-                return r.octets(length).map(Cow::into_owned);
+                return r.octets(length);
             }
 
             data.extend_from_slice(&r.octets(length)?);
@@ -2206,25 +2233,50 @@ impl<'a> Coder<'a> {
             }
         }
 
-        Ok(data)
+        Ok(Cow::Owned(data))
     }
 
     /// The value of an open type of the type `id`, see `get_open_type`.
-    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
-        self.get_open_type(r, |inner| self.decode_type(id, inner, depth + 1))
+    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'a>, depth: usize) -> Result<Value<'a>> {
+        self.get_open_type(r, Open::Type(id), &[], depth)
     }
 
-    /// What `decode` reads from an open type, see `put_open_type`. It has
-    /// to fill the octets, but for the padding of the last.
-    fn get_open_type<T>(
+    /// What `open` reads from an open type, see `put_open_type`. It has
+    /// to fill the octets, but for the padding of the last. The value
+    /// borrows from the data, but for the octets that are not whole bytes
+    /// of it or are in fragments, which it is decoded from a copy of.
+    fn get_open_type(
         &self,
-        r: &mut Reader<'_>,
-        decode: impl FnOnce(&mut Reader<'_>) -> Result<T>,
-    ) -> Result<T> {
+        r: &mut Reader<'a>,
+        open: Open<'a>,
+        values: &[(Cow<'_, str>, Value<'_>)],
+        depth: usize,
+    ) -> Result<Value<'a>> {
         let offset = r.position;
-        let data = self.decode_unbound_octets(r)?;
+
+        match self.decode_unbound_octets(r)? {
+            Cow::Borrowed(data) => self.decode_open(data, offset, r, open, values, depth),
+            Cow::Owned(data) => self
+                .decode_open(&data, offset, r, open, values, depth)
+                .map(Value::into_owned),
+        }
+    }
+
+    fn decode_open<'d>(
+        &self,
+        data: &'d [u8],
+        offset: usize,
+        r: &mut Reader<'_>,
+        open: Open<'d>,
+        values: &[(Cow<'_, str>, Value<'_>)],
+        depth: usize,
+    ) -> Result<Value<'d>>
+    where
+        'a: 'd,
+    {
+        let coder: &Coder<'d> = self;
         let mut inner = Reader {
-            data: &data,
+            data,
             position: 0,
             aligned: r.aligned,
             budget: r.budget,
@@ -2232,7 +2284,14 @@ impl<'a> Coder<'a> {
         // Where in all of the data, or at the open type if it is in
         // fragments.
         let start = r.position - 8 * data.len();
-        let value = decode(&mut inner).map_err(|error| match error {
+        let value = match open {
+            Open::Type(id) => coder.decode_type(id, &mut inner, depth + 1),
+            Open::Member(member) => coder.decode_member(member, values, &[], &mut inner, depth),
+            Open::Group(group) => coder
+                .decode_root(group.iter(), values, &mut inner, depth)
+                .map(Value::Map),
+        }
+        .map_err(|error| match error {
             Error::Decode(what, at, location) if data.len() < 16384 => {
                 Error::Decode(what, start + at, location)
             }
@@ -2253,19 +2312,19 @@ impl<'a> Coder<'a> {
 
     fn decode_enumerated(
         &self,
-        root: &[(String, i64)],
-        additions: Option<&[(String, i64)]>,
-        r: &mut Reader<'_>,
+        root: &'a [(String, i64)],
+        additions: Option<&'a [(String, i64)]>,
+        r: &mut Reader<'a>,
     ) -> Result<Value<'a>> {
-        let mut sorted: Vec<&(String, i64)> = root.iter().collect();
+        let mut sorted: Vec<&'a (String, i64)> = root.iter().collect();
 
         sorted.sort_by_key(|(_, number)| *number);
 
-        let named = |entry: &(String, i64)| {
+        let named = |entry: &'a (String, i64)| {
             if self.types.numeric_enums {
                 Value::Integer(i128::from(entry.1))
             } else {
-                Value::Text(entry.0.clone())
+                Value::Text(Cow::Borrowed(entry.0.as_str()))
             }
         };
 
@@ -2289,7 +2348,7 @@ impl<'a> Coder<'a> {
     fn decode_choice(
         &self,
         members: &'a Members,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
         let additions = choice_additions(members);
@@ -2356,7 +2415,7 @@ impl<'a> Coder<'a> {
         &self,
         element: TypeId,
         size: Option<Range>,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
         let size = read_extended(size, r)?;
@@ -2415,7 +2474,7 @@ impl<'a> Coder<'a> {
         kind: StrKind,
         size: Option<Range>,
         characters: &Option<Vec<char>>,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
     ) -> Result<Value<'a>> {
         match kind {
             StrKind::Numeric
@@ -2425,39 +2484,36 @@ impl<'a> Coder<'a> {
             | StrKind::Bmp
             | StrKind::Universal => self
                 .decode_known(kind, size, characters, r)
-                .map(Value::Text),
+                .map(|text| Value::Text(Cow::Owned(text))),
             _ => {
                 r.align();
 
-                let multiplier = if kind == StrKind::Universal { 4 } else { 1 };
-                let mut bytes = Vec::new();
+                let mut bytes = Cow::Borrowed(&[][..]);
 
                 loop {
                     let length = r.length()?;
+                    let part = r.octets(length)?;
 
-                    bytes.extend_from_slice(&r.octets(length * multiplier)?);
+                    // Most are a fragment.
+                    if bytes.is_empty() && length < 16384 {
+                        bytes = part;
+
+                        break;
+                    }
+
+                    bytes.to_mut().extend_from_slice(&part);
 
                     if length < 16384 {
                         break;
                     }
                 }
 
-                match kind {
-                    StrKind::Utf8 => core::str::from_utf8(&bytes)
-                        .map(|text| Value::Text(String::from(text)))
-                        .map_err(|_| Error::decode("The string is not UTF-8.", r.position)),
-                    StrKind::Universal => bytes
-                        .chunks(4)
-                        .map(|quad| {
-                            char::from_u32(u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
-                        })
-                        .collect::<Option<String>>()
-                        .map(Value::Text)
-                        .ok_or_else(|| Error::decode("The string is not UTF-32.", r.position)),
-                    _ => Ok(Value::Text(
-                        bytes.iter().map(|byte| char::from(*byte)).collect(),
-                    )),
+                match bytes {
+                    Cow::Borrowed(bytes) => crate::ber::string_text(kind, bytes, r.position),
+                    Cow::Owned(bytes) => crate::ber::string_text(kind, &bytes, r.position)
+                        .map(|text| Cow::Owned(text.into_owned())),
                 }
+                .map(Value::Text)
             }
         }
     }
@@ -2467,13 +2523,13 @@ impl<'a> Coder<'a> {
         kind: StrKind,
         size: Option<Range>,
         characters: &Option<Vec<char>>,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
     ) -> Result<String> {
         let known = Known::new(kind, characters, self.aligned);
         let size = read_extended(size, r)?;
 
         let mut text = String::new();
-        let get = |r: &mut Reader<'_>, count: usize, text: &mut String| -> Result<()> {
+        let get = |r: &mut Reader<'a>, count: usize, text: &mut String| -> Result<()> {
             r.spend(count)?;
 
             for _ in 0..count {
@@ -2532,7 +2588,7 @@ impl<'a> Coder<'a> {
         Ok(text)
     }
 
-    fn get_range(&self, min: i128, max: i128, r: &mut Reader<'_>) -> Result<i128> {
+    fn get_range(&self, min: i128, max: i128, r: &mut Reader<'a>) -> Result<i128> {
         let count = bits_of((max - min) as u128);
 
         if self.aligned {
@@ -2542,7 +2598,7 @@ impl<'a> Coder<'a> {
         }
     }
 
-    fn decode_date(&self, r: &mut Reader<'_>) -> Result<Date> {
+    fn decode_date(&self, r: &mut Reader<'a>) -> Result<Date> {
         let index = r.uint(2)?;
         let year = match index {
             0 => self.get_range(2005, 2020, r)?,
@@ -2567,7 +2623,7 @@ impl<'a> Coder<'a> {
         })
     }
 
-    fn decode_time_of_day(&self, r: &mut Reader<'_>) -> Result<Time> {
+    fn decode_time_of_day(&self, r: &mut Reader<'a>) -> Result<Time> {
         let hour = self.get_range(0, 24, r)?;
         let minute = self.get_range(0, 59, r)?;
         let second = self.get_range(0, 60, r)?;
@@ -2588,7 +2644,7 @@ impl<'a> Coder<'a> {
         &self,
         min: i128,
         max: i128,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
     ) -> Result<Value<'static>> {
         if !r.bit()? {
             return self.get_range(min, max, r).map(Value::Integer);
@@ -2611,7 +2667,7 @@ impl<'a> Coder<'a> {
         }
     }
 
-    fn decode_duration(&self, r: &mut Reader<'_>) -> Result<String> {
+    fn decode_duration(&self, r: &mut Reader<'a>) -> Result<String> {
         let has_years = r.bit()?;
         let has_months = r.bit()?;
         let has_weeks = r.bit()?;
@@ -2653,7 +2709,7 @@ impl<'a> Coder<'a> {
         &self,
         members: &'a Members,
         is_set: bool,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
         let has_additions = members.additions.is_some() && r.bit()?;
@@ -2680,7 +2736,7 @@ impl<'a> Coder<'a> {
         &self,
         root: I,
         before: &[(Cow<'_, str>, Value<'_>)],
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Vec<(Cow<'a, str>, Value<'a>)>>
     where
@@ -2707,7 +2763,7 @@ impl<'a> Coder<'a> {
 
                 values.push((Cow::Borrowed(member.name.as_str()), value));
             } else if let Some(default) = &member.default {
-                values.push((Cow::Borrowed(member.name.as_str()), default.clone()));
+                values.push((Cow::Borrowed(member.name.as_str()), default.reborrow()));
             }
         }
 
@@ -2722,7 +2778,7 @@ impl<'a> Coder<'a> {
         member: &MemberInfo,
         values: &[(Cow<'_, str>, Value<'_>)],
         before: &[(Cow<'_, str>, Value<'_>)],
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
         match self
@@ -2740,7 +2796,7 @@ impl<'a> Coder<'a> {
         &self,
         additions: &'a [Addition],
         values: &mut Vec<(Cow<'a, str>, Value<'a>)>,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<()> {
         let length = r.normally_small_length()?;
@@ -2755,16 +2811,14 @@ impl<'a> Coder<'a> {
 
             match additions.get(index) {
                 Some(Addition::Group(group)) => {
-                    let decoded = self.get_open_type(r, |inner| {
-                        self.decode_root(group.iter(), values, inner, depth)
-                    })?;
+                    let decoded = self.get_open_type(r, Open::Group(group), values, depth)?;
 
-                    values.extend(decoded);
+                    if let Value::Map(decoded) = decoded {
+                        values.extend(decoded);
+                    }
                 }
                 Some(Addition::Member(member)) => {
-                    let value = self.get_open_type(r, |inner| {
-                        self.decode_member(member, values, &[], inner, depth)
-                    })?;
+                    let value = self.get_open_type(r, Open::Member(member), values, depth)?;
 
                     values.push((Cow::Borrowed(member.name.as_str()), value));
                 }

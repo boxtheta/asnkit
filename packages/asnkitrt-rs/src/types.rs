@@ -1706,7 +1706,7 @@ fn bits_of(bits: &str) -> Option<Value<'static>> {
         }
     }
 
-    Some(Value::Bits(bytes, bits.len()))
+    Some(Value::Bits(Cow::Owned(bytes), bits.len()))
 }
 
 /// The two's complement of an integer given as its sign and the bytes of
@@ -1763,20 +1763,24 @@ fn default_value(types: &Types, ty: TypeId, constant: &Const) -> Result<Option<V
                     .find(|(candidate, _)| candidate == name)
                     .map(|(_, number)| Value::Integer(i128::from(*number)))
             } else {
-                Some(Value::Text(name.clone()))
+                Some(Value::Text(Cow::Owned(name.clone())))
             }
         }
-        (Kind::OctetString, Const::Hex(digits)) => hex_digits(digits).map(Value::Bytes),
+        (Kind::OctetString, Const::Hex(digits)) => {
+            hex_digits(digits).map(|bytes| Value::Bytes(Cow::Owned(bytes)))
+        }
         (Kind::BitString(_), Const::Binary(bits)) => bits_of(bits),
         (Kind::BitString(_), Const::Hex(digits)) => {
-            hex_digits(digits).map(|bytes| Value::Bits(bytes, digits.len() * 4))
+            hex_digits(digits).map(|bytes| Value::Bits(Cow::Owned(bytes), digits.len() * 4))
         }
         (_, Const::Bool(value)) => Some(Value::Boolean(*value)),
         (_, Const::Real(value)) => Some(Value::Real(*value)),
         (Kind::ObjectIdentifier, Const::Text(text)) => {
             text.parse().ok().map(Value::ObjectIdentifier)
         }
-        (_, Const::Text(text) | Const::Identifier(text)) => Some(Value::Text(text.clone())),
+        (_, Const::Text(text) | Const::Identifier(text)) => {
+            Some(Value::Text(Cow::Owned(text.clone())))
+        }
         // The value of an alternative, a member or an item is one of its
         // own type.
         (Kind::Choice(members), Const::Named(name, value)) => {

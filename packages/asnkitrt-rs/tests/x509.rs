@@ -197,8 +197,8 @@ fn extensions() {
                 .unwrap_or_else(|e| panic!("{name} {type_name}: {e}"));
 
             assert_eq!(
-                &der.encode(type_name, &decoded).unwrap(),
-                value,
+                der.encode(type_name, &decoded).unwrap(),
+                &value[..],
                 "{name} {type_name}"
             );
         }

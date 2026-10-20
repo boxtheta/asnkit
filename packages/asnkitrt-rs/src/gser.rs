@@ -677,18 +677,18 @@ impl<'a, 't> Decoder<'a, 't> {
                         self.expect(",")?;
                     }
                 }
-                Ok(Value::Bits(bytes, bits))
+                Ok(Value::Bits(Cow::Owned(bytes), bits))
             }
             Kind::BitString(_) => {
                 let (bytes, bits, _) = self.literal()?;
-                Ok(Value::Bits(bytes, bits))
+                Ok(Value::Bits(Cow::Owned(bytes), bits))
             }
             Kind::OctetString | Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
                 let (bytes, _, radix) = self.literal()?;
                 if radix != 16 {
                     return self.error("Expected a hexadecimal octet string.");
                 }
-                Ok(Value::Bytes(bytes))
+                Ok(Value::Bytes(Cow::Owned(bytes)))
             }
             Kind::ObjectIdentifier => {
                 let token = self.token()?;
@@ -706,7 +706,7 @@ impl<'a, 't> Decoder<'a, 't> {
                     Err(_) => self.error("An arc of an OBJECT IDENTIFIER is too large."),
                 }
             }
-            Kind::Str(_) => Ok(Value::Text(self.string()?)),
+            Kind::Str(_) => Ok(Value::Text(Cow::Owned(self.string()?))),
             Kind::Enumerated { root, additions } => {
                 let token = self.token()?;
                 let Some((name, number)) = names(root, additions).find(|(name, _)| name == token)
@@ -716,7 +716,7 @@ impl<'a, 't> Decoder<'a, 't> {
                 Ok(if self.types.numeric_enums {
                     Value::Integer(i128::from(*number))
                 } else {
-                    Value::Text(name.clone())
+                    Value::Text(Cow::Borrowed(name))
                 })
             }
             Kind::Sequence(members) | Kind::Set(members) | Kind::External(members) => {
@@ -769,7 +769,7 @@ impl<'a, 't> Decoder<'a, 't> {
                     Kind::Date => iso::date_from_string(&text).map(Value::Date),
                     Kind::TimeOfDay => iso::time_from_string(&text).map(Value::Time),
                     Kind::DateTime => iso::date_time_from_string(&text).map(Value::DateTime),
-                    _ => time::validate_duration(&text).map(|()| Value::Text(text)),
+                    _ => time::validate_duration(&text).map(|()| Value::Text(Cow::Owned(text))),
                 };
                 result.map_err(|_| Error::decode("Expected a valid date, time or duration.", start))
             }
@@ -926,7 +926,7 @@ impl<'a, 't> Decoder<'a, 't> {
         addition: bool,
     ) -> Result<()> {
         if let Some(default) = &member.default {
-            map.push((Cow::Borrowed(member.name.as_str()), default.clone()));
+            map.push((Cow::Borrowed(member.name.as_str()), default.reborrow()));
         } else if !member.optional && !addition {
             return Err(
                 Error::decode("A required member is missing.", self.pos).in_member(&member.name)

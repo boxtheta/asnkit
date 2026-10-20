@@ -191,7 +191,7 @@ fn open_type_choice_retains_raw_bytes() {
     let asni = container(INTEGER, &config("M.T", "payload", "'1' = 'OpenType'"));
     let spec =
         Specification::from_asni(&asni, &Checks::default(), Options::new(Codec::Der)).unwrap();
-    let value = message(Value::Integer(1), Value::Bytes(vec![5, 0]));
+    let value = message(Value::Integer(1), Value::Bytes(vec![5, 0].into()));
     assert_eq!(
         spec.decode("T", &spec.encode("T", &value).unwrap())
             .unwrap(),

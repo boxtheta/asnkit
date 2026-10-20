@@ -506,7 +506,7 @@ impl<'a> Coder<'a> {
                     }
                 }
 
-                Ok(Value::Bits(bytes, text.len()))
+                Ok(Value::Bits(Cow::Owned(bytes), text.len()))
             }
             // An `xmlhstring` may have space in it (X.680 12.12), and an
             // odd number of digits is ended by a zero (X.680 22.3).
@@ -524,7 +524,7 @@ impl<'a> Coder<'a> {
                 }
 
                 match decimal::hex_decode(&text) {
-                    Some(bytes) => Ok(Value::Bytes(bytes)),
+                    Some(bytes) => Ok(Value::Bytes(Cow::Owned(bytes))),
                     None => decode_error("Expected hex."),
                 }
             }
@@ -532,7 +532,9 @@ impl<'a> Coder<'a> {
                 Ok(oid) => Ok(Value::ObjectIdentifier(oid)),
                 Err(_) => decode_error("Expected an OBJECT IDENTIFIER."),
             },
-            Kind::Str(_) => self.string(element).map(Value::Text),
+            Kind::Str(_) => self
+                .string(element)
+                .map(|text| Value::Text(Cow::Owned(text))),
             Kind::Enumerated { root, additions } => {
                 let Some(inner) = element.children.first() else {
                     return decode_error("Expected an enumeration value.");
@@ -563,7 +565,7 @@ impl<'a> Coder<'a> {
                         None if member.optional => {}
                         None => match &member.default {
                             Some(default) => {
-                                map.push((Cow::Borrowed(member.name.as_str()), default.clone()))
+                                map.push((Cow::Borrowed(member.name.as_str()), default.reborrow()))
                             }
                             None => return decode_error("A member is not found in the element."),
                         },

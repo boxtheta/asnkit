@@ -206,19 +206,19 @@ pub fn to_value(json: &Json) -> Value<'static> {
                 big_integer(&text)
             }
         }
-        Json::String(text) => Value::Text(text.clone()),
+        Json::String(text) => Value::Text(text.clone().into()),
         Json::Array(items) => Value::List(items.iter().map(to_value).collect()),
         Json::Object(members) => {
             if members.len() == 1 {
                 let (key, value) = members.iter().next().unwrap();
 
                 match key.as_str() {
-                    "$bytes" => return Value::Bytes(hex(value.as_str().unwrap())),
+                    "$bytes" => return Value::Bytes(hex(value.as_str().unwrap()).into()),
                     "$bits" => {
                         let parts = value.as_array().unwrap();
 
                         return Value::Bits(
-                            hex(parts[0].as_str().unwrap()),
+                            hex(parts[0].as_str().unwrap()).into(),
                             parts[1].as_u64().unwrap() as usize,
                         );
                     }
@@ -356,7 +356,7 @@ pub fn to_json(value: &Value) -> Json {
                 Json::Number(serde_json::Number::from_f64(*value).unwrap())
             }
         }
-        Value::Text(text) => Json::String(text.clone()),
+        Value::Text(text) => Json::String(text.to_string()),
         // An OBJECT IDENTIFIER is text in the JSON, as in Python.
         Value::ObjectIdentifier(oid) => Json::String(oid.to_string()),
         Value::Bytes(bytes) => tagged("$bytes", hex_of(bytes).into()),
@@ -470,7 +470,7 @@ pub fn perform<'a>(spec: &'a Specification, vector: &Json) -> Result<Done<'a>, a
         }
         .map(Done::Encoded)
     } else {
-        let decoded = spec.decode(name, &hex(vector["encoded"].as_str().unwrap()))?;
+        let decoded = spec.decode_owned(name, &hex(vector["encoded"].as_str().unwrap()))?;
 
         if check {
             spec.check_constraints(name, &decoded)?;

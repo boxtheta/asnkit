@@ -44,12 +44,14 @@ pub struct DateTime {
 
 /// A value of an ASN.1 type.
 ///
-/// The names of the members of a map and of the alternative of a choice
-/// are borrowed for `'a`: a decoder borrows them from the
-/// [`Specification`](crate::runtime::Specification), and a caller
-/// building a value writes `("id".into(), …)`, which borrows a `&str` or
-/// takes a `String`. [`Value::into_owned`] makes a value that borrows
-/// nothing, to keep it past what it borrows from.
+/// The names of the members of a map and of the alternative of a choice,
+/// texts, bytes, bits and object identifiers are borrowed for `'a`. A
+/// decoder borrows the names from the
+/// [`Specification`](crate::runtime::Specification), and the rest from
+/// the data where its encoding is the value. A caller building a value
+/// writes `("id".into(), …)` or `Value::Text("…".into())`, which borrows
+/// a `&str` or takes a `String`. [`Value::into_owned`] makes a value that
+/// borrows nothing, to keep it past what it borrows from.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value<'a> {
     /// NULL. Also what an unknown value of an extensible ENUMERATED is.
@@ -64,13 +66,13 @@ pub enum Value<'a> {
     Real(f64),
     /// A character string, and an ENUMERATED by name. (With
     /// `numeric_enums` it is an `Integer`.)
-    Text(String),
+    Text(Cow<'a, str>),
     /// OBJECT IDENTIFIER. The runtime for Python has it as a `str`.
     ObjectIdentifier(ObjectIdentifier<'a>),
     /// OCTET STRING.
-    Bytes(Vec<u8>),
+    Bytes(Cow<'a, [u8]>),
     /// BIT STRING: its bytes, and how many bits of them there are.
-    Bits(Vec<u8>, usize),
+    Bits(Cow<'a, [u8]>, usize),
     /// SEQUENCE OF and SET OF.
     List(Vec<Value<'a>>),
     /// SEQUENCE and SET: the members that are there.
@@ -83,8 +85,9 @@ pub enum Value<'a> {
 }
 
 impl<'a> Value<'a> {
+    /// A text, copied: `Value::Text(text.into())` borrows it instead.
     pub fn text(text: &str) -> Value<'a> {
-        Value::Text(String::from(text))
+        Value::Text(Cow::Owned(String::from(text)))
     }
 
     /// The same value, borrowing nothing.
@@ -95,10 +98,10 @@ impl<'a> Value<'a> {
             Value::Integer(value) => Value::Integer(value),
             Value::BigInteger(bytes) => Value::BigInteger(bytes),
             Value::Real(value) => Value::Real(value),
-            Value::Text(text) => Value::Text(text),
+            Value::Text(text) => Value::Text(Cow::Owned(text.into_owned())),
             Value::ObjectIdentifier(oid) => Value::ObjectIdentifier(oid.into_owned()),
-            Value::Bytes(bytes) => Value::Bytes(bytes),
-            Value::Bits(bytes, bits) => Value::Bits(bytes, bits),
+            Value::Bytes(bytes) => Value::Bytes(Cow::Owned(bytes.into_owned())),
+            Value::Bits(bytes, bits) => Value::Bits(Cow::Owned(bytes.into_owned()), bits),
             Value::List(items) => Value::List(items.into_iter().map(Value::into_owned).collect()),
             Value::Map(members) => Value::Map(
                 members
@@ -112,6 +115,35 @@ impl<'a> Value<'a> {
             Value::DateTime(value) => Value::DateTime(value),
             Value::Date(value) => Value::Date(value),
             Value::Time(value) => Value::Time(value),
+        }
+    }
+
+    /// The same value, borrowing its names, texts and bytes from this
+    /// one. It is a copy that allocates only lists and maps.
+    pub fn reborrow(&self) -> Value<'_> {
+        match self {
+            Value::Null => Value::Null,
+            Value::Boolean(value) => Value::Boolean(*value),
+            Value::Integer(value) => Value::Integer(*value),
+            Value::BigInteger(bytes) => Value::BigInteger(bytes.clone()),
+            Value::Real(value) => Value::Real(*value),
+            Value::Text(text) => Value::Text(Cow::Borrowed(text)),
+            Value::ObjectIdentifier(oid) => Value::ObjectIdentifier(oid.reborrow()),
+            Value::Bytes(bytes) => Value::Bytes(Cow::Borrowed(bytes)),
+            Value::Bits(bytes, bits) => Value::Bits(Cow::Borrowed(bytes), *bits),
+            Value::List(items) => Value::List(items.iter().map(Value::reborrow).collect()),
+            Value::Map(members) => Value::Map(
+                members
+                    .iter()
+                    .map(|(name, value)| (Cow::Borrowed(name.as_ref()), value.reborrow()))
+                    .collect(),
+            ),
+            Value::Choice(name, value) => {
+                Value::Choice(Cow::Borrowed(name), Box::new(value.reborrow()))
+            }
+            Value::DateTime(value) => Value::DateTime(*value),
+            Value::Date(value) => Value::Date(*value),
+            Value::Time(value) => Value::Time(*value),
         }
     }
 
@@ -268,6 +300,11 @@ impl<'a> ObjectIdentifier<'a> {
     /// The same OBJECT IDENTIFIER, borrowing nothing.
     pub fn into_owned(self) -> ObjectIdentifier<'static> {
         ObjectIdentifier(Cow::Owned(self.0.into_owned()))
+    }
+
+    /// The same OBJECT IDENTIFIER, borrowing its bytes from this one.
+    pub fn reborrow(&self) -> ObjectIdentifier<'_> {
+        ObjectIdentifier(Cow::Borrowed(&self.0))
     }
 
     /// The arcs, of which there are at least two.
@@ -501,6 +538,50 @@ mod tests {
     use super::*;
     use alloc::format;
     use alloc::string::ToString;
+
+    #[test]
+    fn a_reborrowed_value_borrows_all_it_can() {
+        let value = Value::Map(alloc::vec![
+            ("name".to_string().into(), Value::text("text")),
+            (
+                "list".into(),
+                Value::List(alloc::vec![
+                    Value::Bytes(alloc::vec![1, 2].into()),
+                    Value::Bits(alloc::vec![0x80].into(), 1),
+                ]),
+            ),
+            (
+                "choice".into(),
+                Value::Choice(
+                    "oid".to_string().into(),
+                    Box::new(Value::ObjectIdentifier("1.2.3".parse().unwrap())),
+                ),
+            ),
+        ]);
+        let again = value.reborrow();
+
+        assert_eq!(again, value);
+
+        let Value::Map(members) = &again else {
+            panic!()
+        };
+        let Value::List(items) = &members[1].1 else {
+            panic!()
+        };
+        let Value::Choice(name, oid) = &members[2].1 else {
+            panic!()
+        };
+        let Value::ObjectIdentifier(oid) = &**oid else {
+            panic!()
+        };
+
+        assert!(matches!(members[0].0, Cow::Borrowed(_)));
+        assert!(matches!(members[0].1, Value::Text(Cow::Borrowed(_))));
+        assert!(matches!(items[0], Value::Bytes(Cow::Borrowed(_))));
+        assert!(matches!(items[1], Value::Bits(Cow::Borrowed(_), 1)));
+        assert!(matches!(name, Cow::Borrowed(_)));
+        assert!(matches!(oid.clone().into_bytes(), Cow::Borrowed(_)));
+    }
 
     #[test]
     fn twos_complement() {

@@ -437,11 +437,11 @@ impl<'a> Coder<'a> {
                     return decode_error("The length of a BIT STRING is not that of its value.");
                 }
 
-                Ok(Value::Bits(bytes, bits))
+                Ok(Value::Bits(Cow::Owned(bytes), bits))
             }
             Kind::OctetString => match json {
                 Json::Str(hex) => match decimal::hex_decode(hex) {
-                    Some(bytes) => Ok(Value::Bytes(bytes)),
+                    Some(bytes) => Ok(Value::Bytes(Cow::Owned(bytes))),
                     None => decode_error("Expected hex."),
                 },
                 _ => decode_error("Expected a JSON string."),
@@ -454,7 +454,7 @@ impl<'a> Coder<'a> {
                 _ => decode_error("Expected a JSON string."),
             },
             Kind::Str(_) => match json {
-                Json::Str(text) => Ok(Value::Text(text.clone())),
+                Json::Str(text) => Ok(Value::Text(Cow::Owned(text.clone()))),
                 _ => decode_error("Expected a JSON string."),
             },
             Kind::Enumerated { root, additions } => {
@@ -465,7 +465,7 @@ impl<'a> Coder<'a> {
                             if self.types.numeric_enums {
                                 Value::Integer(i128::from(*number))
                             } else {
-                                Value::Text(name.clone())
+                                Value::Text(Cow::Borrowed(name))
                             }
                         }),
                     _ => None,
@@ -525,7 +525,7 @@ impl<'a> Coder<'a> {
                 Json::Str(text) => {
                     time::validate_duration(text)
                         .map_err(|_| Error::decode("Invalid DURATION.", 0))?;
-                    Ok(Value::Text(text.clone()))
+                    Ok(Value::Text(Cow::Owned(text.clone())))
                 }
                 _ => decode_error("Expected a JSON string."),
             },
@@ -606,7 +606,7 @@ impl<'a> Coder<'a> {
         if member.optional {
             Ok(())
         } else if let Some(default) = &member.default {
-            map.push((Cow::Borrowed(member.name.as_str()), default.clone()));
+            map.push((Cow::Borrowed(member.name.as_str()), default.reborrow()));
 
             Ok(())
         } else {

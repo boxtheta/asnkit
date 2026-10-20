@@ -300,7 +300,7 @@ impl<'a> Converter<'a> {
             Kind::BitString(_) => match value.pair() {
                 Some((bytes, bits)) => match (bytes, bits.as_f64()) {
                     (Js::Bytes(bytes), Some(bits)) if bits >= 0.0 && bits.fract() == 0.0 => {
-                        Ok(Value::Bits(bytes.to_vec(), bits as usize))
+                        Ok(Value::Bits(bytes.to_vec().into(), bits as usize))
                     }
                     _ => Err("Expected a BIT STRING as [Uint8Array, number of bits].".into()),
                 },
@@ -435,8 +435,8 @@ impl<'a> Converter<'a> {
             Js::Boolean(boolean) => Ok(Value::Boolean(*boolean)),
             Js::Number(number) => Ok(number_to_value(*number)),
             Js::BigInt(text) => bigint_to_value(text),
-            Js::Text(text) => Ok(Value::Text(text.to_string())),
-            Js::Bytes(bytes) => Ok(Value::Bytes(bytes.to_vec())),
+            Js::Text(text) => Ok(Value::Text(text.to_string().into())),
+            Js::Bytes(bytes) => Ok(Value::Bytes(bytes.to_vec().into())),
             Js::Array(items) => items
                 .iter()
                 .map(|item| self.untyped(item, depth + 1))

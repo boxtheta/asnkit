@@ -39,7 +39,7 @@ pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
 pub fn decode_with_length<'a>(
     types: &'a Types,
     id: TypeId,
-    data: &[u8],
+    data: &'a [u8],
 ) -> Result<(Value<'a>, usize)> {
     match Coder::new(types).decode_type(id, data, 0, None, 0)? {
         Some(decoded) => Ok(decoded),
@@ -48,7 +48,7 @@ pub fn decode_with_length<'a>(
 }
 
 /// Decodes the type `id` from `data`, which is all of it.
-pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &'a [u8]) -> Result<Value<'a>> {
     let (value, length) = decode_with_length(types, id, data)?;
 
     if length != data.len() {
@@ -330,24 +330,25 @@ pub(crate) fn bmp_text(bytes: &[u8], offset: usize) -> Result<String> {
         .ok_or_else(|| Error::decode("The string is not a BMPString.", offset))
 }
 
-fn string_text(kind: StrKind, bytes: &[u8], offset: usize) -> Result<String> {
+/// The text of a string from its bytes, borrowed where they are its
+/// UTF-8: a UTF8String, and the others when they are ASCII.
+pub(crate) fn string_text(kind: StrKind, bytes: &[u8], offset: usize) -> Result<Cow<'_, str>> {
     match kind {
         StrKind::Utf8 => core::str::from_utf8(bytes)
-            .map(String::from)
+            .map(Cow::Borrowed)
             .map_err(|_| Error::decode("The string is not UTF-8.", offset)),
         StrKind::Numeric | StrKind::Printable | StrKind::Ia5 | StrKind::Visible => {
-            if bytes.is_ascii() {
-                Ok(bytes.iter().map(|byte| char::from(*byte)).collect())
-            } else {
-                decode_error("The string is not ASCII.", offset)
-            }
+            ascii(bytes, offset).map(Cow::Borrowed)
         }
         StrKind::General
         | StrKind::Graphic
         | StrKind::ObjectDescriptor
         | StrKind::Teletex
-        | StrKind::Videotex => Ok(bytes.iter().map(|byte| char::from(*byte)).collect()),
-        StrKind::Bmp => bmp_text(bytes, offset),
+        | StrKind::Videotex => Ok(match ascii(bytes, offset) {
+            Ok(text) => Cow::Borrowed(text),
+            Err(_) => Cow::Owned(bytes.iter().map(|byte| char::from(*byte)).collect()),
+        }),
+        StrKind::Bmp => bmp_text(bytes, offset).map(Cow::Owned),
         StrKind::Universal => {
             if !bytes.len().is_multiple_of(4) {
                 return decode_error("The string is not UTF-32.", offset);
@@ -359,6 +360,7 @@ fn string_text(kind: StrKind, bytes: &[u8], offset: usize) -> Result<String> {
                     char::from_u32(u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
                 })
                 .collect::<Option<String>>()
+                .map(Cow::Owned)
                 .ok_or_else(|| Error::decode("The string is not UTF-32.", offset))
         }
     }
@@ -954,7 +956,7 @@ impl<'a> Coder<'a> {
                 let (bytes, bits) = if self.der && !named.is_empty() {
                     clean_bits(bytes, *bits, true)
                 } else {
-                    (bytes.clone(), *bits)
+                    (Vec::from(&bytes[..]), *bits)
                 };
                 let whole = bits / 8;
                 let rest = bits % 8;
@@ -972,7 +974,7 @@ impl<'a> Coder<'a> {
                 Ok(out)
             }
             Kind::OctetString => match value {
-                Value::Bytes(bytes) => Ok(bytes.clone()),
+                Value::Bytes(bytes) => Ok(Vec::from(&bytes[..])),
                 _ => encode_error("Expected data of type bytes or bytearray."),
             },
             Kind::ObjectIdentifier => match value {
@@ -1033,7 +1035,7 @@ impl<'a> Coder<'a> {
                     let canonical = if self.der {
                         time::duration_to_canonical(text)?
                     } else {
-                        text.clone()
+                        String::from(&text[..])
                     };
                     Ok(canonical.as_bytes()[1..].to_vec())
                 }
@@ -1220,7 +1222,7 @@ impl<'a> Coder<'a> {
     fn decode_type(
         &self,
         id: TypeId,
-        data: &[u8],
+        data: &'a [u8],
         offset: usize,
         siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         depth: usize,
@@ -1247,7 +1249,7 @@ impl<'a> Coder<'a> {
         &self,
         tags: &[WireTag],
         concrete: TypeId,
-        data: &[u8],
+        data: &'a [u8],
         offset: usize,
         siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         outer: bool,
@@ -1345,7 +1347,7 @@ impl<'a> Coder<'a> {
     fn decode_untagged(
         &self,
         kind: &'a Kind,
-        data: &[u8],
+        data: &'a [u8],
         offset: usize,
         siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         depth: usize,
@@ -1407,12 +1409,12 @@ impl<'a> Coder<'a> {
         }
     }
 
-    fn decode_any(&self, data: &[u8], offset: usize) -> Result<(Value<'a>, usize)> {
+    fn decode_any(&self, data: &'a [u8], offset: usize) -> Result<(Value<'a>, usize)> {
         let start = skip_tag(data, offset)?;
         let (length, start) = read_length(data, start, true, false)?;
         let end = start + length.unwrap_or(0);
 
-        Ok((Value::Bytes(Vec::from(&data[offset..end])), end))
+        Ok((Value::Bytes(Cow::Borrowed(&data[offset..end])), end))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1420,7 +1422,7 @@ impl<'a> Coder<'a> {
         &self,
         kind: &'a Kind,
         id: TypeId,
-        data: &[u8],
+        data: &'a [u8],
         offset: usize,
         length: usize,
         siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
@@ -1456,9 +1458,9 @@ impl<'a> Coder<'a> {
                 Ok(Value::Null)
             }
             Kind::BitString(named) => self.decode_bit_string(contents, !named.is_empty(), offset),
-            Kind::OctetString => Ok(Value::Bytes(Vec::from(contents))),
+            Kind::OctetString => Ok(Value::Bytes(Cow::Borrowed(contents))),
             Kind::ObjectIdentifier => {
-                ObjectIdentifier::decode(Vec::from(contents), offset, self.strict)
+                ObjectIdentifier::decode(Cow::Borrowed(contents), offset, self.strict)
                     .map(Value::ObjectIdentifier)
             }
             Kind::Enumerated { root, additions } => {
@@ -1478,7 +1480,7 @@ impl<'a> Coder<'a> {
 
                         Ok(Value::Integer(number))
                     }
-                    Some((name, _)) => Ok(Value::Text(name.clone())),
+                    Some((name, _)) => Ok(Value::Text(Cow::Borrowed(name))),
                     None if additions.is_some() => Ok(Value::Null),
                     None => decode_error("Expected an enumeration value.", offset),
                 }
@@ -1536,7 +1538,7 @@ impl<'a> Coder<'a> {
                         return decode_error("The DURATION is not in canonical form.", offset);
                     }
                 }
-                Ok(Value::Text(text))
+                Ok(Value::Text(Cow::Owned(text)))
             }
             Kind::Choice(_)
             | Kind::Any
@@ -1565,7 +1567,12 @@ impl<'a> Coder<'a> {
         Ok(())
     }
 
-    fn decode_bit_string(&self, contents: &[u8], named: bool, offset: usize) -> Result<Value<'a>> {
+    fn decode_bit_string(
+        &self,
+        contents: &'a [u8],
+        named: bool,
+        offset: usize,
+    ) -> Result<Value<'a>> {
         let Some((&unused, bytes)) = contents.split_first() else {
             return decode_error("Expected at least one byte of a BIT STRING.", offset);
         };
@@ -1596,14 +1603,14 @@ impl<'a> Coder<'a> {
             }
         }
 
-        Ok(Value::Bits(Vec::from(bytes), bits))
+        Ok(Value::Bits(Cow::Borrowed(bytes), bits))
     }
 
     /// A string in parts, the way BER allows.
     fn decode_constructed(
         &self,
         kind: &'a Kind,
-        data: &[u8],
+        data: &'a [u8],
         start: usize,
         length: Option<usize>,
         depth: usize,
@@ -1684,7 +1691,7 @@ impl<'a> Coder<'a> {
                     Kind::BitString(named) => {
                         self.decode_bit_string(contents, !named.is_empty(), inner_start)?
                     }
-                    _ => Value::Bytes(Vec::from(contents)),
+                    _ => Value::Bytes(Cow::Borrowed(contents)),
                 });
                 at = inner_start + inner_length;
             }
@@ -1702,7 +1709,7 @@ impl<'a> Coder<'a> {
                     }
                 }
 
-                Value::Bits(bytes, bits)
+                Value::Bits(Cow::Owned(bytes), bits)
             }
             Kind::Str(string) => {
                 let mut bytes = Vec::new();
@@ -1713,7 +1720,9 @@ impl<'a> Coder<'a> {
                     }
                 }
 
-                Value::Text(string_text(*string, &bytes, start)?)
+                Value::Text(Cow::Owned(
+                    string_text(*string, &bytes, start)?.into_owned(),
+                ))
             }
             _ => {
                 let mut bytes = Vec::new();
@@ -1724,7 +1733,7 @@ impl<'a> Coder<'a> {
                     }
                 }
 
-                Value::Bytes(bytes)
+                Value::Bytes(Cow::Owned(bytes))
             }
         };
 
@@ -1737,7 +1746,7 @@ impl<'a> Coder<'a> {
         &self,
         element: TypeId,
         is_set: bool,
-        data: &[u8],
+        data: &'a [u8],
         offset: usize,
         end: Option<usize>,
         depth: usize,
@@ -1804,7 +1813,7 @@ impl<'a> Coder<'a> {
         &self,
         members: &'a Members,
         is_set: bool,
-        data: &[u8],
+        data: &'a [u8],
         offset: usize,
         end: Option<usize>,
         depth: usize,
@@ -1902,7 +1911,7 @@ impl<'a> Coder<'a> {
         members: I,
         additions_from: usize,
         by_tags: bool,
-        data: &[u8],
+        data: &'a [u8],
         offset: usize,
         end: Option<usize>,
         values: &mut Vec<(Cow<'a, str>, Value<'a>)>,
@@ -1982,7 +1991,7 @@ impl<'a> Coder<'a> {
             }
 
             if let Some(default) = &member.default {
-                values.push((Cow::Borrowed(member.name.as_str()), default.clone()));
+                values.push((Cow::Borrowed(member.name.as_str()), default.reborrow()));
             } else if index >= additions_from {
                 break;
             } else if out_of_data {

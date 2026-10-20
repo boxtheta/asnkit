@@ -549,19 +549,19 @@ impl<'de, 'a> de::Deserialize<'de> for Value<'a> {
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Value<'a>, E> {
-                Ok(Value::Text(value.to_string()))
+                Ok(Value::Text(Cow::Owned(value.to_string())))
             }
 
             fn visit_string<E>(self, value: String) -> Result<Value<'a>, E> {
-                Ok(Value::Text(value))
+                Ok(Value::Text(Cow::Owned(value)))
             }
 
             fn visit_bytes<E>(self, value: &[u8]) -> Result<Value<'a>, E> {
-                Ok(Value::Bytes(Vec::from(value)))
+                Ok(Value::Bytes(Cow::Owned(Vec::from(value))))
             }
 
             fn visit_byte_buf<E>(self, value: Vec<u8>) -> Result<Value<'a>, E> {
-                Ok(Value::Bytes(value))
+                Ok(Value::Bytes(Cow::Owned(value)))
             }
 
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Value<'a>, A::Error> {
@@ -702,15 +702,15 @@ impl ser::Serializer for ValueSerializer {
     }
 
     fn serialize_char(self, value: char) -> Result<Value<'static>, Error> {
-        Ok(Value::Text(value.to_string()))
+        Ok(Value::Text(Cow::Owned(value.to_string())))
     }
 
     fn serialize_str(self, value: &str) -> Result<Value<'static>, Error> {
-        Ok(Value::Text(value.to_string()))
+        Ok(Value::Text(Cow::Owned(value.to_string())))
     }
 
     fn serialize_bytes(self, value: &[u8]) -> Result<Value<'static>, Error> {
-        Ok(Value::Bytes(Vec::from(value)))
+        Ok(Value::Bytes(Cow::Owned(Vec::from(value))))
     }
 
     fn serialize_none(self) -> Result<Value<'static>, Error> {
@@ -735,7 +735,7 @@ impl ser::Serializer for ValueSerializer {
         _: u32,
         variant: &'static str,
     ) -> Result<Value<'static>, Error> {
-        Ok(Value::Text(variant.to_string()))
+        Ok(Value::Text(Cow::Borrowed(variant)))
     }
 
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
@@ -947,7 +947,7 @@ impl ser::SerializeMap for MapState {
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Error> {
         match key.serialize(ValueSerializer)? {
             Value::Text(name) => {
-                self.key = Some(name);
+                self.key = Some(name.into_owned());
 
                 Ok(())
             }
@@ -1038,7 +1038,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
             Value::ObjectIdentifier(oid) => visitor.visit_string(oid.to_string()),
             Value::Bytes(bytes) => visitor.visit_bytes(bytes),
             Value::Bits(data, bits) => visitor.visit_seq(SeqDeserializer {
-                items: alloc::vec![Value::Bytes(data.clone()), Value::Integer(*bits as i128)],
+                items: alloc::vec![
+                    Value::Bytes(Cow::Owned(data.to_vec())),
+                    Value::Integer(*bits as i128)
+                ],
                 position: 0,
             }),
             Value::List(items) => visitor.visit_seq(RefSeq {
@@ -1078,7 +1081,9 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     ) -> Result<V::Value, Error> {
         if name == BIG_INT {
             return match self.0.to_twos_complement() {
-                Some(bytes) => visitor.visit_newtype_struct(OwnedDeserializer(Value::Bytes(bytes))),
+                Some(bytes) => {
+                    visitor.visit_newtype_struct(OwnedDeserializer(Value::Bytes(Cow::Owned(bytes))))
+                }
                 None => Err(Error::decode("Expected an INTEGER.", 0)),
             };
         }
@@ -1089,7 +1094,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                     visitor.visit_newtype_struct(oid.to_string().into_deserializer())
                 }
                 Value::Text(text) => {
-                    visitor.visit_newtype_struct(text.as_str().into_deserializer())
+                    visitor.visit_newtype_struct(text.as_ref().into_deserializer())
                 }
                 _ => Err(Error::decode("Expected an OBJECT IDENTIFIER.", 0)),
             };
@@ -1147,7 +1152,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
             return match self.0 {
                 Value::Bits(data, bits) => {
                     visitor.visit_newtype_struct(SeqValueDeserializer(alloc::vec![
-                        Value::Bytes(data.clone()),
+                        Value::Bytes(Cow::Owned(data.to_vec())),
                         Value::Integer(*bits as i128)
                     ]))
                 }
@@ -1165,7 +1170,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Error> {
         match self.0 {
-            Value::Text(name) => visitor.visit_enum(name.as_str().into_deserializer()),
+            Value::Text(name) => visitor.visit_enum(name.as_ref().into_deserializer()),
             Value::Choice(name, value) => visitor.visit_enum(ChoiceAccess {
                 name: name.as_ref(),
                 value,
@@ -1233,7 +1238,7 @@ impl<'de> de::Deserializer<'de> for OwnedDeserializer {
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         match self.0 {
-            Value::Bytes(bytes) => visitor.visit_byte_buf(bytes),
+            Value::Bytes(bytes) => visitor.visit_byte_buf(bytes.into_owned()),
             Value::Integer(value) => match i64::try_from(value) {
                 Ok(value) => visitor.visit_i64(value),
                 Err(_) => visitor.visit_i128(value),
@@ -1247,7 +1252,7 @@ impl<'de> de::Deserializer<'de> for OwnedDeserializer {
     fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
         match self.0 {
             Value::Bytes(bytes) => visitor.visit_seq(de::value::SeqDeserializer::<_, Error>::new(
-                bytes.into_iter(),
+                bytes.into_owned().into_iter(),
             )),
             _ => Err(Error::decode("Expected bytes.", 0)),
         }

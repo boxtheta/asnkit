@@ -165,17 +165,17 @@ fn builtins() {
         ),
         (
             "OCTET STRING",
-            Value::Bytes(vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]),
+            Value::Bytes(vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef].into()),
             "'0123456789ABCDEF'H",
         ),
-        ("OCTET STRING", Value::Bytes(vec![]), "''H"),
-        ("BIT STRING", Value::Bits(vec![0xf0], 5), "'11110'B"),
+        ("OCTET STRING", Value::Bytes(vec![].into()), "''H"),
+        ("BIT STRING", Value::Bits(vec![0xf0].into(), 5), "'11110'B"),
         (
             "BIT STRING",
-            Value::Bits(vec![0x12, 0x34], 16),
+            Value::Bits(vec![0x12, 0x34].into(), 16),
             "'0001001000110100'B",
         ),
-        ("BIT STRING", Value::Bits(vec![], 0), "''B"),
+        ("BIT STRING", Value::Bits(vec![].into(), 0), "''B"),
         (
             "OBJECT IDENTIFIER",
             Value::ObjectIdentifier("1.2.840.113549".parse().unwrap()),
@@ -205,7 +205,7 @@ fn builtins() {
     );
     assert_eq!(
         builtin("BIT STRING")
-            .encode("T", &Value::Bits(vec![0xff], 9))
+            .encode("T", &Value::Bits(vec![0xff].into(), 9))
             .unwrap_err()
             .to_string(),
         "T: Expected more bits of data."
@@ -354,11 +354,11 @@ fn literals_and_schema_names() {
     use asnkitrt::{gser, types::Kind};
     assert_eq!(
         builtin("OCTET STRING").decode("T", b"'ABC'H").unwrap(),
-        Value::Bytes(vec![0xab, 0xc0])
+        Value::Bytes(vec![0xab, 0xc0].into())
     );
     assert_eq!(
         builtin("BIT STRING").decode("T", b"'ABC'H").unwrap(),
-        Value::Bits(vec![0xab, 0xc0], 12)
+        Value::Bits(vec![0xab, 0xc0].into(), 12)
     );
     let spec = builtin("INTEGER");
     let mut types = spec.types().clone();
@@ -385,7 +385,7 @@ fn literals_and_schema_names() {
     types.nodes[id].kind = Kind::BitString(vec![("first".into(), 0), ("last".into(), 9)]);
     assert_eq!(
         gser::decode(&types, id, b"{ last, first }").unwrap(),
-        Value::Bits(vec![0x80, 0x40], 10)
+        Value::Bits(vec![0x80, 0x40].into(), 10)
     );
     assert!(gser::decode(&types, id, b"{ first, first }").is_err());
     assert!(gser::decode(&types, id, b"{ unknown }").is_err());

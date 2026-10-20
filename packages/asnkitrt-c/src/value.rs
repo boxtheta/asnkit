@@ -211,7 +211,7 @@ pub unsafe extern "C" fn asnkit_value_new_bytes(
     guard_handle(|| {
         let data = unsafe { bytes(data, length, "the bytes") }?;
 
-        Ok(new(Value::Bytes(data.to_vec())))
+        Ok(new(Value::Bytes(data.to_vec().into())))
     })
 }
 
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn asnkit_value_new_bits(
             ));
         }
 
-        Ok(new(Value::Bits(data.to_vec(), bits)))
+        Ok(new(Value::Bits(data.to_vec().into(), bits)))
     })
 }
 

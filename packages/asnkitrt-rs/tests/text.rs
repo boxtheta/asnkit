@@ -133,19 +133,19 @@ fn xml_is_read_as_x680_says() {
                 b"<UniqueIdentifier> 01\n00\t1 </UniqueIdentifier>"
             )
             .unwrap(),
-        Value::Bits(vec![0x48], 5)
+        Value::Bits(vec![0x48].into(), 5)
     );
     assert_eq!(
         rfc5280
             .decode("KeyIdentifier", b"<KeyIdentifier> ab\ncd </KeyIdentifier>")
             .unwrap(),
-        Value::Bytes(vec![0xab, 0xcd])
+        Value::Bytes(vec![0xab, 0xcd].into())
     );
     assert_eq!(
         rfc5280
             .decode("KeyIdentifier", b"<KeyIdentifier>123</KeyIdentifier>")
             .unwrap(),
-        Value::Bytes(vec![0x12, 0x30])
+        Value::Bytes(vec![0x12, 0x30].into())
     );
 
     // A carriage return is a reference, as a reader makes one that is

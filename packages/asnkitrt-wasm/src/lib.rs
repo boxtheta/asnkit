@@ -358,9 +358,10 @@ impl Specification {
             return Err(type_error("decodeWithLength() does not take a module."));
         }
 
+        let data = data_of(&data)?;
         let (value, length) = self
             .inner
-            .decode_with_length(name, &data_of(&data)?)
+            .decode_with_length(name, &data)
             .map_err(runtime_error)?;
 
         if flag(&options, "checkConstraints")? {

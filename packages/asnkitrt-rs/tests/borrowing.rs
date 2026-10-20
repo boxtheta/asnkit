@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: MIT
 
 //! What a decoded value borrows: the names of its members from the
-//! specification, so that a decoder does not allocate them, and what
-//! `Value::into_owned` keeps when the specification is gone.
+//! specification and its texts and bytes from the data, so that a
+//! decoder does not allocate them, and what `Value::into_owned` keeps
+//! when they are gone.
 
 use std::borrow::Cow;
 use std::fs;
@@ -50,22 +51,46 @@ fn borrowed_names(value: &Value<'_>) -> usize {
     }
 }
 
+/// How many texts, bytes, bits and object identifiers of `value` are
+/// borrowed and how many are owned.
+fn data(value: &Value<'_>) -> (usize, usize) {
+    let one = |borrowed: bool| if borrowed { (1, 0) } else { (0, 1) };
+    let sum = |values: &mut dyn Iterator<Item = &Value<'_>>| {
+        values
+            .map(data)
+            .fold((0, 0), |(a, b), (c, d)| (a + c, b + d))
+    };
+
+    match value {
+        Value::Text(text) => one(matches!(text, Cow::Borrowed(_))),
+        Value::Bytes(bytes) | Value::Bits(bytes, _) => one(matches!(bytes, Cow::Borrowed(_))),
+        Value::ObjectIdentifier(oid) => one(matches!(oid.clone().into_bytes(), Cow::Borrowed(_))),
+        Value::Map(members) => sum(&mut members.iter().map(|(_, member)| member)),
+        Value::Choice(_, inner) => data(inner),
+        Value::List(items) => sum(&mut items.iter()),
+        _ => (0, 0),
+    }
+}
+
 /// Whether `value` borrows nothing.
 fn is_owned(value: &Value<'_>) -> bool {
-    match value {
+    let owned = match value {
         Value::Map(members) => members
             .iter()
             .all(|(name, member)| matches!(name, Cow::Owned(_)) && is_owned(member)),
         Value::Choice(name, inner) => matches!(name, Cow::Owned(_)) && is_owned(inner),
         Value::List(items) => items.iter().all(is_owned),
         _ => true,
-    }
+    };
+
+    owned && data(value).0 == 0
 }
 
 #[test]
 fn the_binary_codecs_borrow_the_names() {
     let der = compiled("rfc5280.asni", Codec::Der);
-    let decoded = der.decode("Certificate", &certificate()).unwrap();
+    let data = certificate();
+    let decoded = der.decode("Certificate", &data).unwrap();
 
     assert!(borrowed_names(&decoded) > 50);
 
@@ -87,6 +112,60 @@ fn the_binary_codecs_borrow_the_names() {
             "{codec:?}"
         );
     }
+}
+
+#[test]
+fn the_binary_codecs_borrow_from_the_data() {
+    let der = compiled("rfc5280.asni", Codec::Der);
+    let data = certificate();
+    let decoded = der.decode("Certificate", &data).unwrap();
+    let (borrowed, owned) = self::data(&decoded);
+
+    // The certificate has its texts as PrintableString and UTF8String,
+    // whose bytes are their UTF-8.
+    assert!(borrowed > 30, "{borrowed}");
+    assert_eq!(owned, 0);
+
+    // Most of what UPER has is not on a byte.
+    for (codec, all) in [
+        (Codec::Ber, true),
+        (Codec::Oer, true),
+        (Codec::Per, true),
+        (Codec::Uper, false),
+    ] {
+        let spec = compiled("rfc5280.asni", codec);
+        let encoded = spec.encode("Certificate", &decoded).unwrap();
+        let again = spec.decode("Certificate", &encoded).unwrap();
+        let (borrowed, owned) = self::data(&again);
+
+        assert_eq!(borrowed + owned, self::data(&decoded).0, "{codec:?}");
+
+        if all {
+            assert_eq!(owned, 0, "{codec:?}");
+        } else {
+            assert!(owned > 0, "{codec:?}");
+        }
+    }
+}
+
+/// What BER sends in parts is put together, and what is not the UTF-8 of
+/// a text is made into it.
+#[test]
+fn what_is_not_its_encoding_is_owned() {
+    let spec = compiled("rfc5280.asni", Codec::Ber);
+    // A constructed OCTET STRING in two parts.
+    let parts = [0x24, 0x80, 0x04, 0x01, 0x01, 0x04, 0x01, 0x02, 0x00, 0x00];
+    let decoded = spec.decode("KeyIdentifier", &parts).unwrap();
+
+    assert_eq!(decoded, Value::Bytes(vec![1, 2].into()));
+    assert_eq!(data(&decoded), (0, 1));
+
+    let primitive = [0x04, 0x02, 0x01, 0x02];
+
+    assert_eq!(
+        data(&spec.decode("KeyIdentifier", &primitive).unwrap()),
+        (1, 0)
+    );
 }
 
 #[cfg(all(feature = "jer", feature = "xer", feature = "gser"))]

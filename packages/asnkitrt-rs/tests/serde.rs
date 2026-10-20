@@ -199,7 +199,7 @@ fn numbers_and_lists() {
         vec![1, 2]
     );
     assert_eq!(
-        from_value::<Vec<u8>>(&Value::Bytes(vec![1, 2, 3])).unwrap(),
+        from_value::<Vec<u8>>(&Value::Bytes(vec![1, 2, 3].into())).unwrap(),
         vec![1, 2, 3]
     );
     assert_eq!(
@@ -234,7 +234,7 @@ fn octet_strings_and_times_are_values() {
     use asnkitrt::serde_value::OctetString;
     use asnkitrt::value::{Date, DateTime, Time};
 
-    let bytes = Value::Bytes(vec![1, 2, 3]);
+    let bytes = Value::Bytes(vec![1, 2, 3].into());
 
     assert_eq!(to_value(&OctetString(vec![1, 2, 3])).unwrap(), bytes);
     assert_eq!(
@@ -247,7 +247,7 @@ fn octet_strings_and_times_are_values() {
 
     assert_eq!(
         to_value(&many).unwrap(),
-        Value::List(vec![Value::Bytes(vec![9]), Value::Null])
+        Value::List(vec![Value::Bytes(vec![9].into()), Value::Null])
     );
 
     let date = Date {

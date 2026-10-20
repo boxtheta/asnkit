@@ -42,7 +42,7 @@ pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
     Ok(w.bytes)
 }
 
-pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &'a [u8]) -> Result<Value<'a>> {
     let mut r = Reader {
         data,
         position: 0,
@@ -917,7 +917,7 @@ impl<'a> Coder<'a> {
 
     // Decoding.
 
-    fn decode_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
+    fn decode_type(&self, id: TypeId, r: &mut Reader<'a>, depth: usize) -> Result<Value<'a>> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.", r.position);
         }
@@ -957,7 +957,7 @@ impl<'a> Coder<'a> {
             Kind::BitString(_) => {
                 if let Some(bits) = fixed_size(size) {
                     return r
-                        .bytes(bits.div_ceil(8))
+                        .octets(bits.div_ceil(8))
                         .map(|bytes| Value::Bits(bytes, bits));
                 }
 
@@ -968,7 +968,7 @@ impl<'a> Coder<'a> {
                     return decode_error("Expected at least one byte of a BIT STRING.", r.position);
                 }
 
-                let bytes = r.bytes(length - 1)?;
+                let bytes = r.octets(length - 1)?;
                 let bits = (8 * (length - 1)).checked_sub(unused);
 
                 match bits {
@@ -982,14 +982,13 @@ impl<'a> Coder<'a> {
                     None => get_length(r)?,
                 };
 
-                r.bytes(length).map(Value::Bytes)
+                r.octets(length).map(Value::Bytes)
             }
             Kind::ObjectIdentifier => {
                 let length = get_length(r)?;
                 let bytes = r.octets(length)?;
 
-                ObjectIdentifier::decode(bytes.into_owned(), r.position / 8, false)
-                    .map(Value::ObjectIdentifier)
+                ObjectIdentifier::decode(bytes, r.position / 8, false).map(Value::ObjectIdentifier)
             }
             Kind::Enumerated { root, additions } => {
                 let first = r.uint(8)? as i128;
@@ -1011,7 +1010,7 @@ impl<'a> Coder<'a> {
 
                 match found {
                     Some(_) if self.types.numeric_enums => Ok(Value::Integer(number)),
-                    Some((name, _)) => Ok(Value::Text(name.clone())),
+                    Some((name, _)) => Ok(Value::Text(Cow::Borrowed(name))),
                     None if additions.is_some() => Ok(Value::Null),
                     None => decode_error("Expected an enumeration value.", r.position),
                 }
@@ -1056,14 +1055,16 @@ impl<'a> Coder<'a> {
 
                 Ok(Value::DateTime(DateTime { date, time }))
             }
-            Kind::Duration => self.decode_duration(r).map(Value::Text),
+            Kind::Duration => self
+                .decode_duration(r)
+                .map(|text| Value::Text(Cow::Owned(text))),
             Kind::AnyDefinedBy { choices, .. } if !choices.is_empty() => {
                 decode_error("Bad AnyDefinedBy choice.", r.position)
             }
             Kind::OpenType | Kind::Any | Kind::AnyDefinedBy { .. } => {
                 let length = get_length(r)?;
 
-                r.bytes(length).map(Value::Bytes)
+                r.octets(length).map(Value::Bytes)
             }
             Kind::Ref(_) => decode_error("The type is a reference.", r.position),
         }
@@ -1072,7 +1073,7 @@ impl<'a> Coder<'a> {
     fn decode_integer(
         &self,
         range: Option<crate::types::Range>,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
     ) -> Result<Value<'a>> {
         // An extensible constraint is not OER-visible, so the integer has
         // no bounds (X.696 8.2.2, 10.4 Note 2).
@@ -1134,7 +1135,7 @@ impl<'a> Coder<'a> {
     fn decode_choice(
         &self,
         members: &'a Members,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
         let (class, number) = get_tag(r)?;
@@ -1179,44 +1180,21 @@ impl<'a> Coder<'a> {
         &self,
         kind: StrKind,
         size: Option<crate::types::Range>,
-        r: &mut Reader<'_>,
-    ) -> Result<String> {
+        r: &mut Reader<'a>,
+    ) -> Result<Cow<'a, str>> {
         let length = match known_multiplier(kind).zip(fixed_size(size)) {
             Some((width, characters)) => width * characters,
             None => get_length(r)?,
         };
-        let bytes = r.octets(length)?;
 
-        match kind {
-            StrKind::Utf8 => core::str::from_utf8(&bytes)
-                .map(String::from)
-                .map_err(|_| Error::decode("The string is not UTF-8.", r.position)),
-            StrKind::Bmp => crate::ber::bmp_text(&bytes, r.position),
-            StrKind::Universal => {
-                if bytes.len() % 4 != 0 {
-                    return decode_error("The string is not UTF-32.", r.position);
-                }
-
-                bytes
-                    .chunks(4)
-                    .map(|quad| {
-                        char::from_u32(u32::from_be_bytes([quad[0], quad[1], quad[2], quad[3]]))
-                    })
-                    .collect::<Option<String>>()
-                    .ok_or_else(|| Error::decode("The string is not UTF-32.", r.position))
-            }
-            StrKind::Numeric | StrKind::Printable | StrKind::Ia5 | StrKind::Visible => {
-                if bytes.is_ascii() {
-                    Ok(bytes.iter().map(|byte| char::from(*byte)).collect())
-                } else {
-                    decode_error("The string is not ASCII.", r.position)
-                }
-            }
-            _ => Ok(bytes.iter().map(|byte| char::from(*byte)).collect()),
+        match r.octets(length)? {
+            Cow::Borrowed(bytes) => crate::ber::string_text(kind, bytes, r.position),
+            Cow::Owned(bytes) => crate::ber::string_text(kind, &bytes, r.position)
+                .map(|text| Cow::Owned(text.into_owned())),
         }
     }
 
-    fn decode_date(&self, r: &mut Reader<'_>) -> Result<Date> {
+    fn decode_date(&self, r: &mut Reader<'a>) -> Result<Date> {
         let year = match get_integer(r)? {
             Value::Integer(year) => year as i32,
             _ => return decode_error("The year is too large.", r.position),
@@ -1227,7 +1205,7 @@ impl<'a> Coder<'a> {
         Ok(Date { year, month, day })
     }
 
-    fn decode_time_of_day(&self, r: &mut Reader<'_>) -> Result<Time> {
+    fn decode_time_of_day(&self, r: &mut Reader<'a>) -> Result<Time> {
         Ok(Time {
             hour: r.uint(8)? as u8,
             minute: r.uint(8)? as u8,
@@ -1237,7 +1215,7 @@ impl<'a> Coder<'a> {
         })
     }
 
-    fn decode_duration(&self, r: &mut Reader<'_>) -> Result<String> {
+    fn decode_duration(&self, r: &mut Reader<'a>) -> Result<String> {
         let has_years = r.bit()?;
         let has_months = r.bit()?;
         let has_weeks = r.bit()?;
@@ -1281,7 +1259,7 @@ impl<'a> Coder<'a> {
         &self,
         members: &'a Members,
         is_set: bool,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
         let root = |index: usize| match is_set {
@@ -1319,7 +1297,7 @@ impl<'a> Coder<'a> {
 
                 values.push((Cow::Borrowed(member.name.as_str()), value));
             } else if let Some(default) = &member.default {
-                values.push((Cow::Borrowed(member.name.as_str()), default.clone()));
+                values.push((Cow::Borrowed(member.name.as_str()), default.reborrow()));
             }
         }
 
@@ -1339,7 +1317,7 @@ impl<'a> Coder<'a> {
         &self,
         member: &MemberInfo,
         values: &[(Cow<'_, str>, Value<'_>)],
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
         match self.types.defined_by(member.ty, values) {
@@ -1352,16 +1330,36 @@ impl<'a> Coder<'a> {
 
     /// The value of an open type of the type `id`, see `encode_open_type`.
     /// It has to fill the length it is in.
-    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
+    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'a>, depth: usize) -> Result<Value<'a>> {
         let length = get_length(r)?;
-        let data = r.octets(length)?;
+
+        match r.octets(length)? {
+            Cow::Borrowed(data) => self.decode_filled(id, data, r, depth),
+            Cow::Owned(data) => self
+                .decode_filled(id, &data, r, depth)
+                .map(Value::into_owned),
+        }
+    }
+
+    /// The value of the type `id` that fills `data`.
+    fn decode_filled<'d>(
+        &self,
+        id: TypeId,
+        data: &'d [u8],
+        r: &mut Reader<'_>,
+        depth: usize,
+    ) -> Result<Value<'d>>
+    where
+        'a: 'd,
+    {
+        let coder: &Coder<'d> = self;
         let mut inner = Reader {
-            data: &data,
+            data,
             position: 0,
             aligned: true,
             budget: r.budget,
         };
-        let value = self.decode_type(id, &mut inner, depth + 1)?;
+        let value = coder.decode_type(id, &mut inner, depth + 1)?;
 
         r.budget = inner.budget;
 
@@ -1376,7 +1374,7 @@ impl<'a> Coder<'a> {
         &self,
         additions: &[&'a MemberInfo],
         values: &mut Vec<(Cow<'a, str>, Value<'a>)>,
-        r: &mut Reader<'_>,
+        r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<()> {
         let length = get_length(r)?;

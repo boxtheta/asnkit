@@ -66,11 +66,14 @@ static ALLOCATOR: Counting = Counting;
 /// bytes and containers.
 fn held(value: &Value<'_>, counts: &mut [usize; 4]) {
     match value {
-        Value::Text(_) => counts[1] += 1,
+        Value::Text(text) => counts[1] += usize::from(matches!(text, Cow::Owned(_))),
         Value::ObjectIdentifier(oid) => {
             counts[1] += usize::from(matches!(oid.clone().into_bytes(), Cow::Owned(_)))
         }
-        Value::Bytes(_) | Value::Bits(..) | Value::BigInteger(_) => counts[2] += 1,
+        Value::Bytes(bytes) | Value::Bits(bytes, _) => {
+            counts[2] += usize::from(matches!(bytes, Cow::Owned(_)))
+        }
+        Value::BigInteger(_) => counts[2] += 1,
         Value::List(items) => {
             counts[3] += 1;
 
