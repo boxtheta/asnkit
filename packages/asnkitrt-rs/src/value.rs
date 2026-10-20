@@ -5,7 +5,9 @@
 //! The values that are encoded and decoded.
 //!
 //! The runtime for Python has the same, with its own types: a
-//! SEQUENCE is a `dict`, a CHOICE a `tuple(str, object)` and so on.
+//! SEQUENCE is a `dict`, a CHOICE a `tuple(str, object)` and so on. It
+//! has an OBJECT IDENTIFIER as a `str`, and copies what it decodes,
+//! where a [`Value`] borrows it.
 
 use alloc::borrow::Cow;
 use alloc::boxed::Box;

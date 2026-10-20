@@ -99,6 +99,32 @@ struct SubjectPublicKeyInfo {
     subject_public_key: BitString,
 }
 
+/// A type that borrows from the decoded value, which borrows from the
+/// data.
+#[derive(Debug, PartialEq, Deserialize)]
+struct BorrowedQuestion<'a> {
+    id: u32,
+    question: &'a str,
+}
+
+#[test]
+fn a_struct_borrows_from_the_data() {
+    let foo = compiled("foo.asni", Codec::Der);
+    let encoded = b"0\x0e\x02\x01\x01\x16\x09Is 1+1=3?";
+    let decoded = foo.decode("Question", encoded).unwrap();
+    let question = from_value::<BorrowedQuestion>(&decoded).unwrap();
+
+    assert_eq!(question.question, "Is 1+1=3?");
+    assert!(std::ptr::eq(
+        question.question.as_ptr(),
+        encoded[7..].as_ptr()
+    ));
+
+    let bytes = Value::Bytes(vec![1, 2, 3].into());
+
+    assert_eq!(from_value::<&[u8]>(&bytes).unwrap(), [1, 2, 3]);
+}
+
 #[test]
 fn bit_strings_and_optional_members() {
     let der = compiled("rfc5280.asni", Codec::Der);

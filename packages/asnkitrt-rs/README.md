@@ -24,9 +24,18 @@ let decoded = foo.decode("Question", &encoded)?;
 ```
 
 - **Values** are `Value`s, matching the Python runtime: a `Map` for a
-  `SEQUENCE`, a `Choice` for a `CHOICE`, and so on. With the `serde`
-  feature, `to_value` and `from_value` convert your own types to and
-  from values, and `asnkit-gen-rust` generates those types from ASN.1.
+  `SEQUENCE`, a `Choice` for a `CHOICE`, and so on. An `OBJECT
+  IDENTIFIER` is an `ObjectIdentifier`, which is text to the Python
+  runtime. With the `serde` feature, `to_value` and `from_value`
+  convert your own types to and from values, and `asnkit-gen-rust`
+  generates those types from ASN.1.
+- **Decoded values borrow**: a `Value<'a>` borrows the names of its
+  members from the specification, and its texts, bytes and object
+  identifiers from the data where the encoding is the value, so that
+  decoding allocates little more than its lists and maps.
+  `Value::into_owned()` or `Specification::decode_owned()` give a
+  `Value<'static>` to keep past them. `from_value` can borrow too, into
+  a `&'a str` or a `&'a [u8]`.
 - **Protected files** (signed, encrypted, bound or with a nonce) only
   load when the caller says what to expect; see `container::Checks`.
 - **Untrusted input** never causes a panic: decoding returns a value or

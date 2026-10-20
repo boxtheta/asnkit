@@ -36,6 +36,7 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::marker::PhantomData;
 
+use serde::de::value::BorrowedStrDeserializer;
 use serde::de::{self, DeserializeSeed, IntoDeserializer, Visitor};
 use serde::ser::{self, Serialize};
 
@@ -1032,11 +1033,11 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                 Ok(value) => visitor.visit_i64(value),
                 Err(_) => visitor.visit_i128(*value),
             },
-            Value::BigInteger(bytes) => visitor.visit_bytes(bytes),
+            Value::BigInteger(bytes) => visitor.visit_borrowed_bytes(bytes),
             Value::Real(value) => visitor.visit_f64(*value),
-            Value::Text(text) => visitor.visit_str(text),
+            Value::Text(text) => visitor.visit_borrowed_str(text),
             Value::ObjectIdentifier(oid) => visitor.visit_string(oid.to_string()),
-            Value::Bytes(bytes) => visitor.visit_bytes(bytes),
+            Value::Bytes(bytes) => visitor.visit_borrowed_bytes(bytes),
             Value::Bits(data, bits) => visitor.visit_seq(SeqDeserializer {
                 items: alloc::vec![
                     Value::Bytes(Cow::Owned(data.to_vec())),
@@ -1094,7 +1095,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                     visitor.visit_newtype_struct(oid.to_string().into_deserializer())
                 }
                 Value::Text(text) => {
-                    visitor.visit_newtype_struct(text.as_ref().into_deserializer())
+                    visitor.visit_newtype_struct(BorrowedStrDeserializer::new(text))
                 }
                 _ => Err(Error::decode("Expected an OBJECT IDENTIFIER.", 0)),
             };
@@ -1170,7 +1171,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Error> {
         match self.0 {
-            Value::Text(name) => visitor.visit_enum(name.as_ref().into_deserializer()),
+            Value::Text(name) => visitor.visit_enum(BorrowedStrDeserializer::new(name)),
             Value::Choice(name, value) => visitor.visit_enum(ChoiceAccess {
                 name: name.as_ref(),
                 value,
@@ -1302,7 +1303,7 @@ impl<'de> de::MapAccess<'de> for RefMap<'de> {
             Some((name, value)) => {
                 self.value = Some(value);
 
-                seed.deserialize(name.as_ref().into_deserializer())
+                seed.deserialize(BorrowedStrDeserializer::new(name))
                     .map(Some)
             }
             None => Ok(None),
@@ -1341,7 +1342,8 @@ impl<'de> de::MapAccess<'de> for ChoiceMap<'de> {
 
         self.done = true;
 
-        seed.deserialize(self.name.into_deserializer()).map(Some)
+        seed.deserialize(BorrowedStrDeserializer::new(self.name))
+            .map(Some)
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, Error> {
@@ -1362,7 +1364,7 @@ impl<'de> de::EnumAccess<'de> for ChoiceAccess<'de> {
         self,
         seed: V,
     ) -> Result<(V::Value, ChoiceVariant<'de>), Error> {
-        let name = seed.deserialize(self.name.into_deserializer())?;
+        let name = seed.deserialize(BorrowedStrDeserializer::new(self.name))?;
 
         Ok((name, ChoiceVariant(self.value)))
     }

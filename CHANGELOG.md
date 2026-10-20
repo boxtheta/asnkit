@@ -24,7 +24,38 @@ security fixes.
   Python writes it, except that a `"` in a string is written twice and
   a REAL with an exponent is written as `1E20` (RFC 3641).
 
+- `asnkitrt::value::ObjectIdentifier`, the value of an OBJECT
+  IDENTIFIER in the Rust runtime: its contents octets of X.690 8.19,
+  with `Display` and `FromStr` for its text (`1.2.840.113549`),
+  `arcs()` and `as_bytes()`. With serde it is its text.
+- `Specification::decode_owned()` and `Value::into_owned()`, which give
+  a value that borrows nothing, and `Value::reborrow()`.
+- `ASNKIT_OBJECT_IDENTIFIER` in the C API, with
+  `asnkit_value_new_object_identifier()`,
+  `asnkit_value_object_identifier()` and
+  `asnkit_value_object_identifier_bytes()`.
+
 ### Changed
+
+- `Value` of the Rust runtime is `Value<'a>`, and borrows what it can:
+  the names of the members of a `Map` and of the alternative of a
+  `Choice` are `Cow<'a, str>`, `Value::Text` is a `Cow<'a, str>`, and
+  `Value::Bytes` and `Value::Bits` a `Cow<'a, [u8]>`.
+  `Specification::decode(&'a self, name, data: &'a [u8])` gives a
+  `Value<'a>`, which borrows the names from the specification, and the
+  texts, bytes and object identifiers from the data where their
+  encoding is the value (a primitive string of BER and DER, all of OER,
+  and what is on a byte in PER and UPER). Build a value with
+  `("id".into(), …)` and `Value::Text("…".into())`. `from_value` can
+  give a type that borrows from the value, as a `&'a str`.
+- An OBJECT IDENTIFIER is a `Value::ObjectIdentifier` in the Rust
+  runtime, and no longer a `Value::Text`, which encoding it no longer
+  takes. JER, XER and GSER reject the text of one that is not valid,
+  and every codec an arc of 2^127 or more. `asnkit-gen-rust` gives it
+  the type `asnkitrt::value::ObjectIdentifier<'static>`, and an `ANY`
+  the type `asnkitrt::value::Value<'static>`. The C API has it as
+  `ASNKIT_OBJECT_IDENTIFIER`; the runtime for WebAssembly and the
+  runtime for Python still have it as a string.
 
 - An error of the Rust runtime with a value tells where in it it is,
   from the type in, as the runtime for Python does:
@@ -48,7 +79,10 @@ security fixes.
   not a bit at a time, converts the time of a UTCTime or a
   GeneralizedTime to UTC without counting the years from year 1, and
   allocates less, as for OBJECT IDENTIFIERs and the members of a
-  SEQUENCE or a SET.
+  SEQUENCE or a SET. As a decoded value borrows, a decode of the
+  certificate is then twice as fast again, with 42 allocations instead
+  of 155, and an encode 1.3 to 1.5 times as fast, as it looks a member
+  up in the order of the type.
 - GSER writes a REAL given as an integer as the float it is, `8.0E0`
   and not `8E0`, in the runtime for Python too, so that the runtime for
   WebAssembly, where every number is a float, writes the same.
