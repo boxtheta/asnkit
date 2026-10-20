@@ -20,7 +20,7 @@ pub(crate) enum Json {
     Null,
     Bool(bool),
     /// An integer: a `Value::Integer` or a `Value::BigInteger`.
-    Int(Value),
+    Int(Value<'static>),
     Float(f64),
     Str(String),
     Array(Vec<Json>),

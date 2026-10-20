@@ -15,6 +15,7 @@
 //! Decoding accepts both bare values and the assignments written above.
 //! Whitespace includes line breaks so indented output can be decoded too.
 
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -82,7 +83,11 @@ fn names<'a>(
 /// The type of a member, which for an ANY DEFINED BY with choices is
 /// that of the choice of the value of the member it names, if there is
 /// one.
-fn member_type(types: &Types, member: &MemberInfo, map: &[(String, Value)]) -> Option<TypeId> {
+fn member_type(
+    types: &Types,
+    member: &MemberInfo,
+    map: &[(Cow<'_, str>, Value<'_>)],
+) -> Option<TypeId> {
     types.defined_by(member.ty, map).unwrap_or(Some(member.ty))
 }
 
@@ -429,7 +434,7 @@ fn real(value: f64) -> String {
 
 /// Decodes a bare GSER value or the value assignment written by [`encode`].
 /// Errors carry byte offsets into `data`. Trailing data is rejected.
-pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
     let text = core::str::from_utf8(data)
         .map_err(|error| Error::decode("Expected UTF-8 GSER data.", error.valid_up_to()))?;
     let mut decoder = Decoder {
@@ -492,13 +497,13 @@ fn real_token(text: &str) -> bool {
         && mantissa.bytes().any(|b| matches!(b, b'1'..=b'9'))
 }
 
-struct Decoder<'a> {
+struct Decoder<'a, 't> {
     types: &'a Types,
-    text: &'a str,
+    text: &'t str,
     pos: usize,
 }
 
-impl<'a> Decoder<'a> {
+impl<'a, 't> Decoder<'a, 't> {
     fn error<T>(&self, message: &'static str) -> Result<T> {
         Err(Error::decode(message, self.pos))
     }
@@ -532,7 +537,7 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn token(&mut self) -> Result<&'a str> {
+    fn token(&mut self) -> Result<&'t str> {
         self.space();
         let start = self.pos;
         while self
@@ -595,7 +600,7 @@ impl<'a> Decoder<'a> {
         Ok((bytes, bits, radix as u8))
     }
 
-    fn value(&mut self, id: TypeId, depth: usize) -> Result<Value> {
+    fn value(&mut self, id: TypeId, depth: usize) -> Result<Value<'a>> {
         self.space();
         if depth > MAX_DEPTH {
             return self.error("The value is nested too deeply.");
@@ -738,7 +743,7 @@ impl<'a> Decoder<'a> {
                     .value(member.ty, depth + 1)
                     .map_err(|error| error.in_member(name))?;
                 Ok(Value::Choice(
-                    String::from(name),
+                    Cow::Borrowed(member.name.as_str()),
                     alloc::boxed::Box::new(value),
                 ))
             }
@@ -767,7 +772,7 @@ impl<'a> Decoder<'a> {
 
     // The ASN.1 REAL value notation, { mantissa INTEGER, base 2|10,
     // exponent INTEGER }, is also a GSER representation (RFC 3641 3.19).
-    fn real_components(&mut self) -> Result<Value> {
+    fn real_components(&mut self) -> Result<Value<'static>> {
         self.expect("{")?;
         if self.token()? != "mantissa" {
             return self.error("Expected the REAL mantissa.");
@@ -833,7 +838,7 @@ impl<'a> Decoder<'a> {
         Ok(Value::Real(number))
     }
 
-    fn members(&mut self, members: &Members, depth: usize) -> Result<Value> {
+    fn members(&mut self, members: &'a Members, depth: usize) -> Result<Value<'a>> {
         self.expect("{")?;
         let mut map = Vec::new();
         let mut next = 0;
@@ -872,7 +877,7 @@ impl<'a> Decoder<'a> {
                 let value = self
                     .value(ty, depth + 1)
                     .map_err(|error| error.in_member(name))?;
-                map.push((member.name.clone(), value));
+                map.push((Cow::Borrowed(member.name.as_str()), value));
                 if self.take("}") {
                     break;
                 }
@@ -910,12 +915,12 @@ impl<'a> Decoder<'a> {
 
     fn missing(
         &self,
-        member: &MemberInfo,
-        map: &mut Vec<(String, Value)>,
+        member: &'a MemberInfo,
+        map: &mut Vec<(Cow<'a, str>, Value<'a>)>,
         addition: bool,
     ) -> Result<()> {
         if let Some(default) = &member.default {
-            map.push((member.name.clone(), default.clone()));
+            map.push((Cow::Borrowed(member.name.as_str()), default.clone()));
         } else if !member.optional && !addition {
             return Err(
                 Error::decode("A required member is missing.", self.pos).in_member(&member.name)

@@ -14,6 +14,7 @@
 //! that the decoded value holds, which a decoder can not do with fewer.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::borrow::Cow;
 use std::hint::black_box;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -61,8 +62,9 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
-/// What a value holds on the heap: names, text, bytes and containers.
-fn held(value: &Value, counts: &mut [usize; 4]) {
+/// What a value holds on the heap: names it does not borrow, text,
+/// bytes and containers.
+fn held(value: &Value<'_>, counts: &mut [usize; 4]) {
     match value {
         Value::Text(_) => counts[1] += 1,
         Value::Bytes(_) | Value::Bits(..) | Value::BigInteger(_) => counts[2] += 1,
@@ -76,13 +78,13 @@ fn held(value: &Value, counts: &mut [usize; 4]) {
         Value::Map(members) => {
             counts[3] += 1;
 
-            for (_, member) in members {
-                counts[0] += 1;
+            for (name, member) in members {
+                counts[0] += usize::from(matches!(name, Cow::Owned(_)));
                 held(member, counts);
             }
         }
-        Value::Choice(_, inner) => {
-            counts[0] += 1;
+        Value::Choice(name, inner) => {
+            counts[0] += usize::from(matches!(name, Cow::Owned(_)));
             counts[3] += 1;
             held(inner, counts);
         }
@@ -124,7 +126,8 @@ fn main() -> ExitCode {
 
     let load =
         |codec| Specification::from_asni(RFC5280, &Checks::default(), Options::new(codec)).unwrap();
-    let certificate = load(Codec::Der).decode("Certificate", CERTIFICATE).unwrap();
+    let der = load(Codec::Der);
+    let certificate = der.decode("Certificate", CERTIFICATE).unwrap();
     let spec = load(codec);
     let encoded = spec.encode("Certificate", &certificate).unwrap();
 

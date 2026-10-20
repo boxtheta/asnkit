@@ -34,7 +34,7 @@ pub fn hex_of(bytes: &[u8]) -> String {
 }
 
 /// An integer written in decimal as its two's complement.
-fn big_integer(text: &str) -> Value {
+fn big_integer(text: &str) -> Value<'static> {
     let negative = text.starts_with('-');
     let mut digits: Vec<u8> = text
         .trim_start_matches('-')
@@ -191,7 +191,7 @@ fn format_time(time: &Time) -> String {
     text
 }
 
-pub fn to_value(json: &Json) -> Value {
+pub fn to_value(json: &Json) -> Value<'static> {
     match json {
         Json::Null => Value::Null,
         Json::Bool(value) => Value::Boolean(*value),
@@ -226,7 +226,7 @@ pub fn to_value(json: &Json) -> Value {
                         let parts = value.as_array().unwrap();
 
                         return Value::Choice(
-                            parts[0].as_str().unwrap().into(),
+                            parts[0].as_str().unwrap().to_string().into(),
                             to_value(&parts[1]).into(),
                         );
                     }
@@ -255,7 +255,7 @@ pub fn to_value(json: &Json) -> Value {
             Value::Map(
                 members
                     .iter()
-                    .map(|(name, value)| (name.clone(), to_value(value)))
+                    .map(|(name, value)| (name.clone().into(), to_value(value)))
                     .collect(),
             )
         }
@@ -294,12 +294,12 @@ pub fn to_json(value: &Value) -> Json {
         Value::Map(members) => Json::Object(
             members
                 .iter()
-                .map(|(name, value)| (name.clone(), to_json(value)))
+                .map(|(name, value)| (name.to_string(), to_json(value)))
                 .collect(),
         ),
         Value::Choice(name, value) => tagged(
             "$choice",
-            Json::Array(vec![name.clone().into(), to_json(value)]),
+            Json::Array(vec![name.to_string().into(), to_json(value)]),
         ),
         Value::DateTime(value) => tagged(
             "$datetime",
@@ -370,14 +370,14 @@ pub fn load(
 }
 
 /// What an operation of a vector gives.
-pub enum Done {
+pub enum Done<'a> {
     Encoded(Vec<u8>),
-    Decoded(Value),
+    Decoded(Value<'a>),
 }
 
 /// Does what a vector says to with its inputs: encodes its `value` or
 /// decodes its `encoded`, with its `options`.
-pub fn perform(spec: &Specification, vector: &Json) -> Result<Done, asnkitrt::Error> {
+pub fn perform<'a>(spec: &'a Specification, vector: &Json) -> Result<Done<'a>, asnkitrt::Error> {
     let name = vector["type"].as_str().unwrap();
     let options = &vector["options"];
     let check = options["check_constraints"].as_bool() == Some(true);

@@ -7,6 +7,7 @@
 //! The runtime for Python has the same, with its own types: a
 //! SEQUENCE is a `dict`, a CHOICE a `tuple(str, object)` and so on.
 
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -38,8 +39,15 @@ pub struct DateTime {
 }
 
 /// A value of an ASN.1 type.
+///
+/// The names of the members of a map and of the alternative of a choice
+/// are borrowed for `'a`: a decoder borrows them from the
+/// [`Specification`](crate::runtime::Specification), and a caller
+/// building a value writes `("id".into(), …)`, which borrows a `&str` or
+/// takes a `String`. [`Value::into_owned`] makes a value that borrows
+/// nothing, to keep it past what it borrows from.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Value {
+pub enum Value<'a> {
     /// NULL. Also what an unknown value of an extensible ENUMERATED is.
     Null,
     Boolean(bool),
@@ -58,23 +66,50 @@ pub enum Value {
     /// BIT STRING: its bytes, and how many bits of them there are.
     Bits(Vec<u8>, usize),
     /// SEQUENCE OF and SET OF.
-    List(Vec<Value>),
+    List(Vec<Value<'a>>),
     /// SEQUENCE and SET: the members that are there.
-    Map(Vec<(String, Value)>),
+    Map(Vec<(Cow<'a, str>, Value<'a>)>),
     /// CHOICE: the name of the alternative and its value.
-    Choice(String, Box<Value>),
+    Choice(Cow<'a, str>, Box<Value<'a>>),
     DateTime(DateTime),
     Date(Date),
     Time(Time),
 }
 
-impl Value {
-    pub fn text(text: &str) -> Value {
+impl<'a> Value<'a> {
+    pub fn text(text: &str) -> Value<'a> {
         Value::Text(String::from(text))
     }
 
+    /// The same value, borrowing nothing.
+    pub fn into_owned(self) -> Value<'static> {
+        match self {
+            Value::Null => Value::Null,
+            Value::Boolean(value) => Value::Boolean(value),
+            Value::Integer(value) => Value::Integer(value),
+            Value::BigInteger(bytes) => Value::BigInteger(bytes),
+            Value::Real(value) => Value::Real(value),
+            Value::Text(text) => Value::Text(text),
+            Value::Bytes(bytes) => Value::Bytes(bytes),
+            Value::Bits(bytes, bits) => Value::Bits(bytes, bits),
+            Value::List(items) => Value::List(items.into_iter().map(Value::into_owned).collect()),
+            Value::Map(members) => Value::Map(
+                members
+                    .into_iter()
+                    .map(|(name, value)| (Cow::Owned(name.into_owned()), value.into_owned()))
+                    .collect(),
+            ),
+            Value::Choice(name, value) => {
+                Value::Choice(Cow::Owned(name.into_owned()), Box::new(value.into_owned()))
+            }
+            Value::DateTime(value) => Value::DateTime(value),
+            Value::Date(value) => Value::Date(value),
+            Value::Time(value) => Value::Time(value),
+        }
+    }
+
     /// The member of a map with this name.
-    pub fn get(&self, name: &str) -> Option<&Value> {
+    pub fn get(&self, name: &str) -> Option<&Value<'a>> {
         match self {
             Value::Map(members) => members
                 .iter()
@@ -86,7 +121,7 @@ impl Value {
 
     /// An integer from its two's complement, most significant byte
     /// first. Nothing at all is 0.
-    pub fn from_twos_complement(bytes: &[u8]) -> Value {
+    pub fn from_twos_complement(bytes: &[u8]) -> Value<'a> {
         // Leading bytes that are only the sign add nothing.
         let mut start = 0;
 
@@ -127,17 +162,17 @@ impl Value {
 /// declared. A map built by a decoder, by serde or by most callers has
 /// them in that order, so the entry after the last one found is tried
 /// before the others are searched.
-pub(crate) struct Lookup<'m> {
-    pub map: &'m [(String, Value)],
+pub(crate) struct Lookup<'m, 'a> {
+    pub map: &'m [(Cow<'a, str>, Value<'a>)],
     next: usize,
 }
 
-impl<'m> Lookup<'m> {
-    pub fn new(map: &'m [(String, Value)]) -> Lookup<'m> {
+impl<'m, 'a> Lookup<'m, 'a> {
+    pub fn new(map: &'m [(Cow<'a, str>, Value<'a>)]) -> Lookup<'m, 'a> {
         Lookup { map, next: 0 }
     }
 
-    pub fn find(&mut self, name: &str) -> Option<&'m Value> {
+    pub fn find(&mut self, name: &str) -> Option<&'m Value<'a>> {
         let index = match self.map.get(self.next) {
             Some((candidate, _)) if candidate == name => self.next,
             _ => self
@@ -216,9 +251,9 @@ mod tests {
     #[test]
     fn lookup() {
         let map = [
-            (String::from("a"), Value::Integer(1)),
-            (String::from("c"), Value::Integer(3)),
-            (String::from("b"), Value::Integer(2)),
+            ("a".into(), Value::Integer(1)),
+            ("c".into(), Value::Integer(3)),
+            ("b".into(), Value::Integer(2)),
         ];
         let mut lookup = Lookup::new(&map);
 

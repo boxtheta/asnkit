@@ -7,6 +7,7 @@
 //! tags that are on the wire are worked out, and the constraints that
 //! the codecs look at are numbers.
 
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -106,7 +107,7 @@ pub struct MemberInfo {
     pub name: String,
     pub ty: TypeId,
     pub optional: bool,
-    pub default: Option<Value>,
+    pub default: Option<Value<'static>>,
     /// A SIZE given with the member itself.
     pub size: Option<Range>,
     default_const: Option<Const>,
@@ -354,10 +355,10 @@ impl Types {
     /// with choices: that of the choice of the value of the member it
     /// names, among `siblings`. `None` if it is not one, and `Some(None)`
     /// if no choice has that value.
-    pub fn defined_by<'v>(
+    pub fn defined_by<'v, 'a: 'v>(
         &self,
         id: TypeId,
-        siblings: impl IntoIterator<Item = &'v (String, Value)>,
+        siblings: impl IntoIterator<Item = &'v (Cow<'a, str>, Value<'a>)>,
     ) -> Option<Option<TypeId>> {
         let Kind::AnyDefinedBy { value, choices } = self.kind(id) else {
             return None;
@@ -1647,7 +1648,7 @@ fn hex_digits(digits: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn bits_of(bits: &str) -> Option<Value> {
+fn bits_of(bits: &str) -> Option<Value<'static>> {
     let mut bytes = alloc::vec![0u8; bits.len().div_ceil(8)];
 
     for (index, bit) in bits.bytes().enumerate() {
@@ -1688,7 +1689,7 @@ pub(crate) fn twos_complement_of(negative: bool, magnitude: &[u8]) -> Vec<u8> {
 }
 
 /// What a `DEFAULT` is as a value of a type.
-fn default_value(types: &Types, ty: TypeId, constant: &Const) -> Result<Option<Value>> {
+fn default_value(types: &Types, ty: TypeId, constant: &Const) -> Result<Option<Value<'static>>> {
     let kind = types.kind(ty);
 
     Ok(match (kind, constant) {
@@ -1731,7 +1732,7 @@ fn default_value(types: &Types, ty: TypeId, constant: &Const) -> Result<Option<V
         (Kind::Choice(members), Const::Named(name, value)) => {
             match members.all().find(|member| &member.name == name) {
                 Some(member) => default_value(types, member.ty, value)?
-                    .map(|value| Value::Choice(name.clone(), Box::new(value))),
+                    .map(|value| Value::Choice(Cow::Owned(name.clone()), Box::new(value))),
                 None => None,
             }
         }
@@ -1747,7 +1748,7 @@ fn default_value(types: &Types, ty: TypeId, constant: &Const) -> Result<Option<V
                 };
 
                 match default_value(types, member.ty, value)? {
-                    Some(value) => converted.push((name.clone(), value)),
+                    Some(value) => converted.push((Cow::Owned(name.clone()), value)),
                     None => return Ok(None),
                 }
             }

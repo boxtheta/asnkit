@@ -101,12 +101,12 @@ impl From<Time> for CTime {
     }
 }
 
-fn new(value: Value) -> *mut Value {
+fn new(value: Value<'static>) -> *mut Value<'static> {
     Box::into_raw(Box::new(value))
 }
 
 /// Takes a value that C gives to the runtime.
-unsafe fn take(value: *mut Value) -> Result<Value> {
+unsafe fn take(value: *mut Value<'static>) -> Result<Value<'static>> {
     if value.is_null() {
         return Err(failure(ASNKIT_ERROR_ARGUMENT, "Expected a value."));
     }
@@ -114,7 +114,7 @@ unsafe fn take(value: *mut Value) -> Result<Value> {
     Ok(*unsafe { Box::from_raw(value) })
 }
 
-unsafe fn value<'a>(value: *const Value) -> Result<&'a Value> {
+unsafe fn value<'a>(value: *const Value<'static>) -> Result<&'a Value<'static>> {
     unsafe { handle(value, "a value") }
 }
 
@@ -135,17 +135,17 @@ unsafe fn give_text(text: &str, out_text: *mut *const c_char, length: *mut usize
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_null() -> *mut Value {
+pub extern "C" fn asnkit_value_new_null() -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Null)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_boolean(boolean: c_int) -> *mut Value {
+pub extern "C" fn asnkit_value_new_boolean(boolean: c_int) -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Boolean(boolean != 0))))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_integer(integer: i64) -> *mut Value {
+pub extern "C" fn asnkit_value_new_integer(integer: i64) -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Integer(i128::from(integer)))))
 }
 
@@ -155,7 +155,7 @@ pub extern "C" fn asnkit_value_new_integer(integer: i64) -> *mut Value {
 pub unsafe extern "C" fn asnkit_value_new_integer_bytes(
     data: *const u8,
     length: usize,
-) -> *mut Value {
+) -> *mut Value<'static> {
     guard_handle(|| {
         let data = unsafe { bytes(data, length, "the bytes of the integer") }?;
 
@@ -164,14 +164,17 @@ pub unsafe extern "C" fn asnkit_value_new_integer_bytes(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_real(real: f64) -> *mut Value {
+pub extern "C" fn asnkit_value_new_real(real: f64) -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Real(real))))
 }
 
 /// A character string, an OBJECT IDENTIFIER as `1.2.3` or an ENUMERATED
 /// by name: `length` bytes of UTF-8.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_new_text(text: *const c_char, length: usize) -> *mut Value {
+pub unsafe extern "C" fn asnkit_value_new_text(
+    text: *const c_char,
+    length: usize,
+) -> *mut Value<'static> {
     guard_handle(|| {
         let text = unsafe { text_of(text, length, "the text") }?;
 
@@ -180,7 +183,10 @@ pub unsafe extern "C" fn asnkit_value_new_text(text: *const c_char, length: usiz
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_new_bytes(data: *const u8, length: usize) -> *mut Value {
+pub unsafe extern "C" fn asnkit_value_new_bytes(
+    data: *const u8,
+    length: usize,
+) -> *mut Value<'static> {
     guard_handle(|| {
         let data = unsafe { bytes(data, length, "the bytes") }?;
 
@@ -195,7 +201,7 @@ pub unsafe extern "C" fn asnkit_value_new_bits(
     data: *const u8,
     length: usize,
     bits: usize,
-) -> *mut Value {
+) -> *mut Value<'static> {
     guard_handle(|| {
         let data = unsafe { bytes(data, length, "the bytes") }?;
 
@@ -212,13 +218,13 @@ pub unsafe extern "C" fn asnkit_value_new_bits(
 
 /// An empty SEQUENCE OF or SET OF, for `asnkit_list_push()`.
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_list() -> *mut Value {
+pub extern "C" fn asnkit_value_new_list() -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::List(Vec::new()))))
 }
 
 /// An empty SEQUENCE or SET, for `asnkit_map_set()`.
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_map() -> *mut Value {
+pub extern "C" fn asnkit_value_new_map() -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Map(Vec::new()))))
 }
 
@@ -227,8 +233,8 @@ pub extern "C" fn asnkit_value_new_map() -> *mut Value {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_value_new_choice(
     name: *const c_char,
-    inner: *mut Value,
-) -> *mut Value {
+    inner: *mut Value<'static>,
+) -> *mut Value<'static> {
     guard_handle(|| {
         let inner = unsafe { take(inner) }?;
         let name = unsafe { crate::text(name, "the name of the alternative") }?;
@@ -238,17 +244,17 @@ pub unsafe extern "C" fn asnkit_value_new_choice(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_date(date: CDate) -> *mut Value {
+pub extern "C" fn asnkit_value_new_date(date: CDate) -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Date(date.into()))))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_time(time: CTime) -> *mut Value {
+pub extern "C" fn asnkit_value_new_time(time: CTime) -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Time(time.into()))))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn asnkit_value_new_date_time(date: CDate, time: CTime) -> *mut Value {
+pub extern "C" fn asnkit_value_new_date_time(date: CDate, time: CTime) -> *mut Value<'static> {
     guard_handle(|| {
         Ok(new(Value::DateTime(DateTime {
             date: date.into(),
@@ -259,12 +265,12 @@ pub extern "C" fn asnkit_value_new_date_time(date: CDate, time: CTime) -> *mut V
 
 /// A copy of `value`, which C owns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_clone(value: *const Value) -> *mut Value {
+pub unsafe extern "C" fn asnkit_value_clone(value: *const Value<'static>) -> *mut Value<'static> {
     guard_handle(|| Ok(new(unsafe { self::value(value) }?.clone())))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_free(value: *mut Value) {
+pub unsafe extern "C" fn asnkit_value_free(value: *mut Value<'static>) {
     if !value.is_null() {
         drop(unsafe { Box::from_raw(value) });
     }
@@ -272,7 +278,10 @@ pub unsafe extern "C" fn asnkit_value_free(value: *mut Value) {
 
 /// Adds `item`, which it takes even if it fails, to the end of a list.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_list_push(list: *mut Value, item: *mut Value) -> c_int {
+pub unsafe extern "C" fn asnkit_list_push(
+    list: *mut Value<'static>,
+    item: *mut Value<'static>,
+) -> c_int {
     guard(|| {
         let item = unsafe { take(item) }?;
 
@@ -290,9 +299,9 @@ pub unsafe extern "C" fn asnkit_list_push(list: *mut Value, item: *mut Value) ->
 /// it fails. A member of that name that is there is replaced.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_map_set(
-    map: *mut Value,
+    map: *mut Value<'static>,
     name: *const c_char,
-    member: *mut Value,
+    member: *mut Value<'static>,
 ) -> c_int {
     guard(|| {
         let member = unsafe { take(member) }?;
@@ -314,7 +323,7 @@ pub unsafe extern "C" fn asnkit_map_set(
 
 /// The kind of a value, as `ASNKIT_MAP`, or -1 for null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_kind(value: *const Value) -> c_int {
+pub unsafe extern "C" fn asnkit_value_kind(value: *const Value<'static>) -> c_int {
     match unsafe { value.as_ref() } {
         None => -1,
         Some(Value::Null) => ASNKIT_NULL,
@@ -334,7 +343,10 @@ pub unsafe extern "C" fn asnkit_value_kind(value: *const Value) -> c_int {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_boolean(value: *const Value, boolean: *mut c_int) -> c_int {
+pub unsafe extern "C" fn asnkit_value_boolean(
+    value: *const Value<'static>,
+    boolean: *mut c_int,
+) -> c_int {
     guard(|| match unsafe { self::value(value) }? {
         Value::Boolean(found) => {
             *unsafe { out(boolean, "the boolean") }? = *found as c_int;
@@ -347,7 +359,10 @@ pub unsafe extern "C" fn asnkit_value_boolean(value: *const Value, boolean: *mut
 /// An integer that fits in 64 bits; `ASNKIT_ERROR_RANGE` if it does
 /// not, and `asnkit_value_integer_bytes()` gives it.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_integer(value: *const Value, integer: *mut i64) -> c_int {
+pub unsafe extern "C" fn asnkit_value_integer(
+    value: *const Value<'static>,
+    integer: *mut i64,
+) -> c_int {
     guard(|| {
         let found = match unsafe { self::value(value) }? {
             Value::Integer(found) => i64::try_from(*found).ok(),
@@ -369,7 +384,7 @@ pub unsafe extern "C" fn asnkit_value_integer(value: *const Value, integer: *mut
 /// `ASNKIT_ERROR_RANGE`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_value_integer_bytes(
-    value: *const Value,
+    value: *const Value<'static>,
     data: *mut u8,
     capacity: usize,
     length: *mut usize,
@@ -396,7 +411,7 @@ pub unsafe extern "C" fn asnkit_value_integer_bytes(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_real(value: *const Value, real: *mut f64) -> c_int {
+pub unsafe extern "C" fn asnkit_value_real(value: *const Value<'static>, real: *mut f64) -> c_int {
     guard(|| match unsafe { self::value(value) }? {
         Value::Real(found) => {
             *unsafe { out(real, "the real") }? = *found;
@@ -408,7 +423,7 @@ pub unsafe extern "C" fn asnkit_value_real(value: *const Value, real: *mut f64) 
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_value_text(
-    value: *const Value,
+    value: *const Value<'static>,
     text: *mut *const c_char,
     length: *mut usize,
 ) -> c_int {
@@ -420,7 +435,7 @@ pub unsafe extern "C" fn asnkit_value_text(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_value_bytes(
-    value: *const Value,
+    value: *const Value<'static>,
     data: *mut *const u8,
     length: *mut usize,
 ) -> c_int {
@@ -436,7 +451,7 @@ pub unsafe extern "C" fn asnkit_value_bytes(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_value_bits(
-    value: *const Value,
+    value: *const Value<'static>,
     data: *mut *const u8,
     length: *mut usize,
     bits: *mut usize,
@@ -454,7 +469,10 @@ pub unsafe extern "C" fn asnkit_value_bits(
 
 /// The number of items of a list or of members of a map.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_length(value: *const Value, length: *mut usize) -> c_int {
+pub unsafe extern "C" fn asnkit_value_length(
+    value: *const Value<'static>,
+    length: *mut usize,
+) -> c_int {
     guard(|| {
         let found = match unsafe { self::value(value) }? {
             Value::List(items) => items.len(),
@@ -469,18 +487,24 @@ pub unsafe extern "C" fn asnkit_value_length(value: *const Value, length: *mut u
 
 /// The item `index` of a list, or null if there is none.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_list_get(list: *const Value, index: usize) -> *const Value {
+pub unsafe extern "C" fn asnkit_list_get(
+    list: *const Value<'static>,
+    index: usize,
+) -> *const Value<'static> {
     match unsafe { list.as_ref() } {
         Some(Value::List(items)) => items
             .get(index)
-            .map_or(std::ptr::null(), |item| item as *const Value),
+            .map_or(std::ptr::null(), |item| item as *const Value<'static>),
         _ => std::ptr::null(),
     }
 }
 
 /// The member `name` of a map, or null if it is not there.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_map_get(map: *const Value, name: *const c_char) -> *const Value {
+pub unsafe extern "C" fn asnkit_map_get(
+    map: *const Value<'static>,
+    name: *const c_char,
+) -> *const Value<'static> {
     let Some(map) = (unsafe { map.as_ref() }) else {
         return std::ptr::null();
     };
@@ -489,18 +513,18 @@ pub unsafe extern "C" fn asnkit_map_get(map: *const Value, name: *const c_char) 
     };
 
     map.get(name)
-        .map_or(std::ptr::null(), |member| member as *const Value)
+        .map_or(std::ptr::null(), |member| member as *const Value<'static>)
 }
 
 /// The name and the value of the member `index` of a map, in the order
 /// they are in.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_map_member(
-    map: *const Value,
+    map: *const Value<'static>,
     index: usize,
     name: *mut *const c_char,
     name_length: *mut usize,
-    member: *mut *const Value,
+    member: *mut *const Value<'static>,
 ) -> c_int {
     guard(|| {
         let Value::Map(members) = unsafe { value(map) }? else {
@@ -519,10 +543,10 @@ pub unsafe extern "C" fn asnkit_map_member(
 /// The name of the alternative of a choice, and its value.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_choice_get(
-    choice: *const Value,
+    choice: *const Value<'static>,
     name: *mut *const c_char,
     name_length: *mut usize,
-    inner: *mut *const Value,
+    inner: *mut *const Value<'static>,
 ) -> c_int {
     guard(|| {
         let Value::Choice(found, value) = unsafe { self::value(choice) }? else {
@@ -536,7 +560,10 @@ pub unsafe extern "C" fn asnkit_choice_get(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_date(value: *const Value, date: *mut CDate) -> c_int {
+pub unsafe extern "C" fn asnkit_value_date(
+    value: *const Value<'static>,
+    date: *mut CDate,
+) -> c_int {
     guard(|| match unsafe { self::value(value) }? {
         Value::Date(found) => {
             *unsafe { out(date, "the date") }? = (*found).into();
@@ -547,7 +574,10 @@ pub unsafe extern "C" fn asnkit_value_date(value: *const Value, date: *mut CDate
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_value_time(value: *const Value, time: *mut CTime) -> c_int {
+pub unsafe extern "C" fn asnkit_value_time(
+    value: *const Value<'static>,
+    time: *mut CTime,
+) -> c_int {
     guard(|| match unsafe { self::value(value) }? {
         Value::Time(found) => {
             *unsafe { out(time, "the time") }? = (*found).into();
@@ -559,7 +589,7 @@ pub unsafe extern "C" fn asnkit_value_time(value: *const Value, time: *mut CTime
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_value_date_time(
-    value: *const Value,
+    value: *const Value<'static>,
     date: *mut CDate,
     time: *mut CTime,
 ) -> c_int {

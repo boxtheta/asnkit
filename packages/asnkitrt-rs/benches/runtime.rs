@@ -47,9 +47,8 @@ fn main() {
         ("id".into(), Value::Integer(1)),
         ("question".into(), Value::text("Is 1+1=3?")),
     ]);
-    let certificate = load(RFC5280, Codec::Der)
-        .decode("Certificate", CERTIFICATE)
-        .unwrap();
+    let der = load(RFC5280, Codec::Der);
+    let certificate = der.decode("Certificate", CERTIFICATE).unwrap();
 
     for (name, codec, does_certificate) in CODECS {
         let foo_spec = load(FOO, codec);

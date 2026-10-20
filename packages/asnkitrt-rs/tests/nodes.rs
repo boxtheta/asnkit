@@ -61,7 +61,7 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn map(members: Vec<(&str, Value)>) -> Value {
+fn map<'a>(members: Vec<(&'a str, Value<'a>)>) -> Value<'a> {
     Value::Map(
         members
             .into_iter()

@@ -403,7 +403,7 @@ fn check(spec: &Spec, name: &str, value: &Value, options: &Read) -> Result<()> {
 pub unsafe extern "C" fn asnkit_encode(
     spec: *const Spec,
     name: *const c_char,
-    value: *const Value,
+    value: *const Value<'static>,
     options: *const CodecOptions,
     data: *mut *mut u8,
     length: *mut usize,
@@ -442,7 +442,7 @@ pub unsafe extern "C" fn asnkit_decode(
     data: *const u8,
     length: usize,
     options: *const CodecOptions,
-    value: *mut *mut Value,
+    value: *mut *mut Value<'static>,
 ) -> c_int {
     guard(|| {
         let spec = unsafe { handle(spec, "a specification") }?;
@@ -459,7 +459,8 @@ pub unsafe extern "C" fn asnkit_decode(
             check(spec, name, &decoded, &options)?;
         }
 
-        *value = Box::into_raw(Box::new(decoded));
+        // C keeps the value past the specification.
+        *value = Box::into_raw(Box::new(decoded.into_owned()));
         Ok(())
     })
 }
@@ -473,7 +474,7 @@ pub unsafe extern "C" fn asnkit_decode_with_length(
     data: *const u8,
     length: usize,
     options: *const CodecOptions,
-    value: *mut *mut Value,
+    value: *mut *mut Value<'static>,
     consumed: *mut usize,
 ) -> c_int {
     guard(|| {
@@ -497,7 +498,8 @@ pub unsafe extern "C" fn asnkit_decode_with_length(
             check(spec, name, &decoded, &options)?;
         }
 
-        *value = Box::into_raw(Box::new(decoded));
+        // C keeps the value past the specification.
+        *value = Box::into_raw(Box::new(decoded.into_owned()));
         *consumed = used;
         Ok(())
     })
@@ -539,7 +541,7 @@ pub unsafe extern "C" fn asnkit_decode_length(
 pub unsafe extern "C" fn asnkit_check_constraints(
     spec: *const Spec,
     name: *const c_char,
-    value: *const Value,
+    value: *const Value<'static>,
     options: *const CodecOptions,
 ) -> c_int {
     guard(|| {

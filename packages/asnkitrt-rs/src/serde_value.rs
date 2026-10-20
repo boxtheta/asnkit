@@ -28,10 +28,12 @@
 //!
 //! `#[serde(rename = "...")]` gives the name where it is not one Rust has.
 
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
+use core::marker::PhantomData;
 
 use serde::de::{self, DeserializeSeed, IntoDeserializer, Visitor};
 use serde::ser::{self, Serialize};
@@ -380,7 +382,7 @@ pub mod bytes {
 
 // A value as the types of serde.
 
-impl Serialize for Value {
+impl Serialize for Value<'_> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use ser::{SerializeMap, SerializeSeq, SerializeStruct};
 
@@ -456,69 +458,71 @@ impl Serialize for Value {
     }
 }
 
-impl<'de> de::Deserialize<'de> for Value {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
-        struct ValueVisitor;
+/// A value as serde gives it, which owns what it has, and so is a
+/// `Value<'a>` for any `'a`.
+impl<'de, 'a> de::Deserialize<'de> for Value<'a> {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Value<'a>, D::Error> {
+        struct ValueVisitor<'a>(PhantomData<Value<'a>>);
 
-        impl<'de> Visitor<'de> for ValueVisitor {
-            type Value = Value;
+        impl<'de, 'a> Visitor<'de> for ValueVisitor<'a> {
+            type Value = Value<'a>;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str("a value")
             }
 
-            fn visit_unit<E>(self) -> Result<Value, E> {
+            fn visit_unit<E>(self) -> Result<Value<'a>, E> {
                 Ok(Value::Null)
             }
 
-            fn visit_none<E>(self) -> Result<Value, E> {
+            fn visit_none<E>(self) -> Result<Value<'a>, E> {
                 Ok(Value::Null)
             }
 
             fn visit_some<D: de::Deserializer<'de>>(
                 self,
                 deserializer: D,
-            ) -> Result<Value, D::Error> {
+            ) -> Result<Value<'a>, D::Error> {
                 de::Deserialize::deserialize(deserializer)
             }
 
-            fn visit_bool<E>(self, value: bool) -> Result<Value, E> {
+            fn visit_bool<E>(self, value: bool) -> Result<Value<'a>, E> {
                 Ok(Value::Boolean(value))
             }
 
-            fn visit_i64<E>(self, value: i64) -> Result<Value, E> {
+            fn visit_i64<E>(self, value: i64) -> Result<Value<'a>, E> {
                 Ok(Value::Integer(i128::from(value)))
             }
 
-            fn visit_u64<E>(self, value: u64) -> Result<Value, E> {
+            fn visit_u64<E>(self, value: u64) -> Result<Value<'a>, E> {
                 Ok(Value::Integer(i128::from(value)))
             }
 
-            fn visit_i128<E>(self, value: i128) -> Result<Value, E> {
+            fn visit_i128<E>(self, value: i128) -> Result<Value<'a>, E> {
                 Ok(Value::Integer(value))
             }
 
-            fn visit_f64<E>(self, value: f64) -> Result<Value, E> {
+            fn visit_f64<E>(self, value: f64) -> Result<Value<'a>, E> {
                 Ok(Value::Real(value))
             }
 
-            fn visit_str<E>(self, value: &str) -> Result<Value, E> {
+            fn visit_str<E>(self, value: &str) -> Result<Value<'a>, E> {
                 Ok(Value::Text(value.to_string()))
             }
 
-            fn visit_string<E>(self, value: String) -> Result<Value, E> {
+            fn visit_string<E>(self, value: String) -> Result<Value<'a>, E> {
                 Ok(Value::Text(value))
             }
 
-            fn visit_bytes<E>(self, value: &[u8]) -> Result<Value, E> {
+            fn visit_bytes<E>(self, value: &[u8]) -> Result<Value<'a>, E> {
                 Ok(Value::Bytes(Vec::from(value)))
             }
 
-            fn visit_byte_buf<E>(self, value: Vec<u8>) -> Result<Value, E> {
+            fn visit_byte_buf<E>(self, value: Vec<u8>) -> Result<Value<'a>, E> {
                 Ok(Value::Bytes(value))
             }
 
-            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Value<'a>, A::Error> {
                 let mut items = Vec::new();
 
                 while let Some(item) = seq.next_element()? {
@@ -528,18 +532,18 @@ impl<'de> de::Deserialize<'de> for Value {
                 Ok(Value::List(items))
             }
 
-            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Value<'a>, A::Error> {
                 let mut members = Vec::new();
 
-                while let Some((name, value)) = map.next_entry::<String, Value>()? {
-                    members.push((name, value));
+                while let Some((name, value)) = map.next_entry::<String, Value<'a>>()? {
+                    members.push((Cow::Owned(name), value));
                 }
 
                 Ok(Value::Map(members))
             }
         }
 
-        deserializer.deserialize_any(ValueVisitor)
+        deserializer.deserialize_any(ValueVisitor(PhantomData))
     }
 }
 
@@ -570,18 +574,18 @@ fn time_of_list(value: &Value) -> Result<crate::value::Time, Error> {
 }
 
 /// Takes `value` to a [`Value`].
-pub fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<Value, Error> {
+pub fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<Value<'static>, Error> {
     value.serialize(ValueSerializer)
 }
 
 struct ValueSerializer;
 
 struct SeqState {
-    items: Vec<Value>,
+    items: Vec<Value<'static>>,
 }
 
 struct MapState {
-    members: Vec<(String, Value)>,
+    members: Vec<(Cow<'static, str>, Value<'static>)>,
     key: Option<String>,
 }
 
@@ -591,7 +595,7 @@ struct VariantState<T> {
 }
 
 impl ser::Serializer for ValueSerializer {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
     type SerializeSeq = SeqState;
     type SerializeTuple = SeqState;
@@ -601,85 +605,85 @@ impl ser::Serializer for ValueSerializer {
     type SerializeStruct = MapState;
     type SerializeStructVariant = VariantState<MapState>;
 
-    fn serialize_bool(self, value: bool) -> Result<Value, Error> {
+    fn serialize_bool(self, value: bool) -> Result<Value<'static>, Error> {
         Ok(Value::Boolean(value))
     }
 
-    fn serialize_i8(self, value: i8) -> Result<Value, Error> {
+    fn serialize_i8(self, value: i8) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_i16(self, value: i16) -> Result<Value, Error> {
+    fn serialize_i16(self, value: i16) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_i32(self, value: i32) -> Result<Value, Error> {
+    fn serialize_i32(self, value: i32) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_i64(self, value: i64) -> Result<Value, Error> {
+    fn serialize_i64(self, value: i64) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_i128(self, value: i128) -> Result<Value, Error> {
+    fn serialize_i128(self, value: i128) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(value))
     }
 
-    fn serialize_u8(self, value: u8) -> Result<Value, Error> {
+    fn serialize_u8(self, value: u8) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_u16(self, value: u16) -> Result<Value, Error> {
+    fn serialize_u16(self, value: u16) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_u32(self, value: u32) -> Result<Value, Error> {
+    fn serialize_u32(self, value: u32) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_u64(self, value: u64) -> Result<Value, Error> {
+    fn serialize_u64(self, value: u64) -> Result<Value<'static>, Error> {
         Ok(Value::Integer(i128::from(value)))
     }
 
-    fn serialize_u128(self, value: u128) -> Result<Value, Error> {
+    fn serialize_u128(self, value: u128) -> Result<Value<'static>, Error> {
         i128::try_from(value)
             .map(Value::Integer)
             .map_err(|_| Error::encode("The integer is too large."))
     }
 
-    fn serialize_f32(self, value: f32) -> Result<Value, Error> {
+    fn serialize_f32(self, value: f32) -> Result<Value<'static>, Error> {
         Ok(Value::Real(f64::from(value)))
     }
 
-    fn serialize_f64(self, value: f64) -> Result<Value, Error> {
+    fn serialize_f64(self, value: f64) -> Result<Value<'static>, Error> {
         Ok(Value::Real(value))
     }
 
-    fn serialize_char(self, value: char) -> Result<Value, Error> {
+    fn serialize_char(self, value: char) -> Result<Value<'static>, Error> {
         Ok(Value::Text(value.to_string()))
     }
 
-    fn serialize_str(self, value: &str) -> Result<Value, Error> {
+    fn serialize_str(self, value: &str) -> Result<Value<'static>, Error> {
         Ok(Value::Text(value.to_string()))
     }
 
-    fn serialize_bytes(self, value: &[u8]) -> Result<Value, Error> {
+    fn serialize_bytes(self, value: &[u8]) -> Result<Value<'static>, Error> {
         Ok(Value::Bytes(Vec::from(value)))
     }
 
-    fn serialize_none(self) -> Result<Value, Error> {
+    fn serialize_none(self) -> Result<Value<'static>, Error> {
         Ok(Value::Null)
     }
 
-    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Value, Error> {
+    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Value<'static>, Error> {
         value.serialize(self)
     }
 
-    fn serialize_unit(self) -> Result<Value, Error> {
+    fn serialize_unit(self) -> Result<Value<'static>, Error> {
         Ok(Value::Null)
     }
 
-    fn serialize_unit_struct(self, _: &'static str) -> Result<Value, Error> {
+    fn serialize_unit_struct(self, _: &'static str) -> Result<Value<'static>, Error> {
         Ok(Value::Null)
     }
 
@@ -688,7 +692,7 @@ impl ser::Serializer for ValueSerializer {
         _: &'static str,
         _: u32,
         variant: &'static str,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value<'static>, Error> {
         Ok(Value::Text(variant.to_string()))
     }
 
@@ -696,7 +700,7 @@ impl ser::Serializer for ValueSerializer {
         self,
         name: &'static str,
         value: &T,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value<'static>, Error> {
         let inner = value.serialize(ValueSerializer)?;
 
         if name == BIG_INT {
@@ -771,9 +775,9 @@ impl ser::Serializer for ValueSerializer {
         _: u32,
         variant: &'static str,
         value: &T,
-    ) -> Result<Value, Error> {
+    ) -> Result<Value<'static>, Error> {
         Ok(Value::Choice(
-            variant.to_string(),
+            Cow::Borrowed(variant),
             Box::new(value.serialize(ValueSerializer)?),
         ))
     }
@@ -831,7 +835,7 @@ impl ser::Serializer for ValueSerializer {
 }
 
 impl ser::SerializeSeq for SeqState {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
@@ -840,55 +844,55 @@ impl ser::SerializeSeq for SeqState {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value<'static>, Error> {
         Ok(Value::List(self.items))
     }
 }
 
 impl ser::SerializeTuple for SeqState {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value<'static>, Error> {
         ser::SerializeSeq::end(self)
     }
 }
 
 impl ser::SerializeTupleStruct for SeqState {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value<'static>, Error> {
         ser::SerializeSeq::end(self)
     }
 }
 
 impl ser::SerializeTupleVariant for VariantState<SeqState> {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         ser::SerializeSeq::serialize_element(&mut self.inner, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value<'static>, Error> {
         Ok(Value::Choice(
-            self.name.to_string(),
+            Cow::Borrowed(self.name),
             Box::new(ser::SerializeSeq::end(self.inner)?),
         ))
     }
 }
 
 impl ser::SerializeMap for MapState {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
 
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Error> {
@@ -908,18 +912,19 @@ impl ser::SerializeMap for MapState {
             .take()
             .ok_or_else(|| Error::encode("A value comes after its name."))?;
 
-        self.members.push((name, value.serialize(ValueSerializer)?));
+        self.members
+            .push((Cow::Owned(name), value.serialize(ValueSerializer)?));
 
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value<'static>, Error> {
         Ok(Value::Map(self.members))
     }
 }
 
 impl ser::SerializeStruct for MapState {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(
@@ -928,18 +933,18 @@ impl ser::SerializeStruct for MapState {
         value: &T,
     ) -> Result<(), Error> {
         self.members
-            .push((name.to_string(), value.serialize(ValueSerializer)?));
+            .push((Cow::Borrowed(name), value.serialize(ValueSerializer)?));
 
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value<'static>, Error> {
         Ok(Value::Map(self.members))
     }
 }
 
 impl ser::SerializeStructVariant for VariantState<MapState> {
-    type Ok = Value;
+    type Ok = Value<'static>;
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(
@@ -950,9 +955,9 @@ impl ser::SerializeStructVariant for VariantState<MapState> {
         ser::SerializeStruct::serialize_field(&mut self.inner, name, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value<'static>, Error> {
         Ok(Value::Choice(
-            self.name.to_string(),
+            Cow::Borrowed(self.name),
             Box::new(Value::Map(self.inner.members)),
         ))
     }
@@ -961,11 +966,11 @@ impl ser::SerializeStructVariant for VariantState<MapState> {
 // From a value to Rust.
 
 /// Takes `value` to a `T`.
-pub fn from_value<'de, T: de::Deserialize<'de>>(value: &'de Value) -> Result<T, Error> {
+pub fn from_value<'de, T: de::Deserialize<'de>>(value: &'de Value<'de>) -> Result<T, Error> {
     T::deserialize(ValueDeserializer(value))
 }
 
-struct ValueDeserializer<'de>(&'de Value);
+struct ValueDeserializer<'de>(&'de Value<'de>);
 
 impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     type Error = Error;
@@ -994,7 +999,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
                 value: None,
             }),
             Value::Choice(name, value) => visitor.visit_map(ChoiceMap {
-                name,
+                name: name.as_ref(),
                 value,
                 done: false,
             }),
@@ -1099,7 +1104,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     ) -> Result<V::Value, Error> {
         match self.0 {
             Value::Text(name) => visitor.visit_enum(name.as_str().into_deserializer()),
-            Value::Choice(name, value) => visitor.visit_enum(ChoiceAccess { name, value }),
+            Value::Choice(name, value) => visitor.visit_enum(ChoiceAccess {
+                name: name.as_ref(),
+                value,
+            }),
             _ => Err(Error::decode(
                 "Expected an alternative of a CHOICE or an enumerated value.",
                 0,
@@ -1113,7 +1121,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     }
 }
 
-struct SeqValueDeserializer(Vec<Value>);
+struct SeqValueDeserializer(Vec<Value<'static>>);
 
 impl<'de> de::Deserializer<'de> for SeqValueDeserializer {
     type Error = Error;
@@ -1132,7 +1140,7 @@ impl<'de> de::Deserializer<'de> for SeqValueDeserializer {
 }
 
 struct SeqDeserializer {
-    items: Vec<Value>,
+    items: Vec<Value<'static>>,
     position: usize,
 }
 
@@ -1156,7 +1164,7 @@ impl<'de> de::SeqAccess<'de> for SeqDeserializer {
 }
 
 /// A value that is owned, for what is not borrowed from the original.
-struct OwnedDeserializer(Value);
+struct OwnedDeserializer(Value<'static>);
 
 impl<'de> de::Deserializer<'de> for OwnedDeserializer {
     type Error = Error;
@@ -1190,7 +1198,7 @@ impl<'de> de::Deserializer<'de> for OwnedDeserializer {
 }
 
 struct RefSeq<'de> {
-    items: core::slice::Iter<'de, Value>,
+    items: core::slice::Iter<'de, Value<'de>>,
 }
 
 impl<'de> de::SeqAccess<'de> for RefSeq<'de> {
@@ -1212,8 +1220,8 @@ impl<'de> de::SeqAccess<'de> for RefSeq<'de> {
 }
 
 struct RefMap<'de> {
-    members: core::slice::Iter<'de, (String, Value)>,
-    value: Option<&'de Value>,
+    members: core::slice::Iter<'de, (Cow<'de, str>, Value<'de>)>,
+    value: Option<&'de Value<'de>>,
 }
 
 impl<'de> de::MapAccess<'de> for RefMap<'de> {
@@ -1227,7 +1235,7 @@ impl<'de> de::MapAccess<'de> for RefMap<'de> {
             Some((name, value)) => {
                 self.value = Some(value);
 
-                seed.deserialize(name.as_str().into_deserializer())
+                seed.deserialize(name.as_ref().into_deserializer())
                     .map(Some)
             }
             None => Ok(None),
@@ -1248,8 +1256,8 @@ impl<'de> de::MapAccess<'de> for RefMap<'de> {
 
 /// A CHOICE as a map of its one alternative.
 struct ChoiceMap<'de> {
-    name: &'de String,
-    value: &'de Value,
+    name: &'de str,
+    value: &'de Value<'de>,
     done: bool,
 }
 
@@ -1266,8 +1274,7 @@ impl<'de> de::MapAccess<'de> for ChoiceMap<'de> {
 
         self.done = true;
 
-        seed.deserialize(self.name.as_str().into_deserializer())
-            .map(Some)
+        seed.deserialize(self.name.into_deserializer()).map(Some)
     }
 
     fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value, Error> {
@@ -1276,8 +1283,8 @@ impl<'de> de::MapAccess<'de> for ChoiceMap<'de> {
 }
 
 struct ChoiceAccess<'de> {
-    name: &'de String,
-    value: &'de Value,
+    name: &'de str,
+    value: &'de Value<'de>,
 }
 
 impl<'de> de::EnumAccess<'de> for ChoiceAccess<'de> {
@@ -1288,13 +1295,13 @@ impl<'de> de::EnumAccess<'de> for ChoiceAccess<'de> {
         self,
         seed: V,
     ) -> Result<(V::Value, ChoiceVariant<'de>), Error> {
-        let name = seed.deserialize(self.name.as_str().into_deserializer())?;
+        let name = seed.deserialize(self.name.into_deserializer())?;
 
         Ok((name, ChoiceVariant(self.value)))
     }
 }
 
-struct ChoiceVariant<'de>(&'de Value);
+struct ChoiceVariant<'de>(&'de Value<'de>);
 
 impl<'de> de::VariantAccess<'de> for ChoiceVariant<'de> {
     type Error = Error;

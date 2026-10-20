@@ -287,7 +287,7 @@ impl Specification {
         found.ok_or_else(|| runtime_error(asnkitrt::Error::NoSuchType))
     }
 
-    fn value_of(&self, name: &str, value: &[u8], options: &JsValue) -> Result<Value, JsValue> {
+    fn value_of(&self, name: &str, value: &[u8], options: &JsValue) -> Result<Value<'_>, JsValue> {
         let id = self.find(name, options)?;
 
         convert::to_value(self.inner.types(), id, value)

@@ -10,6 +10,7 @@
 //! is written is compact and with ASCII only, as `json.dumps` of the
 //! runtime for Python writes it.
 
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -50,7 +51,7 @@ pub fn encode_indented(types: &Types, id: TypeId, value: &Value, indent: usize) 
 }
 
 /// Decodes `data` as the type `id`.
-pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
     let Ok(text) = core::str::from_utf8(data) else {
         return decode_error("Expected UTF-8.");
     };
@@ -69,7 +70,7 @@ fn names<'a>(
     root.iter().chain(additions.iter().flatten())
 }
 
-impl Coder<'_> {
+impl<'a> Coder<'a> {
     /// The size of a BIT STRING that has one size only.
     fn fixed_size(&self, id: TypeId) -> Option<usize> {
         let size = self.types.node(id).effective_size?;
@@ -328,7 +329,7 @@ impl Coder<'_> {
 
     fn encode_members(
         &self,
-        members: &Members,
+        members: &'a Members,
         value: &Value,
         out: &mut String,
         depth: usize,
@@ -367,7 +368,7 @@ impl Coder<'_> {
         Ok(())
     }
 
-    fn decode(&self, id: TypeId, json: &Json, depth: usize) -> Result<Value> {
+    fn decode(&self, id: TypeId, json: &Json, depth: usize) -> Result<Value<'a>> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.");
         }
@@ -523,13 +524,13 @@ impl Coder<'_> {
 
                 match members.all().find(|member| &member.name == name) {
                     Some(member) => Ok(Value::Choice(
-                        name.clone(),
+                        Cow::Borrowed(member.name.as_str()),
                         self.decode(member.ty, inner, depth + 1)
                             .map_err(|error| error.in_member(name))?
                             .into(),
                     )),
                     None if members.additions.is_some() => {
-                        Ok(Value::Choice(String::new(), Value::Null.into()))
+                        Ok(Value::Choice(Cow::Borrowed(""), Value::Null.into()))
                     }
                     None => decode_error("Expected a name of an alternative of the CHOICE."),
                 }
@@ -542,7 +543,7 @@ impl Coder<'_> {
         }
     }
 
-    fn decode_members(&self, members: &Members, json: &Json, depth: usize) -> Result<Value> {
+    fn decode_members(&self, members: &'a Members, json: &Json, depth: usize) -> Result<Value<'a>> {
         if !matches!(json, Json::Object(_)) {
             return decode_error("Expected a JSON object.");
         }
@@ -560,7 +561,7 @@ impl Coder<'_> {
                         .decode(ty, inner, depth + 1)
                         .map_err(|error| error.in_member(&member.name))?;
 
-                    map.push((member.name.clone(), value));
+                    map.push((Cow::Borrowed(member.name.as_str()), value));
                 }
                 None => self.missing(member, &mut map)?,
             }
@@ -572,17 +573,25 @@ impl Coder<'_> {
     /// The type of a member, which for an ANY DEFINED BY with choices is
     /// that of the choice of the value of the member it names, if there is
     /// one.
-    fn member_type(&self, member: &MemberInfo, map: &[(String, Value)]) -> Option<TypeId> {
+    fn member_type(
+        &self,
+        member: &MemberInfo,
+        map: &[(Cow<'_, str>, Value<'_>)],
+    ) -> Option<TypeId> {
         self.types
             .defined_by(member.ty, map)
             .unwrap_or(Some(member.ty))
     }
 
-    fn missing(&self, member: &MemberInfo, map: &mut Vec<(String, Value)>) -> Result<()> {
+    fn missing(
+        &self,
+        member: &'a MemberInfo,
+        map: &mut Vec<(Cow<'a, str>, Value<'a>)>,
+    ) -> Result<()> {
         if member.optional {
             Ok(())
         } else if let Some(default) = &member.default {
-            map.push((member.name.clone(), default.clone()));
+            map.push((Cow::Borrowed(member.name.as_str()), default.clone()));
 
             Ok(())
         } else {

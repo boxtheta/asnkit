@@ -428,7 +428,7 @@ impl<'a> Generator<'a> {
             Kind::Date => "asnkitrt::value::Date".to_string(),
             Kind::TimeOfDay => "asnkitrt::value::Time".to_string(),
             Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType | Kind::External(_) => {
-                "asnkitrt::value::Value".to_string()
+                "asnkitrt::value::Value<'static>".to_string()
             }
             Kind::SequenceOf(element) | Kind::SetOf(element) => {
                 let element = self.ty(element, &format!("{context}Item"), depth + 1)?;
@@ -779,12 +779,12 @@ pub trait Asn1Type: serde::Serialize + serde::de::DeserializeOwned {
     const NAME: &'static str;
 
     /// What asnkitrt encodes for this value.
-    fn to_value(&self) -> asnkitrt::Result<asnkitrt::value::Value> {
+    fn to_value(&self) -> asnkitrt::Result<asnkitrt::value::Value<'static>> {
         asnkitrt::serde_value::to_value(self)
     }
 
     /// The value for what asnkitrt decoded.
-    fn from_value(value: &asnkitrt::value::Value) -> asnkitrt::Result<Self> {
+    fn from_value(value: &asnkitrt::value::Value<'_>) -> asnkitrt::Result<Self> {
         asnkitrt::serde_value::from_value(value)
     }
 

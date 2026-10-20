@@ -684,18 +684,18 @@ pub(crate) const ELEMENT_TOO_LARGE: &str =
 /// fractional-value), which fit in an `i128` (see `MAX_FRACTION_DIGITS`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DurationComponents {
-    pub years: Option<Value>,
-    pub months: Option<Value>,
-    pub weeks: Option<Value>,
-    pub days: Option<Value>,
-    pub hours: Option<Value>,
-    pub minutes: Option<Value>,
-    pub seconds: Option<Value>,
+    pub years: Option<Value<'static>>,
+    pub months: Option<Value<'static>>,
+    pub weeks: Option<Value<'static>>,
+    pub days: Option<Value<'static>>,
+    pub hours: Option<Value<'static>>,
+    pub minutes: Option<Value<'static>>,
+    pub seconds: Option<Value<'static>>,
     pub fractional_part: Option<(i128, i128)>,
 }
 
 /// A time element given by its digits.
-fn element_of_digits(digits: &str) -> Result<Value> {
+fn element_of_digits(digits: &str) -> Result<Value<'static>> {
     if let Ok(number) = digits.parse::<i128>() {
         return Ok(Value::Integer(number));
     }

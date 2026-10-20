@@ -25,13 +25,16 @@ fn rfc5280(codec: Codec) -> Specification {
 }
 
 /// A certificate with extensions, as DER decodes it.
-fn certificate() -> Value {
+fn certificate() -> Value<'static> {
     let data = fs::read(root().join("tests/fixtures/x509/extensions_all.der")).unwrap();
 
-    rfc5280(Codec::Der).decode("Certificate", &data).unwrap()
+    rfc5280(Codec::Der)
+        .decode("Certificate", &data)
+        .unwrap()
+        .into_owned()
 }
 
-fn member<'a>(value: &'a mut Value, name: &str) -> &'a mut Value {
+fn member<'a, 'v>(value: &'a mut Value<'v>, name: &str) -> &'a mut Value<'v> {
     let Value::Map(members) = value else {
         panic!("not a map");
     };

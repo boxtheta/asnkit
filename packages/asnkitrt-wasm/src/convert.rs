@@ -20,6 +20,7 @@
 
 use asnkitrt::types::{Kind, TypeId, Types, const_matches};
 use asnkitrt::value::{Date, DateTime, Time, Value};
+use std::borrow::Cow;
 
 /// The greatest integer a number of JavaScript holds exactly.
 const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
@@ -255,7 +256,7 @@ impl<'a> Reader<'a> {
 
 /// Converts the value `js/values.js` wrote in `data` to a value of the
 /// type `id`.
-pub fn to_value(types: &Types, id: TypeId, data: &[u8]) -> Result<Value, String> {
+pub fn to_value<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>, String> {
     let mut reader = Reader { data, at: 0 };
     let value = reader.value(0)?;
 
@@ -270,10 +271,10 @@ struct Converter<'a> {
     types: &'a Types,
 }
 
-impl Converter<'_> {
+impl<'a> Converter<'a> {
     /// Converts a value of the type `id`, or of no known type if `None`,
     /// as in an open type.
-    fn typed(&self, id: Option<TypeId>, value: &Js, depth: usize) -> Result<Value, String> {
+    fn typed(&self, id: Option<TypeId>, value: &Js, depth: usize) -> Result<Value<'a>, String> {
         if depth > MAX_DEPTH {
             return Err("The value is nested too deep.".into());
         }
@@ -302,14 +303,15 @@ impl Converter<'_> {
                     let Js::Text(name) = name else {
                         return Err("Expected a CHOICE as [name, value].".into());
                     };
-                    let ty = members
-                        .all()
-                        .find(|member| member.name == *name)
-                        .map(|member| member.ty);
+                    let member = members.all().find(|member| member.name == *name);
+                    let name = match member {
+                        Some(member) => Cow::Borrowed(member.name.as_str()),
+                        None => Cow::Owned(name.to_string()),
+                    };
 
                     Ok(Value::Choice(
-                        name.to_string(),
-                        Box::new(self.typed(ty, inner, depth + 1)?),
+                        name,
+                        Box::new(self.typed(member.map(|member| member.ty), inner, depth + 1)?),
                     ))
                 }
                 None => self.untyped(value, depth),
@@ -317,7 +319,7 @@ impl Converter<'_> {
             Kind::Sequence(members) | Kind::Set(members) | Kind::External(members)
                 if matches!(value, Js::Object(_)) =>
             {
-                let mut slots: Vec<Option<(String, Value)>> = Vec::new();
+                let mut slots: Vec<Option<(Cow<'a, str>, Value<'a>)>> = Vec::new();
                 let mut defined_by = Vec::new();
 
                 for member in members.all() {
@@ -338,7 +340,7 @@ impl Converter<'_> {
                         slots.push(None);
                     } else {
                         slots.push(Some((
-                            member.name.clone(),
+                            Cow::Borrowed(member.name.as_str()),
                             self.typed(Some(member.ty), inner, depth + 1)?,
                         )));
                     }
@@ -357,16 +359,22 @@ impl Converter<'_> {
                             .map(|(_, ty)| *ty)
                     });
 
-                    slots[slot] = Some((member.name.clone(), self.typed(ty, inner, depth + 1)?));
+                    slots[slot] = Some((
+                        Cow::Borrowed(member.name.as_str()),
+                        self.typed(ty, inner, depth + 1)?,
+                    ));
                 }
 
-                let mut map: Vec<(String, Value)> = slots.into_iter().flatten().collect();
+                let mut map: Vec<(Cow<'a, str>, Value<'a>)> = slots.into_iter().flatten().collect();
 
                 // Any other is left for the codec to reject.
                 if let Js::Object(properties) = value {
                     for (key, inner) in properties {
                         if !members.all().any(|member| member.name == *key) {
-                            map.push((key.to_string(), self.untyped(inner, depth + 1)?));
+                            map.push((
+                                Cow::Owned(key.to_string()),
+                                self.untyped(inner, depth + 1)?,
+                            ));
                         }
                     }
                 }
@@ -409,7 +417,7 @@ impl Converter<'_> {
     }
 
     /// Converts a value as the type of JavaScript it is.
-    fn untyped(&self, value: &Js, depth: usize) -> Result<Value, String> {
+    fn untyped(&self, value: &Js, depth: usize) -> Result<Value<'a>, String> {
         if depth > MAX_DEPTH {
             return Err("The value is nested too deep.".into());
         }
@@ -429,7 +437,9 @@ impl Converter<'_> {
             Js::Date(_) => Ok(Value::DateTime(date_time(value)?)),
             Js::Object(properties) => properties
                 .iter()
-                .map(|(key, inner)| Ok((key.to_string(), self.untyped(inner, depth + 1)?)))
+                .map(|(key, inner)| {
+                    Ok((Cow::Owned(key.to_string()), self.untyped(inner, depth + 1)?))
+                })
                 .collect::<Result<_, String>>()
                 .map(Value::Map),
             // Only written in place of what is deeper than MAX_DEPTH.
@@ -439,7 +449,7 @@ impl Converter<'_> {
     }
 }
 
-fn number_to_value(number: f64) -> Value {
+fn number_to_value(number: f64) -> Value<'static> {
     // An integer is an INTEGER, as far as it is exact.
     if number.fract() == 0.0 && number.abs() <= MAX_SAFE_INTEGER as f64 {
         Value::Integer(number as i128)
@@ -449,7 +459,7 @@ fn number_to_value(number: f64) -> Value {
 }
 
 /// The integer of a `BigInt`, by its digits in base 16.
-fn bigint_to_value(text: &str) -> Result<Value, String> {
+fn bigint_to_value(text: &str) -> Result<Value<'static>, String> {
     let (negative, digits) = match text.strip_prefix('-') {
         Some(digits) => (true, digits),
         None => (false, text),

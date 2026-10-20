@@ -140,7 +140,7 @@ pub(crate) fn to_big(value: &Value) -> Option<BigInt> {
 }
 
 /// A `BigInt` as an integer of the runtime, `Value::Integer` if it fits.
-pub(crate) fn to_value(number: &BigInt) -> Value {
+pub(crate) fn to_value(number: &BigInt) -> Value<'static> {
     Value::from_twos_complement(&number.to_signed_bytes_be())
 }
 

@@ -185,12 +185,12 @@ pub trait Asn1Type: serde::Serialize + serde::de::DeserializeOwned {
     const NAME: &'static str;
 
     /// What asnkitrt encodes for this value.
-    fn to_value(&self) -> asnkitrt::Result<asnkitrt::value::Value> {
+    fn to_value(&self) -> asnkitrt::Result<asnkitrt::value::Value<'static>> {
         asnkitrt::serde_value::to_value(self)
     }
 
     /// The value for what asnkitrt decoded.
-    fn from_value(value: &asnkitrt::value::Value) -> asnkitrt::Result<Self> {
+    fn from_value(value: &asnkitrt::value::Value<'_>) -> asnkitrt::Result<Self> {
         asnkitrt::serde_value::from_value(value)
     }
 

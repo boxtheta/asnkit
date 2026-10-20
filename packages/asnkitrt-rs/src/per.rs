@@ -140,7 +140,7 @@ fn less(bytes: &[u8], min: i128) -> Vec<u8> {
 }
 
 /// The integer of the unsigned `bytes` plus `min`.
-fn plus(bytes: &[u8], min: i128) -> Value {
+fn plus(bytes: &[u8], min: i128) -> Value<'static> {
     let mut unsigned = alloc::vec![0u8];
 
     unsigned.extend_from_slice(bytes);
@@ -675,7 +675,7 @@ impl<'a> Reader<'a> {
         Ok((value as i128).wrapping_add(min))
     }
 
-    fn unconstrained_whole_number(&mut self) -> Result<Value> {
+    fn unconstrained_whole_number(&mut self) -> Result<Value<'static>> {
         let length = self.length()?;
         let bytes = self.bytes(length)?;
 
@@ -891,7 +891,7 @@ pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
     Ok(writer.bytes)
 }
 
-pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
     let coder = Coder {
         types,
         aligned: types.codec == Codec::Per,
@@ -906,14 +906,14 @@ pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
     coder.decode_type(id, &mut reader, 0)
 }
 
-fn text_of(value: &Value) -> Result<&str> {
+fn text_of<'v>(value: &'v Value<'_>) -> Result<&'v str> {
     match value {
         Value::Text(text) => Ok(text),
         _ => encode_error("Expected data of type str."),
     }
 }
 
-impl Coder<'_> {
+impl<'a> Coder<'a> {
     fn encode_type(&self, id: TypeId, value: &Value, w: &mut Writer, depth: usize) -> Result<()> {
         if depth > MAX_DEPTH {
             return encode_error("The value is nested too deeply.");
@@ -1386,7 +1386,7 @@ impl Coder<'_> {
 
     fn encode_choice(
         &self,
-        members: &Members,
+        members: &'a Members,
         value: &Value,
         w: &mut Writer,
         depth: usize,
@@ -1744,7 +1744,7 @@ impl Coder<'_> {
 
     fn encode_members(
         &self,
-        members: &Members,
+        members: &'a Members,
         is_set: bool,
         value: &Value,
         w: &mut Writer,
@@ -1755,7 +1755,7 @@ impl Coder<'_> {
         };
         let mut lookup = Lookup::new(map);
         // A SET is encoded in the order of its tags.
-        let encode_root = |w: &mut Writer, lookup: &mut Lookup<'_>| {
+        let encode_root = |w: &mut Writer, lookup: &mut Lookup<'_, '_>| {
             if is_set {
                 let root: Vec<&MemberInfo> = members
                     .order
@@ -1791,7 +1791,7 @@ impl Coder<'_> {
     fn encode_root<M: Borrow<MemberInfo>>(
         &self,
         root: &[M],
-        lookup: &mut Lookup<'_>,
+        lookup: &mut Lookup<'_, '_>,
         w: &mut Writer,
         depth: usize,
     ) -> Result<()> {
@@ -1823,7 +1823,7 @@ impl Coder<'_> {
     fn encode_member(
         &self,
         member: &MemberInfo,
-        lookup: &mut Lookup<'_>,
+        lookup: &mut Lookup<'_, '_>,
         w: &mut Writer,
         encode_default: bool,
         depth: usize,
@@ -1851,7 +1851,7 @@ impl Coder<'_> {
     fn encode_additions(
         &self,
         additions: &[Addition],
-        lookup: &mut Lookup<'_>,
+        lookup: &mut Lookup<'_, '_>,
         w: &mut Writer,
         depth: usize,
     ) -> Result<bool> {
@@ -1916,7 +1916,7 @@ impl Coder<'_> {
 
     // Decoding.
 
-    fn decode_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value> {
+    fn decode_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.", r.position);
         }
@@ -1992,7 +1992,7 @@ impl Coder<'_> {
         }
     }
 
-    fn decode_integer(&self, range: Option<Range>, r: &mut Reader<'_>) -> Result<Value> {
+    fn decode_integer(&self, range: Option<Range>, r: &mut Reader<'_>) -> Result<Value<'a>> {
         if range.is_some_and(|range| range.extensible) && r.bit()? {
             r.align();
 
@@ -2043,7 +2043,7 @@ impl Coder<'_> {
         &self,
         range: &crate::bigint::BigRange,
         r: &mut Reader<'_>,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         use crate::bigint;
         use num_bigint::{BigInt, BigUint};
 
@@ -2095,7 +2095,7 @@ impl Coder<'_> {
         Ok(bigint::to_value(&(min + BigInt::from(offset))))
     }
 
-    fn decode_bit_string(&self, size: Option<Range>, r: &mut Reader<'_>) -> Result<Value> {
+    fn decode_bit_string(&self, size: Option<Range>, r: &mut Reader<'_>) -> Result<Value<'a>> {
         let size = read_extended(size, r)?;
 
         if is_unbound(size) {
@@ -2143,7 +2143,7 @@ impl Coder<'_> {
         r.bits(bits).map(|data| Value::Bits(data, bits))
     }
 
-    fn decode_octet_string(&self, size: Option<Range>, r: &mut Reader<'_>) -> Result<Value> {
+    fn decode_octet_string(&self, size: Option<Range>, r: &mut Reader<'_>) -> Result<Value<'a>> {
         let size = read_extended(size, r)?;
         let unbound = |r: &mut Reader<'_>| self.decode_unbound_octets(r).map(Value::Bytes);
         let Some((min, max)) = size_bounds(size).filter(|_| !is_unbound(size)) else {
@@ -2205,7 +2205,7 @@ impl Coder<'_> {
     }
 
     /// The value of an open type of the type `id`, see `get_open_type`.
-    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value> {
+    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
         self.get_open_type(r, |inner| self.decode_type(id, inner, depth + 1))
     }
 
@@ -2251,7 +2251,7 @@ impl Coder<'_> {
         root: &[(String, i64)],
         additions: Option<&[(String, i64)]>,
         r: &mut Reader<'_>,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         let mut sorted: Vec<&(String, i64)> = root.iter().collect();
 
         sorted.sort_by_key(|(_, number)| *number);
@@ -2281,7 +2281,12 @@ impl Coder<'_> {
         }
     }
 
-    fn decode_choice(&self, members: &Members, r: &mut Reader<'_>, depth: usize) -> Result<Value> {
+    fn decode_choice(
+        &self,
+        members: &'a Members,
+        r: &mut Reader<'_>,
+        depth: usize,
+    ) -> Result<Value<'a>> {
         let additions = choice_additions(members);
 
         if members.additions.is_some() && r.bit()? {
@@ -2292,14 +2297,17 @@ impl Coder<'_> {
                 None => {
                     self.decode_unbound_octets(r)?;
 
-                    Ok(Value::Choice(String::new(), Value::Null.into()))
+                    Ok(Value::Choice(Cow::Borrowed(""), Value::Null.into()))
                 }
                 Some(member) => {
                     let value = self
                         .decode_open_type(member.ty, r, depth)
                         .map_err(|error| error.in_member(&member.name))?;
 
-                    Ok(Value::Choice(member.name.clone(), value.into()))
+                    Ok(Value::Choice(
+                        Cow::Borrowed(member.name.as_str()),
+                        value.into(),
+                    ))
                 }
             };
         }
@@ -2330,7 +2338,10 @@ impl Coder<'_> {
                     .decode_type(member.ty, r, depth + 1)
                     .map_err(|error| error.in_member(&member.name))?;
 
-                Ok(Value::Choice(member.name.clone(), value.into()))
+                Ok(Value::Choice(
+                    Cow::Borrowed(member.name.as_str()),
+                    value.into(),
+                ))
             }
             None => decode_error("Expected a choice index.", r.position),
         }
@@ -2342,7 +2353,7 @@ impl Coder<'_> {
         size: Option<Range>,
         r: &mut Reader<'_>,
         depth: usize,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         let size = read_extended(size, r)?;
         let mut items = Vec::new();
 
@@ -2400,7 +2411,7 @@ impl Coder<'_> {
         size: Option<Range>,
         characters: &Option<Vec<char>>,
         r: &mut Reader<'_>,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         match kind {
             StrKind::Numeric
             | StrKind::Printable
@@ -2568,7 +2579,12 @@ impl Coder<'_> {
     /// A time element of DURATION-INTERVAL-ENCODING, of which the root
     /// is `min` to `max`, and of which only the values above it are in
     /// the extension (X.691 32.6.1, 13.1).
-    fn get_duration_element(&self, min: i128, max: i128, r: &mut Reader<'_>) -> Result<Value> {
+    fn get_duration_element(
+        &self,
+        min: i128,
+        max: i128,
+        r: &mut Reader<'_>,
+    ) -> Result<Value<'static>> {
         if !r.bit()? {
             return self.get_range(min, max, r).map(Value::Integer);
         }
@@ -2630,22 +2646,18 @@ impl Coder<'_> {
 
     fn decode_members(
         &self,
-        members: &Members,
+        members: &'a Members,
         is_set: bool,
         r: &mut Reader<'_>,
         depth: usize,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         let has_additions = members.additions.is_some() && r.bit()?;
         let mut values = if is_set {
-            let root: Vec<&MemberInfo> = members
-                .order
-                .iter()
-                .map(|index| &members.root[*index])
-                .collect();
+            let root = members.order.iter().map(|index| &members.root[*index]);
 
-            self.decode_root(&root, &[], r, depth)?
+            self.decode_root(root, &[], r, depth)?
         } else {
-            self.decode_root(&members.root, &[], r, depth)?
+            self.decode_root(members.root.iter(), &[], r, depth)?
         };
 
         if has_additions {
@@ -2659,23 +2671,24 @@ impl Coder<'_> {
 
     /// The members of `root`, after the members `before` of the same
     /// SEQUENCE or SET, which an ANY DEFINED BY may be defined by.
-    fn decode_root<M: Borrow<MemberInfo>>(
+    fn decode_root<I>(
         &self,
-        root: &[M],
-        before: &[(String, Value)],
+        root: I,
+        before: &[(Cow<'_, str>, Value<'_>)],
         r: &mut Reader<'_>,
         depth: usize,
-    ) -> Result<Vec<(String, Value)>> {
+    ) -> Result<Vec<(Cow<'a, str>, Value<'a>)>>
+    where
+        I: ExactSizeIterator<Item = &'a MemberInfo> + Clone,
+    {
         let mut values = Vec::with_capacity(root.len());
         let mut next = r.presence(
-            root.iter()
-                .map(Borrow::<MemberInfo>::borrow)
+            root.clone()
                 .filter(|member| member.optional || member.has_default())
                 .count(),
         )?;
 
         for member in root {
-            let member = member.borrow();
             let is_present = if member.optional || member.has_default() {
                 next += 1;
 
@@ -2687,9 +2700,9 @@ impl Coder<'_> {
             if is_present {
                 let value = self.decode_member(member, &values, before, r, depth)?;
 
-                values.push((member.name.clone(), value));
+                values.push((Cow::Borrowed(member.name.as_str()), value));
             } else if let Some(default) = &member.default {
-                values.push((member.name.clone(), default.clone()));
+                values.push((Cow::Borrowed(member.name.as_str()), default.clone()));
             }
         }
 
@@ -2702,11 +2715,11 @@ impl Coder<'_> {
     fn decode_member(
         &self,
         member: &MemberInfo,
-        values: &[(String, Value)],
-        before: &[(String, Value)],
+        values: &[(Cow<'_, str>, Value<'_>)],
+        before: &[(Cow<'_, str>, Value<'_>)],
         r: &mut Reader<'_>,
         depth: usize,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         match self
             .types
             .defined_by(member.ty, values.iter().chain(before))
@@ -2720,8 +2733,8 @@ impl Coder<'_> {
 
     fn decode_additions(
         &self,
-        additions: &[Addition],
-        values: &mut Vec<(String, Value)>,
+        additions: &'a [Addition],
+        values: &mut Vec<(Cow<'a, str>, Value<'a>)>,
         r: &mut Reader<'_>,
         depth: usize,
     ) -> Result<()> {
@@ -2737,8 +2750,9 @@ impl Coder<'_> {
 
             match additions.get(index) {
                 Some(Addition::Group(group)) => {
-                    let decoded = self
-                        .get_open_type(r, |inner| self.decode_root(group, values, inner, depth))?;
+                    let decoded = self.get_open_type(r, |inner| {
+                        self.decode_root(group.iter(), values, inner, depth)
+                    })?;
 
                     values.extend(decoded);
                 }
@@ -2747,7 +2761,7 @@ impl Coder<'_> {
                         self.decode_member(member, values, &[], inner, depth)
                     })?;
 
-                    values.push((member.name.clone(), value));
+                    values.push((Cow::Borrowed(member.name.as_str()), value));
                 }
                 // One of a later version.
                 None => {

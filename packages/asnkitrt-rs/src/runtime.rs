@@ -171,12 +171,14 @@ impl Specification {
         }
     }
 
-    /// Decodes `data` as the type `name`.
-    pub fn decode(&self, name: &str, data: &[u8]) -> Result<Value> {
+    /// Decodes `data` as the type `name`. The value borrows the names of
+    /// its members from the specification; [`Value::into_owned`] keeps
+    /// it past it.
+    pub fn decode<'a>(&'a self, name: &str, data: &[u8]) -> Result<Value<'a>> {
         self.decode_id(name, self.find(name)?, data)
     }
 
-    pub fn decode_in(&self, module: &str, name: &str, data: &[u8]) -> Result<Value> {
+    pub fn decode_in<'a>(&'a self, module: &str, name: &str, data: &[u8]) -> Result<Value<'a>> {
         self.decode_id(
             name,
             self.types.find(module, name).ok_or(Error::NoSuchType)?,
@@ -184,7 +186,7 @@ impl Specification {
         )
     }
 
-    fn decode_id(&self, name: &str, id: TypeId, data: &[u8]) -> Result<Value> {
+    fn decode_id<'a>(&'a self, name: &str, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
         let decoded = match self.types.codec {
             Codec::Ber | Codec::Der => ber::decode(&self.types, id, data),
             Codec::Per | Codec::Uper => per::decode(&self.types, id, data),
@@ -208,7 +210,7 @@ impl Specification {
 
     /// Decodes the first value of `data` as the type `name`, and
     /// returns it with its length.
-    pub fn decode_with_length(&self, name: &str, data: &[u8]) -> Result<(Value, usize)> {
+    pub fn decode_with_length<'a>(&'a self, name: &str, data: &[u8]) -> Result<(Value<'a>, usize)> {
         match self.types.codec {
             Codec::Ber | Codec::Der => ber::decode_with_length(&self.types, self.find(name)?, data)
                 .map_err(|error| error.in_type(name)),

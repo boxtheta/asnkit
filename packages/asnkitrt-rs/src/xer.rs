@@ -12,6 +12,7 @@
 //! written is the text of `ElementTree.tostring` of the runtime for
 //! Python, in ASCII.
 
+use alloc::borrow::Cow;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -65,7 +66,7 @@ pub fn encode_indented(types: &Types, id: TypeId, value: &Value, indent: usize) 
 }
 
 /// Decodes `data` as the type `id`.
-pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
     let Ok(text) = core::str::from_utf8(data) else {
         return decode_error("Expected UTF-8.");
     };
@@ -109,7 +110,7 @@ fn time_error<T>(result: Result<T>) -> Result<T> {
     result.map_err(|_| Error::decode("Expected a date or a time.", 0))
 }
 
-impl Coder<'_> {
+impl<'a> Coder<'a> {
     /// The name of the value of an ENUMERATED.
     fn enumeration_name<'v>(
         &self,
@@ -161,11 +162,11 @@ impl Coder<'_> {
         }
     }
 
-    fn alternative<'m, 'v>(
+    fn alternative<'m, 'v, 'w>(
         &self,
         members: &'m Members,
-        value: &'v Value,
-    ) -> Result<(&'m MemberInfo, &'v Value)> {
+        value: &'v Value<'w>,
+    ) -> Result<(&'m MemberInfo, &'v Value<'w>)> {
         let Value::Choice(name, inner) = value else {
             return encode_error("Expected data of type tuple(str, object).");
         };
@@ -370,14 +371,18 @@ impl Coder<'_> {
     /// The type of a member, which for an ANY DEFINED BY with choices is
     /// that of the choice of the value of the member it names, if there is
     /// one.
-    fn member_type(&self, member: &MemberInfo, map: &[(String, Value)]) -> Option<TypeId> {
+    fn member_type(
+        &self,
+        member: &MemberInfo,
+        map: &[(Cow<'_, str>, Value<'_>)],
+    ) -> Option<TypeId> {
         self.types
             .defined_by(member.ty, map)
             .unwrap_or(Some(member.ty))
     }
 
     /// Decodes an item of a SEQUENCE OF or a SET OF.
-    fn decode_of(&self, id: TypeId, element: &Element, depth: usize) -> Result<Value> {
+    fn decode_of(&self, id: TypeId, element: &Element, depth: usize) -> Result<Value<'a>> {
         match self.types.kind(id) {
             Kind::Boolean => boolean(element).map(Value::Boolean),
             Kind::Enumerated { root, additions } => {
@@ -389,7 +394,7 @@ impl Coder<'_> {
             Kind::Choice(members) => match members.all().find(|member| member.name == element.name)
             {
                 Some(member) => Ok(Value::Choice(
-                    member.name.clone(),
+                    Cow::Borrowed(member.name.as_str()),
                     self.decode(member.ty, element, depth + 1)
                         .map_err(|error| error.in_member(&member.name))?
                         .into(),
@@ -400,7 +405,7 @@ impl Coder<'_> {
         }
     }
 
-    fn enumeration_value(&self, name: &str, number: i64) -> Value {
+    fn enumeration_value(&self, name: &str, number: i64) -> Value<'static> {
         if self.types.numeric_enums {
             Value::Integer(i128::from(number))
         } else {
@@ -435,7 +440,7 @@ impl Coder<'_> {
         Ok(text)
     }
 
-    fn decode(&self, id: TypeId, element: &Element, depth: usize) -> Result<Value> {
+    fn decode(&self, id: TypeId, element: &Element, depth: usize) -> Result<Value<'a>> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.");
         }
@@ -544,11 +549,13 @@ impl Coder<'_> {
                                 .decode(ty, inner, depth + 1)
                                 .map_err(|error| error.in_member(&member.name))?;
 
-                            map.push((member.name.clone(), value));
+                            map.push((Cow::Borrowed(member.name.as_str()), value));
                         }
                         None if member.optional => {}
                         None => match &member.default {
-                            Some(default) => map.push((member.name.clone(), default.clone())),
+                            Some(default) => {
+                                map.push((Cow::Borrowed(member.name.as_str()), default.clone()))
+                            }
                             None => return decode_error("A member is not found in the element."),
                         },
                     }
@@ -592,13 +599,13 @@ impl Coder<'_> {
 
                 match members.all().find(|member| member.name == inner.name) {
                     Some(member) => Ok(Value::Choice(
-                        member.name.clone(),
+                        Cow::Borrowed(member.name.as_str()),
                         self.decode(member.ty, inner, depth + 1)
                             .map_err(|error| error.in_member(&member.name))?
                             .into(),
                     )),
                     None if members.additions.is_some() => {
-                        Ok(Value::Choice(String::new(), Value::Null.into()))
+                        Ok(Value::Choice(Cow::Borrowed(""), Value::Null.into()))
                     }
                     None => decode_error("Expected a name of an alternative of the CHOICE."),
                 }

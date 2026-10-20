@@ -139,7 +139,7 @@ pub(crate) fn twos_complement_to_decimal(bytes: &[u8]) -> Option<String> {
 /// An integer written in decimal, with an optional sign. `None` if it is
 /// not one, or has too many digits.
 #[cfg(any(feature = "jer", feature = "xer", feature = "gser"))]
-pub(crate) fn decimal_to_value(text: &str) -> Option<Value> {
+pub(crate) fn decimal_to_value(text: &str) -> Option<Value<'static>> {
     let (negative, digits) = match text.as_bytes().first()? {
         b'-' => (true, &text[1..]),
         b'+' => (false, &text[1..]),

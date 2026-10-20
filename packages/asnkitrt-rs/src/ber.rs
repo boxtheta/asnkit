@@ -10,9 +10,9 @@
 //! explicit tag is a tag around the tag of the type it tags, and an
 //! implicit one takes the place of that tag.
 
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::borrow::Borrow;
 
 use crate::node::TagClass;
 use crate::time;
@@ -36,7 +36,11 @@ pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
 
 /// Decodes the type `id` from the start of `data`, and returns it with
 /// the length of what was decoded.
-pub fn decode_with_length(types: &Types, id: TypeId, data: &[u8]) -> Result<(Value, usize)> {
+pub fn decode_with_length<'a>(
+    types: &'a Types,
+    id: TypeId,
+    data: &[u8],
+) -> Result<(Value<'a>, usize)> {
     match Coder::new(types).decode_type(id, data, 0, None, 0)? {
         Some(decoded) => Ok(decoded),
         None => Err(Error::decode("Expected a tag that the type has.", 0)),
@@ -44,7 +48,7 @@ pub fn decode_with_length(types: &Types, id: TypeId, data: &[u8]) -> Result<(Val
 }
 
 /// Decodes the type `id` from `data`, which is all of it.
-pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
     let (value, length) = decode_with_length(types, id, data)?;
 
     if length != data.len() {
@@ -902,7 +906,7 @@ impl<'a> Coder<'a> {
         id: TypeId,
         value: &Value,
         out: &mut Vec<u8>,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         depth: usize,
     ) -> Result<()> {
         if depth > MAX_DEPTH {
@@ -920,7 +924,7 @@ impl<'a> Coder<'a> {
         concrete: TypeId,
         value: &Value,
         out: &mut Vec<u8>,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         depth: usize,
     ) -> Result<()> {
         let kind = &self.types.node(concrete).kind;
@@ -943,10 +947,10 @@ impl<'a> Coder<'a> {
     /// A type with no tag of its own: a CHOICE is its alternative.
     fn encode_untagged(
         &self,
-        kind: &Kind,
+        kind: &'a Kind,
         value: &Value,
         out: &mut Vec<u8>,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         depth: usize,
     ) -> Result<()> {
         match kind {
@@ -1005,10 +1009,10 @@ impl<'a> Coder<'a> {
     /// The contents of a value of a type with a tag of its own.
     fn encode_content(
         &self,
-        kind: &Kind,
+        kind: &'a Kind,
         id: TypeId,
         value: &Value,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         out: &mut Vec<u8>,
         depth: usize,
     ) -> Result<()> {
@@ -1036,10 +1040,10 @@ impl<'a> Coder<'a> {
     /// The contents of a value of a type with no others in it.
     fn encode_primitive(
         &self,
-        kind: &Kind,
+        kind: &'a Kind,
         id: TypeId,
         value: &Value,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
     ) -> Result<Vec<u8>> {
         let _ = siblings;
 
@@ -1228,7 +1232,7 @@ impl<'a> Coder<'a> {
 
     fn encode_members(
         &self,
-        members: &Members,
+        members: &'a Members,
         is_set: bool,
         value: &Value,
         out: &mut Vec<u8>,
@@ -1314,7 +1318,7 @@ impl<'a> Coder<'a> {
     fn encode_member(
         &self,
         member: &MemberInfo,
-        lookup: &mut Lookup<'_>,
+        lookup: &mut Lookup<'_, '_>,
         out: &mut Vec<u8>,
         depth: usize,
     ) -> Result<()> {
@@ -1338,7 +1342,7 @@ impl<'a> Coder<'a> {
 
     // Decoding.
 
-    fn indefinite_ok(&self, kind: &Kind) -> bool {
+    fn indefinite_ok(&self, kind: &'a Kind) -> bool {
         !self.strict && allows_indefinite(kind)
     }
 
@@ -1349,9 +1353,9 @@ impl<'a> Coder<'a> {
         id: TypeId,
         data: &[u8],
         offset: usize,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         depth: usize,
-    ) -> Result<Option<(Value, usize)>> {
+    ) -> Result<Option<(Value<'a>, usize)>> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.", offset);
         }
@@ -1376,10 +1380,10 @@ impl<'a> Coder<'a> {
         concrete: TypeId,
         data: &[u8],
         offset: usize,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         outer: bool,
         depth: usize,
-    ) -> Result<Option<(Value, usize)>> {
+    ) -> Result<Option<(Value<'a>, usize)>> {
         let kind = &self.types.node(concrete).kind;
 
         let Some((tag, rest)) = tags.split_first() else {
@@ -1471,12 +1475,12 @@ impl<'a> Coder<'a> {
 
     fn decode_untagged(
         &self,
-        kind: &Kind,
+        kind: &'a Kind,
         data: &[u8],
         offset: usize,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         depth: usize,
-    ) -> Result<Option<(Value, usize)>> {
+    ) -> Result<Option<(Value<'a>, usize)>> {
         match kind {
             Kind::Choice(members) => {
                 let (class, _, number, _) = read_tag(data, offset)?;
@@ -1488,7 +1492,7 @@ impl<'a> Coder<'a> {
                             .map_err(|error| error.in_member(&member.name))?
                         {
                             Some((value, end)) => Ok(Some((
-                                Value::Choice(member.name.clone(), value.into()),
+                                Value::Choice(Cow::Borrowed(member.name.as_str()), value.into()),
                                 end,
                             ))),
                             None => Ok(None),
@@ -1503,7 +1507,7 @@ impl<'a> Coder<'a> {
                     let end = start + length.unwrap_or(0);
 
                     return Ok(Some((
-                        Value::Choice(String::new(), Value::Null.into()),
+                        Value::Choice(Cow::Borrowed(""), Value::Null.into()),
                         end,
                     )));
                 }
@@ -1534,7 +1538,7 @@ impl<'a> Coder<'a> {
         }
     }
 
-    fn decode_any(&self, data: &[u8], offset: usize) -> Result<(Value, usize)> {
+    fn decode_any(&self, data: &[u8], offset: usize) -> Result<(Value<'a>, usize)> {
         let start = skip_tag(data, offset)?;
         let (length, start) = read_length(data, start, true, false)?;
         let end = start + length.unwrap_or(0);
@@ -1545,14 +1549,14 @@ impl<'a> Coder<'a> {
     #[allow(clippy::too_many_arguments)]
     fn decode_content(
         &self,
-        kind: &Kind,
+        kind: &'a Kind,
         id: TypeId,
         data: &[u8],
         offset: usize,
         length: usize,
-        siblings: Option<&[(String, Value)]>,
+        siblings: Option<&[(Cow<'_, str>, Value<'_>)]>,
         _depth: usize,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         let _ = (id, siblings);
         let end = offset + length;
         let contents = &data[offset..end];
@@ -1691,7 +1695,7 @@ impl<'a> Coder<'a> {
         Ok(())
     }
 
-    fn decode_bit_string(&self, contents: &[u8], named: bool, offset: usize) -> Result<Value> {
+    fn decode_bit_string(&self, contents: &[u8], named: bool, offset: usize) -> Result<Value<'a>> {
         let Some((&unused, bytes)) = contents.split_first() else {
             return decode_error("Expected at least one byte of a BIT STRING.", offset);
         };
@@ -1728,12 +1732,12 @@ impl<'a> Coder<'a> {
     /// A string in parts, the way BER allows.
     fn decode_constructed(
         &self,
-        kind: &Kind,
+        kind: &'a Kind,
         data: &[u8],
         start: usize,
         length: Option<usize>,
         depth: usize,
-    ) -> Result<(Value, usize)> {
+    ) -> Result<(Value<'a>, usize)> {
         if self.strict {
             return decode_error("Expected a string that is not constructed.", start);
         }
@@ -1867,7 +1871,7 @@ impl<'a> Coder<'a> {
         offset: usize,
         end: Option<usize>,
         depth: usize,
-    ) -> Result<(Value, usize)> {
+    ) -> Result<(Value<'a>, usize)> {
         let mut items = Vec::new();
         let mut at = offset;
         let mut previous: Option<&[u8]> = None;
@@ -1928,19 +1932,20 @@ impl<'a> Coder<'a> {
     /// value and the offset after it.
     fn decode_members(
         &self,
-        members: &Members,
+        members: &'a Members,
         is_set: bool,
         data: &[u8],
         offset: usize,
         end: Option<usize>,
         depth: usize,
-    ) -> Result<(Value, usize)> {
-        let mut values: Vec<(String, Value)> = Vec::with_capacity(members.root.len());
-        let additions = || -> Vec<&MemberInfo> { members.all().skip(members.root.len()).collect() };
+    ) -> Result<(Value<'a>, usize)> {
+        let mut values: Vec<(Cow<'a, str>, Value<'a>)> = Vec::with_capacity(members.root.len());
+        let additions =
+            || -> Vec<&'a MemberInfo> { members.all().skip(members.root.len()).collect() };
         let (at, out_of_data) = if is_set {
             // The members of a SET are in any order, the additions among
             // them, and DER has them in the order of their tags.
-            let mut all: Vec<&MemberInfo> = members
+            let mut all: Vec<&'a MemberInfo> = members
                 .order
                 .iter()
                 .map(|index| &members.root[*index])
@@ -1950,7 +1955,7 @@ impl<'a> Coder<'a> {
             all.extend(additions());
 
             self.decode_member_list(
-                &all,
+                all.iter().copied(),
                 additions_from,
                 true,
                 data,
@@ -1961,7 +1966,7 @@ impl<'a> Coder<'a> {
             )?
         } else {
             let (mut at, mut out_of_data) = self.decode_member_list(
-                &members.root,
+                members.root.iter(),
                 members.root.len(),
                 false,
                 data,
@@ -1975,7 +1980,7 @@ impl<'a> Coder<'a> {
             // added.
             if members.additions.is_some() {
                 (at, out_of_data) = self.decode_member_list(
-                    &additions(),
+                    additions().iter().copied(),
                     0,
                     false,
                     data,
@@ -2022,17 +2027,20 @@ impl<'a> Coder<'a> {
     /// additions, which may be missing. With `by_tags`, the members of a
     /// SET, DER has them in the order of their tags, and else in the
     /// order they are declared in.
-    fn decode_member_list<M: Borrow<MemberInfo>>(
+    fn decode_member_list<I>(
         &self,
-        members: &[M],
+        members: I,
         additions_from: usize,
         by_tags: bool,
         data: &[u8],
         offset: usize,
         end: Option<usize>,
-        values: &mut Vec<(String, Value)>,
+        values: &mut Vec<(Cow<'a, str>, Value<'a>)>,
         depth: usize,
-    ) -> Result<(usize, bool)> {
+    ) -> Result<(usize, bool)>
+    where
+        I: ExactSizeIterator<Item = &'a MemberInfo> + Clone,
+    {
         let mut decoded = Decoded::new(members.len());
         let mut at = offset;
         let mut success_earlier = false;
@@ -2045,9 +2053,7 @@ impl<'a> Coder<'a> {
         loop {
             let mut success = false;
 
-            for (index, member) in members.iter().enumerate() {
-                let member = member.borrow();
-
+            for (index, member) in members.clone().enumerate() {
                 if out_of_data || decoded.has(index) {
                     continue;
                 }
@@ -2087,7 +2093,7 @@ impl<'a> Coder<'a> {
                     success = true;
                     at = next;
                     decoded.set(index);
-                    values.push((member.name.clone(), value));
+                    values.push((Cow::Borrowed(member.name.as_str()), value));
                 }
 
                 (out_of_data, at) = self.is_end(data, at, end)?;
@@ -2100,15 +2106,13 @@ impl<'a> Coder<'a> {
             }
         }
 
-        for (index, member) in members.iter().enumerate() {
-            let member = member.borrow();
-
+        for (index, member) in members.enumerate() {
             if decoded.has(index) || member.optional {
                 continue;
             }
 
             if let Some(default) = &member.default {
-                values.push((member.name.clone(), default.clone()));
+                values.push((Cow::Borrowed(member.name.as_str()), default.clone()));
             } else if index >= additions_from {
                 break;
             } else if out_of_data {

@@ -819,12 +819,12 @@ pub trait Asn1Type: serde::Serialize + serde::de::DeserializeOwned {
     const NAME: &'static str;
 
     /// What asnkitrt encodes for this value.
-    fn to_value(&self) -> asnkitrt::Result<asnkitrt::value::Value> {
+    fn to_value(&self) -> asnkitrt::Result<asnkitrt::value::Value<'static>> {
         asnkitrt::serde_value::to_value(self)
     }
 
     /// The value for what asnkitrt decoded.
-    fn from_value(value: &asnkitrt::value::Value) -> asnkitrt::Result<Self> {
+    fn from_value(value: &asnkitrt::value::Value<'_>) -> asnkitrt::Result<Self> {
         asnkitrt::serde_value::from_value(value)
     }
 
@@ -864,7 +864,7 @@ impl Asn1Type for Attribute {
 
 pub type AttributeType = String;
 
-pub type AttributeValue = asnkitrt::value::Value;
+pub type AttributeValue = asnkitrt::value::Value<'static>;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttributeTypeAndValue {
@@ -1235,7 +1235,7 @@ impl Asn1Type for TBSCertList {
 pub struct AlgorithmIdentifier {
     pub algorithm: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parameters: Option<asnkitrt::value::Value>,
+    pub parameters: Option<asnkitrt::value::Value<'static>>,
 }
 
 impl Asn1Type for AlgorithmIdentifier {
@@ -1377,7 +1377,7 @@ pub struct ExtensionAttribute {
     #[serde(rename = "extension-attribute-type")]
     pub extension_attribute_type: u16,
     #[serde(rename = "extension-attribute-value")]
-    pub extension_attribute_value: asnkitrt::value::Value,
+    pub extension_attribute_value: asnkitrt::value::Value<'static>,
 }
 
 impl Asn1Type for ExtensionAttribute {
@@ -1597,7 +1597,7 @@ pub type CertPolicyId = String;
 pub struct PolicyQualifierInfo {
     #[serde(rename = "policyQualifierId")]
     pub policy_qualifier_id: PolicyQualifierId,
-    pub qualifier: asnkitrt::value::Value,
+    pub qualifier: asnkitrt::value::Value<'static>,
 }
 
 impl Asn1Type for PolicyQualifierInfo {
@@ -1698,7 +1698,7 @@ impl Asn1Type for GeneralName {
 pub struct AnotherName {
     #[serde(rename = "type-id")]
     pub type_id: String,
-    pub value: asnkitrt::value::Value,
+    pub value: asnkitrt::value::Value<'static>,
 }
 
 impl Asn1Type for AnotherName {

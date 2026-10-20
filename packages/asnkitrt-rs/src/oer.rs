@@ -7,6 +7,7 @@
 //! It does what the runtime for Python does, also where that is not all
 //! of the standard.
 
+use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::borrow::Borrow;
@@ -42,7 +43,7 @@ pub fn encode(types: &Types, id: TypeId, value: &Value) -> Result<Vec<u8>> {
     Ok(w.bytes)
 }
 
-pub fn decode(types: &Types, id: TypeId, data: &[u8]) -> Result<Value> {
+pub fn decode<'a>(types: &'a Types, id: TypeId, data: &[u8]) -> Result<Value<'a>> {
     let mut r = Reader {
         data,
         position: 0,
@@ -92,7 +93,7 @@ fn put_integer(w: &mut Writer, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn get_integer(r: &mut Reader<'_>) -> Result<Value> {
+fn get_integer<'a>(r: &mut Reader<'_>) -> Result<Value<'a>> {
     let length = get_length(r)?;
     let bytes = r.octets(length)?;
 
@@ -123,7 +124,7 @@ fn oer_range(node: &crate::types::TypeNode) -> Option<crate::types::Range> {
 /// A time element of DURATION-INTERVAL-ENCODING, which is an INTEGER
 /// (0..MAX) (X.696 29.4.1): a `Value::Integer`, or a `Value::BigInteger`
 /// if it does not fit in an `i128`, which needs the feature `bigint`.
-fn get_duration_field(r: &mut Reader<'_>) -> Result<Value> {
+fn get_duration_field<'a>(r: &mut Reader<'_>) -> Result<Value<'a>> {
     let length = get_length(r)?;
     let bytes = r.octets(length)?;
     let significant = &bytes[bytes.iter().take_while(|byte| **byte == 0).count()..];
@@ -269,7 +270,7 @@ fn fixed_size(range: Option<crate::types::Range>) -> Option<usize> {
     None
 }
 
-impl Coder<'_> {
+impl<'a> Coder<'a> {
     fn encode_type(&self, id: TypeId, value: &Value, w: &mut Writer, depth: usize) -> Result<()> {
         if depth > MAX_DEPTH {
             return encode_error("The value is nested too deeply.");
@@ -579,7 +580,7 @@ impl Coder<'_> {
 
     fn encode_choice(
         &self,
-        members: &Members,
+        members: &'a Members,
         value: &Value,
         w: &mut Writer,
         depth: usize,
@@ -736,7 +737,7 @@ impl Coder<'_> {
 
     fn encode_members(
         &self,
-        members: &Members,
+        members: &'a Members,
         is_set: bool,
         value: &Value,
         w: &mut Writer,
@@ -747,7 +748,7 @@ impl Coder<'_> {
         };
         let mut lookup = Lookup::new(map);
         // A SET is encoded in the order of its tags.
-        let encode_root = |w: &mut Writer, lookup: &mut Lookup<'_>| {
+        let encode_root = |w: &mut Writer, lookup: &mut Lookup<'_, '_>| {
             if is_set {
                 let root: Vec<&MemberInfo> = members
                     .order
@@ -789,7 +790,7 @@ impl Coder<'_> {
     fn encode_root<M: Borrow<MemberInfo>>(
         &self,
         root: &[M],
-        lookup: &mut Lookup<'_>,
+        lookup: &mut Lookup<'_, '_>,
         w: &mut Writer,
         depth: usize,
     ) -> Result<()> {
@@ -823,7 +824,7 @@ impl Coder<'_> {
     fn encode_member(
         &self,
         member: &MemberInfo,
-        lookup: &mut Lookup<'_>,
+        lookup: &mut Lookup<'_, '_>,
         w: &mut Writer,
         encode_default: bool,
         depth: usize,
@@ -868,7 +869,7 @@ impl Coder<'_> {
     fn encode_additions(
         &self,
         additions: &[&MemberInfo],
-        lookup: &mut Lookup<'_>,
+        lookup: &mut Lookup<'_, '_>,
         w: &mut Writer,
         depth: usize,
     ) -> Result<bool> {
@@ -919,7 +920,7 @@ impl Coder<'_> {
 
     // Decoding.
 
-    fn decode_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value> {
+    fn decode_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
         if depth > MAX_DEPTH {
             return decode_error("The data is nested too deeply.", r.position);
         }
@@ -1074,7 +1075,7 @@ impl Coder<'_> {
         &self,
         range: Option<crate::types::Range>,
         r: &mut Reader<'_>,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         // An extensible constraint is not OER-visible, so the integer has
         // no bounds (X.696 8.2.2, 10.4 Note 2).
         let signed =
@@ -1132,7 +1133,12 @@ impl Coder<'_> {
         Ok(Value::from_twos_complement(&padded))
     }
 
-    fn decode_choice(&self, members: &Members, r: &mut Reader<'_>, depth: usize) -> Result<Value> {
+    fn decode_choice(
+        &self,
+        members: &'a Members,
+        r: &mut Reader<'_>,
+        depth: usize,
+    ) -> Result<Value<'a>> {
         let (class, number) = get_tag(r)?;
         let root_count = members.root.len();
         // An untagged CHOICE has the tags of its alternatives, which it
@@ -1152,14 +1158,17 @@ impl Coder<'_> {
                     .decode_type(member.ty, r, depth + 1)
                     .map_err(|error| error.in_member(&member.name))?;
 
-                Ok(Value::Choice(member.name.clone(), value.into()))
+                Ok(Value::Choice(
+                    Cow::Borrowed(member.name.as_str()),
+                    value.into(),
+                ))
             }
             None if members.additions.is_some() => {
                 let length = get_length(r)?;
 
                 r.skip(8 * length)?;
 
-                Ok(Value::Choice(String::new(), Value::Null.into()))
+                Ok(Value::Choice(Cow::Borrowed(""), Value::Null.into()))
             }
             None => decode_error(
                 "Expected the tag of an alternative of the CHOICE.",
@@ -1272,11 +1281,11 @@ impl Coder<'_> {
 
     fn decode_members(
         &self,
-        members: &Members,
+        members: &'a Members,
         is_set: bool,
         r: &mut Reader<'_>,
         depth: usize,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         let root = |index: usize| match is_set {
             true => &members.root[members.order[index]],
             false => &members.root[index],
@@ -1310,14 +1319,14 @@ impl Coder<'_> {
             if is_present {
                 let value = self.decode_member(member, &values, r, depth)?;
 
-                values.push((member.name.clone(), value));
+                values.push((Cow::Borrowed(member.name.as_str()), value));
             } else if let Some(default) = &member.default {
-                values.push((member.name.clone(), default.clone()));
+                values.push((Cow::Borrowed(member.name.as_str()), default.clone()));
             }
         }
 
         if has_additions {
-            let additions: Vec<&MemberInfo> = members.all().skip(members.root.len()).collect();
+            let additions: Vec<&'a MemberInfo> = members.all().skip(members.root.len()).collect();
 
             self.decode_additions(&additions, &mut values, r, depth)?;
         }
@@ -1331,10 +1340,10 @@ impl Coder<'_> {
     fn decode_member(
         &self,
         member: &MemberInfo,
-        values: &[(String, Value)],
+        values: &[(Cow<'_, str>, Value<'_>)],
         r: &mut Reader<'_>,
         depth: usize,
-    ) -> Result<Value> {
+    ) -> Result<Value<'a>> {
         match self.types.defined_by(member.ty, values) {
             Some(Some(ty)) => self.decode_open_type(ty, r, depth),
             Some(None) => decode_error("Bad AnyDefinedBy choice.", r.position),
@@ -1345,7 +1354,7 @@ impl Coder<'_> {
 
     /// The value of an open type of the type `id`, see `encode_open_type`.
     /// It has to fill the length it is in.
-    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value> {
+    fn decode_open_type(&self, id: TypeId, r: &mut Reader<'_>, depth: usize) -> Result<Value<'a>> {
         let length = get_length(r)?;
         let data = r.octets(length)?;
         let mut inner = Reader {
@@ -1367,8 +1376,8 @@ impl Coder<'_> {
 
     fn decode_additions(
         &self,
-        additions: &[&MemberInfo],
-        values: &mut Vec<(String, Value)>,
+        additions: &[&'a MemberInfo],
+        values: &mut Vec<(Cow<'a, str>, Value<'a>)>,
         r: &mut Reader<'_>,
         depth: usize,
     ) -> Result<()> {
@@ -1400,7 +1409,7 @@ impl Coder<'_> {
                 Some(member) => {
                     let value = self.decode_member(member, values, r, depth)?;
 
-                    values.push((member.name.clone(), value));
+                    values.push((Cow::Borrowed(member.name.as_str()), value));
                 }
                 None => r.skip(8 * member_length)?,
             }

@@ -36,7 +36,7 @@ fn container(source: &str, options: &CompileOptions) -> Vec<u8> {
     .unwrap()
 }
 
-fn message(key: Value, payload: Value) -> Value {
+fn message<'a>(key: Value<'a>, payload: Value<'a>) -> Value<'a> {
     Value::Map(vec![("kind".into(), key), ("payload".into(), payload)])
 }
 

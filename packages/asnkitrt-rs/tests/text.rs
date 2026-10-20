@@ -28,7 +28,7 @@ fn compiled(name: &str, codec: Codec) -> Specification {
     .unwrap()
 }
 
-fn question(id: i128, text: &str) -> Value {
+fn question(id: i128, text: &str) -> Value<'static> {
     Value::Map(vec![
         ("id".into(), Value::Integer(id)),
         ("question".into(), Value::text(text)),
