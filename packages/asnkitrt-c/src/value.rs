@@ -13,7 +13,7 @@
 
 use std::ffi::{c_char, c_int};
 
-use asnkitrt::value::{self, Date, DateTime, Time, Value};
+use asnkitrt::value::{self, Date, DateTime, ObjectIdentifier, Time, Value};
 
 use crate::{
     ASNKIT_ERROR_ARGUMENT, ASNKIT_ERROR_KIND, ASNKIT_ERROR_RANGE, Failure, Result, bytes, failure,
@@ -33,6 +33,7 @@ pub const ASNKIT_CHOICE: c_int = 9;
 pub const ASNKIT_DATE_TIME: c_int = 10;
 pub const ASNKIT_DATE: c_int = 11;
 pub const ASNKIT_TIME: c_int = 12;
+pub const ASNKIT_OBJECT_IDENTIFIER: c_int = 13;
 
 /// A date, as in the header.
 #[repr(C)]
@@ -168,8 +169,8 @@ pub extern "C" fn asnkit_value_new_real(real: f64) -> *mut Value<'static> {
     guard_handle(|| Ok(new(Value::Real(real))))
 }
 
-/// A character string, an OBJECT IDENTIFIER as `1.2.3` or an ENUMERATED
-/// by name: `length` bytes of UTF-8.
+/// A character string or an ENUMERATED by name: `length` bytes of
+/// UTF-8.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_value_new_text(
     text: *const c_char,
@@ -179,6 +180,26 @@ pub unsafe extern "C" fn asnkit_value_new_text(
         let text = unsafe { text_of(text, length, "the text") }?;
 
         Ok(new(Value::text(text)))
+    })
+}
+
+/// An OBJECT IDENTIFIER of its arcs, as `1.2.3`: `length` bytes of
+/// UTF-8.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn asnkit_value_new_object_identifier(
+    text: *const c_char,
+    length: usize,
+) -> *mut Value<'static> {
+    guard_handle(|| {
+        let text = unsafe { text_of(text, length, "the OBJECT IDENTIFIER") }?;
+        let oid: ObjectIdentifier<'static> = text.parse().map_err(|_| {
+            failure(
+                ASNKIT_ERROR_ARGUMENT,
+                "Expected an OBJECT IDENTIFIER of two arcs or more, as 1.2.3.",
+            )
+        })?;
+
+        Ok(new(Value::ObjectIdentifier(oid)))
     })
 }
 
@@ -331,6 +352,7 @@ pub unsafe extern "C" fn asnkit_value_kind(value: *const Value<'static>) -> c_in
         Some(Value::Integer(_) | Value::BigInteger(_)) => ASNKIT_INTEGER,
         Some(Value::Real(_)) => ASNKIT_REAL,
         Some(Value::Text(_)) => ASNKIT_TEXT,
+        Some(Value::ObjectIdentifier(_)) => ASNKIT_OBJECT_IDENTIFIER,
         Some(Value::Bytes(_)) => ASNKIT_BYTES,
         Some(Value::Bits(..)) => ASNKIT_BITS,
         Some(Value::List(_)) => ASNKIT_LIST,
@@ -430,6 +452,55 @@ pub unsafe extern "C" fn asnkit_value_text(
     guard(|| match unsafe { self::value(value) }? {
         Value::Text(found) => unsafe { give_text(found, text, length) },
         _ => Err(wrong_kind("text")),
+    })
+}
+
+/// Writes the arcs of an OBJECT IDENTIFIER, as `1.2.3` and with no NUL
+/// at its end, to the `capacity` bytes at `text`, and its length to
+/// `length`. With too little capacity, or none and a null `text`, it
+/// writes only the length and returns `ASNKIT_ERROR_RANGE`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn asnkit_value_object_identifier(
+    value: *const Value<'static>,
+    text: *mut c_char,
+    capacity: usize,
+    length: *mut usize,
+) -> c_int {
+    guard(|| {
+        let found = match unsafe { self::value(value) }? {
+            Value::ObjectIdentifier(found) => found.to_string(),
+            _ => return Err(wrong_kind("an OBJECT IDENTIFIER")),
+        };
+
+        *unsafe { out(length, "the length") }? = found.len();
+
+        if text.is_null() || capacity < found.len() {
+            return Err(failure(
+                ASNKIT_ERROR_RANGE,
+                "The buffer is too small for the OBJECT IDENTIFIER.",
+            ));
+        }
+
+        unsafe { std::ptr::copy_nonoverlapping(found.as_ptr(), text.cast(), found.len()) };
+        Ok(())
+    })
+}
+
+/// The contents octets of an OBJECT IDENTIFIER, as BER encodes them,
+/// borrowed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn asnkit_value_object_identifier_bytes(
+    value: *const Value<'static>,
+    data: *mut *const u8,
+    length: *mut usize,
+) -> c_int {
+    guard(|| match unsafe { self::value(value) }? {
+        Value::ObjectIdentifier(found) => {
+            *unsafe { out(data, "the bytes") }? = found.as_bytes().as_ptr();
+            *unsafe { out(length, "the length") }? = found.as_bytes().len();
+            Ok(())
+        }
+        _ => Err(wrong_kind("an OBJECT IDENTIFIER")),
     })
 }
 

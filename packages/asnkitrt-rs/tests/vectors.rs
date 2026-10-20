@@ -16,7 +16,7 @@ use std::fs;
 use std::io::Read;
 
 use asnkitrt::runtime::Specification;
-use common::{Done, SpecKey, hex, hex_of, load, perform, same, spec_key, to_value};
+use common::{Done, SpecKey, hex, hex_of, load, perform, same, spec_key, value_of};
 use serde_json::Value as Json;
 
 /// A specification, or why it is not loaded and if that is that it needs
@@ -95,7 +95,9 @@ fn vectors() {
                 }
             }
             (Ok(Done::Decoded(decoded)), None) => {
-                if same(&decoded, &to_value(&vector["value"])) {
+                let name = vector["type"].as_str().unwrap();
+
+                if same(&decoded, &value_of(spec, name, &vector["value"])) {
                     Ok(())
                 } else {
                     Err(format!("decoded {decoded:?}"))

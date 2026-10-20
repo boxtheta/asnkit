@@ -190,8 +190,7 @@ const char *asnkit_spec_codec(const asnkit_spec *spec);
  *   ASNKIT_INTEGER    INTEGER, of any size, and ENUMERATED with
  *                     numeric enums
  *   ASNKIT_REAL       REAL
- *   ASNKIT_TEXT       character strings, OBJECT IDENTIFIER as "1.2.3",
- *                     ENUMERATED by name, DURATION
+ *   ASNKIT_TEXT       character strings, ENUMERATED by name, DURATION
  *   ASNKIT_BYTES      OCTET STRING, ANY and open types, encoded
  *   ASNKIT_BITS       BIT STRING
  *   ASNKIT_LIST       SEQUENCE OF, SET OF
@@ -201,6 +200,8 @@ const char *asnkit_spec_codec(const asnkit_spec *spec);
  *   ASNKIT_DATE_TIME  UTCTime, GeneralizedTime, DATE-TIME
  *   ASNKIT_DATE       DATE
  *   ASNKIT_TIME       TIME-OF-DAY
+ *   ASNKIT_OBJECT_IDENTIFIER
+ *                     OBJECT IDENTIFIER, made of and read as "1.2.3"
  *
  * A value that is made (asnkit_value_new_*()) or decoded is owned by the
  * caller, until it is given to a list, a map or a choice, which then own
@@ -225,7 +226,8 @@ enum {
     ASNKIT_CHOICE = 9,
     ASNKIT_DATE_TIME = 10,
     ASNKIT_DATE = 11,
-    ASNKIT_TIME = 12
+    ASNKIT_TIME = 12,
+    ASNKIT_OBJECT_IDENTIFIER = 13
 };
 
 typedef struct asnkit_date {
@@ -255,6 +257,8 @@ asnkit_value *asnkit_value_new_integer_bytes(const uint8_t *data, size_t length)
 asnkit_value *asnkit_value_new_real(double real);
 /* `length` bytes of UTF-8, which are copied. */
 asnkit_value *asnkit_value_new_text(const char *text, size_t length);
+/* The arcs of an OBJECT IDENTIFIER, as "1.2.3": `length` bytes of UTF-8. */
+asnkit_value *asnkit_value_new_object_identifier(const char *text, size_t length);
 asnkit_value *asnkit_value_new_bytes(const uint8_t *data, size_t length);
 /* The first `bits` bits of the `length` bytes at `data`, which have to be
  * as many as the bits take. */
@@ -300,6 +304,19 @@ asnkit_status asnkit_value_integer_bytes(const asnkit_value *value,
 asnkit_status asnkit_value_real(const asnkit_value *value, double *real);
 /* Borrowed, with no NUL at its end. */
 asnkit_status asnkit_value_text(const asnkit_value *value, const char **text, size_t *length);
+/* Writes the arcs of an OBJECT IDENTIFIER, as "1.2.3" and with no NUL at
+ * its end, to the `capacity` bytes at `text`, and its length to *length.
+ * If `text` is NULL or too small, writes only the length and returns
+ * ASNKIT_ERROR_RANGE. */
+asnkit_status asnkit_value_object_identifier(const asnkit_value *value,
+                                             char *text,
+                                             size_t capacity,
+                                             size_t *length);
+/* Borrowed: the contents octets of an OBJECT IDENTIFIER, as BER encodes
+ * them. */
+asnkit_status asnkit_value_object_identifier_bytes(const asnkit_value *value,
+                                                   const uint8_t **data,
+                                                   size_t *length);
 /* Borrowed. */
 asnkit_status asnkit_value_bytes(const asnkit_value *value, const uint8_t **data, size_t *length);
 /* Borrowed: the bytes, and how many bits of them there are. */

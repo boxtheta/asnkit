@@ -14,8 +14,8 @@ use std::path::PathBuf;
 
 use asnkitrt::container::Checks;
 use asnkitrt::runtime::{Options, Specification};
-use asnkitrt::types::Codec;
-use asnkitrt::value::{Date, DateTime, Time, Value};
+use asnkitrt::types::{Codec, Kind, TypeId, Types};
+use asnkitrt::value::{Date, DateTime, ObjectIdentifier, Time, Value};
 use serde_json::Value as Json;
 
 pub fn folder() -> PathBuf {
@@ -262,6 +262,78 @@ pub fn to_value(json: &Json) -> Value<'static> {
     }
 }
 
+/// The value of `json` for the type `name` of `spec`, in which the text of
+/// an OBJECT IDENTIFIER is one, as the JSON has it as text.
+pub fn value_of(spec: &Specification, name: &str, json: &Json) -> Value<'static> {
+    let mut value = to_value(json);
+
+    if let Some(id) = spec.types().find_unique(name) {
+        type_object_identifiers(spec.types(), id, &mut value, 0);
+    }
+
+    value
+}
+
+fn type_object_identifiers(types: &Types, id: TypeId, value: &mut Value<'_>, depth: usize) {
+    // As deep as the codecs go.
+    if depth > 128 {
+        return;
+    }
+
+    match (types.kind(id), &mut *value) {
+        (Kind::ObjectIdentifier, Value::Text(text)) => {
+            if let Ok(oid) = text.parse::<ObjectIdentifier<'static>>() {
+                *value = Value::ObjectIdentifier(oid);
+            }
+        }
+        (Kind::SequenceOf(element) | Kind::SetOf(element), Value::List(items)) => {
+            for item in items {
+                type_object_identifiers(types, *element, item, depth + 1);
+            }
+        }
+        (Kind::Choice(members), Value::Choice(name, inner)) => {
+            if let Some(member) = members.all().find(|member| member.name == **name) {
+                type_object_identifiers(types, member.ty, inner, depth + 1);
+            }
+        }
+        (
+            Kind::Sequence(members) | Kind::Set(members) | Kind::External(members),
+            Value::Map(map),
+        ) => {
+            let member_of = |name: &str| {
+                members
+                    .all()
+                    .find(|member| member.name == name)
+                    .map(|m| m.ty)
+            };
+
+            // The members an ANY DEFINED BY is defined by first, as the
+            // choice is found by their value.
+            for (name, member) in map.iter_mut() {
+                if let Some(ty) = member_of(name)
+                    && !matches!(types.kind(ty), Kind::AnyDefinedBy { .. })
+                {
+                    type_object_identifiers(types, ty, member, depth + 1);
+                }
+            }
+
+            let chosen: Vec<Option<TypeId>> = map
+                .iter()
+                .map(|(name, _)| {
+                    member_of(name).and_then(|ty| types.defined_by(ty, map.iter()).flatten())
+                })
+                .collect();
+
+            for ((_, member), ty) in map.iter_mut().zip(chosen) {
+                if let Some(ty) = ty {
+                    type_object_identifiers(types, ty, member, depth + 1);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 fn tagged(key: &str, value: Json) -> Json {
     Json::Object([(key.to_string(), value)].into_iter().collect())
 }
@@ -285,6 +357,8 @@ pub fn to_json(value: &Value) -> Json {
             }
         }
         Value::Text(text) => Json::String(text.clone()),
+        // An OBJECT IDENTIFIER is text in the JSON, as in Python.
+        Value::ObjectIdentifier(oid) => Json::String(oid.to_string()),
         Value::Bytes(bytes) => tagged("$bytes", hex_of(bytes).into()),
         Value::Bits(bytes, length) => tagged(
             "$bits",
@@ -384,7 +458,7 @@ pub fn perform<'a>(spec: &'a Specification, vector: &Json) -> Result<Done<'a>, a
     let indent = options["indent"].as_u64().map(|indent| indent as usize);
 
     if vector["operation"] == "encode" {
-        let value = to_value(&vector["value"]);
+        let value = value_of(spec, name, &vector["value"]);
 
         if check {
             spec.check_constraints(name, &value)?;

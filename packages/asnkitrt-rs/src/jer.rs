@@ -11,7 +11,7 @@
 //! runtime for Python writes it.
 
 use alloc::borrow::Cow;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::decimal;
@@ -199,7 +199,15 @@ impl<'a> Coder<'a> {
                 }
                 _ => encode_error("Expected data of type bytes or bytearray."),
             },
-            Kind::ObjectIdentifier | Kind::Str(_) => match value {
+            Kind::ObjectIdentifier => match value {
+                Value::ObjectIdentifier(oid) => {
+                    json::write_string(out, &oid.to_string());
+
+                    Ok(())
+                }
+                _ => encode_error("Expected an OBJECT IDENTIFIER."),
+            },
+            Kind::Str(_) => match value {
                 Value::Text(text) => {
                     json::write_string(out, text);
 
@@ -438,7 +446,14 @@ impl<'a> Coder<'a> {
                 },
                 _ => decode_error("Expected a JSON string."),
             },
-            Kind::ObjectIdentifier | Kind::Str(_) => match json {
+            Kind::ObjectIdentifier => match json {
+                Json::Str(text) => match text.parse() {
+                    Ok(oid) => Ok(Value::ObjectIdentifier(oid)),
+                    Err(_) => decode_error("Expected an OBJECT IDENTIFIER."),
+                },
+                _ => decode_error("Expected a JSON string."),
+            },
+            Kind::Str(_) => match json {
                 Json::Str(text) => Ok(Value::Text(text.clone())),
                 _ => decode_error("Expected a JSON string."),
             },

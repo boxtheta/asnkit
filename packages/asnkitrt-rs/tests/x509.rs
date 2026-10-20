@@ -178,13 +178,15 @@ fn extensions() {
         };
 
         for extension in extensions {
-            let Some(Value::Text(id)) = extension.get("extnID") else {
+            let Some(Value::ObjectIdentifier(id)) = extension.get("extnID") else {
                 panic!("{name}")
             };
+            let id = id.to_string();
             let Some(Value::Bytes(value)) = extension.get("extnValue") else {
                 panic!("{name}")
             };
-            let Some((_, type_name)) = EXTENSION_TYPES.iter().find(|(known, _)| known == id) else {
+            let Some((_, type_name)) = EXTENSION_TYPES.iter().find(|(known, _)| *known == id)
+            else {
                 continue;
             };
 

@@ -20,7 +20,7 @@ use crate::types::{
     Addition, Codec, Kind, MemberInfo, Members, StrKind, TypeId, Types, WireTag, clean_bits,
     const_matches, is_default,
 };
-use crate::value::{Lookup, Value, integer_to_twos_complement};
+use crate::value::{Lookup, ObjectIdentifier, Value, integer_to_twos_complement};
 use crate::{Error, Result};
 
 const MAX_DEPTH: usize = 128;
@@ -712,141 +712,6 @@ pub(crate) fn decode_real(data: &[u8], offset: usize, strict: bool) -> Result<f6
     .map_err(|what| Error::decode(what, offset))
 }
 
-pub(crate) fn encode_object_identifier(text: &str) -> Result<Vec<u8>> {
-    // Most arcs are a byte or two.
-    let mut out = Vec::with_capacity(text.len());
-
-    encode_object_identifier_into(text, &mut out)?;
-
-    Ok(out)
-}
-
-fn encode_object_identifier_into(text: &str, out: &mut Vec<u8>) -> Result<()> {
-    let mut parts = text.split('.');
-    let mut arc = || -> Result<Option<u128>> {
-        parts
-            .next()
-            .map(|part| {
-                // Parsing a u64 is faster, and an arc is all but always one.
-                part.parse::<u64>()
-                    .map(u128::from)
-                    .or_else(|_| part.parse::<u128>())
-                    .map_err(|_| Error::encode("Expected an OBJECT IDENTIFIER."))
-            })
-            .transpose()
-    };
-    let (Some(first), Some(second)) = (arc()?, arc()?) else {
-        return encode_error("Expected an OBJECT IDENTIFIER of at least two arcs.");
-    };
-    push_subidentifier(first * 40 + second, out);
-
-    while let Some(arc) = arc()? {
-        push_subidentifier(arc, out);
-    }
-
-    Ok(())
-}
-
-/// A subidentifier: groups of 7 bits, the most significant first, all
-/// but the last with the high bit set.
-fn push_subidentifier(arc: u128, out: &mut Vec<u8>) {
-    let groups = (128 - arc.leading_zeros() as usize).div_ceil(7).max(1);
-
-    for group in (0..groups).rev() {
-        let bits = (arc >> (7 * group)) as u8 & 0x7f;
-
-        out.push(if group == 0 { bits } else { 0x80 | bits });
-    }
-}
-
-/// The digits of `value`, as `write!` has them, without its machinery.
-pub(crate) fn push_decimal(value: u128, text: &mut String) {
-    let mut digits = [0u8; 39];
-    let mut at = digits.len();
-
-    if let Ok(mut value) = u64::try_from(value) {
-        loop {
-            at -= 1;
-            digits[at] = b'0' + (value % 10) as u8;
-            value /= 10;
-
-            if value == 0 {
-                break;
-            }
-        }
-    } else {
-        let mut value = value;
-
-        while value > 0 {
-            at -= 1;
-            digits[at] = b'0' + (value % 10) as u8;
-            value /= 10;
-        }
-    }
-
-    for digit in &digits[at..] {
-        text.push(char::from(*digit));
-    }
-}
-
-pub(crate) fn decode_object_identifier(data: &[u8], offset: usize, strict: bool) -> Result<String> {
-    // A byte is 7 bits of an arc, which are at most 3 digits, and the
-    // first arc is two.
-    let mut text = String::with_capacity(3 * data.len() + 2);
-    let mut arc: u128 = 0;
-    let mut start = true;
-    let mut first = true;
-
-    for (index, byte) in data.iter().enumerate() {
-        // A subidentifier is in as few bytes as possible.
-        if strict && start && *byte == 0x80 {
-            return decode_error(
-                "Expected the subidentifiers of an OBJECT IDENTIFIER in as few bytes as possible.",
-                offset + index,
-            );
-        }
-
-        start = byte & 0x80 == 0;
-
-        if arc >> 120 != 0 {
-            return decode_error(
-                "An arc of an OBJECT IDENTIFIER is too large.",
-                offset + index,
-            );
-        }
-
-        arc = (arc << 7) | u128::from(byte & 0x7f);
-
-        if byte & 0x80 == 0 {
-            if first {
-                let (a, b) = if arc < 40 {
-                    (0, arc)
-                } else if arc < 80 {
-                    (1, arc - 40)
-                } else {
-                    (2, arc - 80)
-                };
-
-                push_decimal(a, &mut text);
-                text.push('.');
-                push_decimal(b, &mut text);
-                first = false;
-            } else {
-                text.push('.');
-                push_decimal(arc, &mut text);
-            }
-
-            arc = 0;
-        }
-    }
-
-    if first || !start {
-        return decode_error("Expected an OBJECT IDENTIFIER.", offset);
-    }
-
-    Ok(text)
-}
-
 fn padded_compare(a: &[u8], b: &[u8]) -> core::cmp::Ordering {
     let longest = a.len().max(b.len());
 
@@ -1028,7 +893,11 @@ impl<'a> Coder<'a> {
 
                 Ok(())
             }
-            (Kind::ObjectIdentifier, Value::Text(text)) => encode_object_identifier_into(text, out),
+            (Kind::ObjectIdentifier, Value::ObjectIdentifier(oid)) => {
+                out.extend_from_slice(oid.as_bytes());
+
+                Ok(())
+            }
             _ => {
                 out.extend_from_slice(&self.encode_primitive(kind, id, value, siblings)?);
 
@@ -1107,8 +976,8 @@ impl<'a> Coder<'a> {
                 _ => encode_error("Expected data of type bytes or bytearray."),
             },
             Kind::ObjectIdentifier => match value {
-                Value::Text(text) => encode_object_identifier(text),
-                _ => encode_error("Expected data of type str."),
+                Value::ObjectIdentifier(oid) => Ok(Vec::from(oid.as_bytes())),
+                _ => encode_error("Expected an OBJECT IDENTIFIER."),
             },
             Kind::Enumerated { root, additions } => {
                 let number = match value {
@@ -1589,7 +1458,8 @@ impl<'a> Coder<'a> {
             Kind::BitString(named) => self.decode_bit_string(contents, !named.is_empty(), offset),
             Kind::OctetString => Ok(Value::Bytes(Vec::from(contents))),
             Kind::ObjectIdentifier => {
-                decode_object_identifier(contents, offset, self.strict).map(Value::Text)
+                ObjectIdentifier::decode(Vec::from(contents), offset, self.strict)
+                    .map(Value::ObjectIdentifier)
             }
             Kind::Enumerated { root, additions } => {
                 self.check_minimal_integer(contents, offset)?;

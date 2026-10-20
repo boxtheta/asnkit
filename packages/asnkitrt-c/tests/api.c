@@ -277,6 +277,25 @@ static void test_values(const char *types)
     CHECK(asnkit_value_time(decoded, &time_out) == ASNKIT_ERROR_KIND);
     asnkit_value_free(decoded);
 
+    /* An OBJECT IDENTIFIER, as text and as its contents octets. */
+    {
+        static const uint8_t rsa[] = { 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d };
+        char text[32];
+
+        CHECK(asnkit_value_new_object_identifier("1", 1) == NULL);
+        decoded = round_trip(der, "Oid", asnkit_value_new_object_identifier("1.2.840.113549", 14),
+                             NULL);
+        CHECK(asnkit_value_kind(decoded) == ASNKIT_OBJECT_IDENTIFIER);
+        OK(asnkit_value_object_identifier_bytes(decoded, &data, &length));
+        CHECK(length == sizeof(rsa) && memcmp(data, rsa, length) == 0);
+        CHECK(asnkit_value_object_identifier(decoded, NULL, 0, &length) == ASNKIT_ERROR_RANGE);
+        CHECK(length == 14);
+        OK(asnkit_value_object_identifier(decoded, text, sizeof(text), &length));
+        CHECK(length == 14 && memcmp(text, "1.2.840.113549", 14) == 0);
+        CHECK(asnkit_value_text(decoded, &name, &name_length) == ASNKIT_ERROR_KIND);
+        asnkit_value_free(decoded);
+    }
+
     decoded = round_trip(der, "Color", asnkit_value_new_text("green", 5), NULL);
     CHECK(text_is(decoded, "green"));
     asnkit_value_free(decoded);

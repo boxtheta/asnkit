@@ -59,7 +59,8 @@ Options, given with `--plugin-opt KEY=VALUE`:
 |---|---|
 | `BOOLEAN`, `NULL`, `REAL` | `bool`, `()`, `f64` (`f32` if constrained to IEEE 754 binary32) |
 | `OCTET STRING`, `BIT STRING` | `asnkitrt::serde_value::OctetString`, `BitString` |
-| `OBJECT IDENTIFIER`, strings, `DURATION` | `String` |
+| `OBJECT IDENTIFIER` | `asnkitrt::value::ObjectIdentifier<'static>` |
+| strings, `DURATION` | `String` |
 | `UTCTime`, `GeneralizedTime`, `DATE-TIME` | `asnkitrt::value::DateTime` |
 | `DATE`, `TIME-OF-DAY` | `asnkitrt::value::Date`, `Time` |
 | `SEQUENCE`, `SET` | a struct; `OPTIONAL` and `DEFAULT` members, and members after an extension marker, are `Option` |

@@ -421,7 +421,8 @@ impl<'a> Generator<'a> {
             Kind::Null => "()".to_string(),
             Kind::BitString(_) => "asnkitrt::serde_value::BitString".to_string(),
             Kind::OctetString => "asnkitrt::serde_value::OctetString".to_string(),
-            Kind::ObjectIdentifier | Kind::Str(_) | Kind::Duration => "String".to_string(),
+            Kind::ObjectIdentifier => "asnkitrt::value::ObjectIdentifier<'static>".to_string(),
+            Kind::Str(_) | Kind::Duration => "String".to_string(),
             Kind::Utc | Kind::Generalized | Kind::DateTime => {
                 "asnkitrt::value::DateTime".to_string()
             }

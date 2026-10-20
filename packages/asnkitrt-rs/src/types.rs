@@ -388,6 +388,7 @@ pub fn const_matches(key: &Const, value: &Value) -> bool {
     match (key, value) {
         (Const::Int(a), Value::Integer(b)) => a == b,
         (Const::Text(a) | Const::Identifier(a), Value::Text(b)) => a == b,
+        (Const::ObjectIdentifier(a), Value::ObjectIdentifier(b)) => a == b,
         (Const::Bool(a), Value::Boolean(b)) => a == b,
         _ => false,
     }
@@ -1273,6 +1274,7 @@ fn finish(types: &mut Types) -> Result<()> {
     settle_all(types)?;
     compute_beginnings(types)?;
     compute_canonical(types);
+    lower_object_identifier_choices(types);
 
     // Defaults go by the kind of their type.
     for id in 0..count {
@@ -1309,6 +1311,51 @@ fn finish(types: &mut Types) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The choices of an ANY DEFINED BY that is defined by an OBJECT
+/// IDENTIFIER have the bytes of the OBJECT IDENTIFIER they are, to be
+/// compared with those of the value of the member.
+fn lower_object_identifier_choices(types: &mut Types) {
+    let mut lowered = Vec::new();
+
+    for node in &types.nodes {
+        let (Kind::Sequence(members) | Kind::Set(members) | Kind::External(members)) = &node.kind
+        else {
+            continue;
+        };
+
+        for member in members.all() {
+            let id = types.node(member.ty).concrete;
+            let Kind::AnyDefinedBy { value, choices } = types.kind(id) else {
+                continue;
+            };
+            let defined_by_oid = members.all().any(|other| {
+                &other.name == value && matches!(types.kind(other.ty), Kind::ObjectIdentifier)
+            });
+
+            if defined_by_oid {
+                let choices = choices
+                    .iter()
+                    .map(|(key, ty)| match key {
+                        Const::Text(text) => match text.parse() {
+                            Ok(oid) => (Const::ObjectIdentifier(oid), *ty),
+                            Err(_) => (key.clone(), *ty),
+                        },
+                        _ => (key.clone(), *ty),
+                    })
+                    .collect();
+
+                lowered.push((id, choices));
+            }
+        }
+    }
+
+    for (id, lowered) in lowered {
+        if let Kind::AnyDefinedBy { choices, .. } = &mut types.nodes[id].kind {
+            *choices = lowered;
+        }
+    }
 }
 
 /// The indexes of `members` in the canonical order of their tags. A
@@ -1726,6 +1773,9 @@ fn default_value(types: &Types, ty: TypeId, constant: &Const) -> Result<Option<V
         }
         (_, Const::Bool(value)) => Some(Value::Boolean(*value)),
         (_, Const::Real(value)) => Some(Value::Real(*value)),
+        (Kind::ObjectIdentifier, Const::Text(text)) => {
+            text.parse().ok().map(Value::ObjectIdentifier)
+        }
         (_, Const::Text(text) | Const::Identifier(text)) => Some(Value::Text(text.clone())),
         // The value of an alternative, a member or an item is one of its
         // own type.

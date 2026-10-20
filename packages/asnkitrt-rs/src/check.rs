@@ -8,6 +8,7 @@
 //!
 //! A constraint with an extension marker is not checked.
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use crate::types::{Checked, Inner, Kind, Part, Range, StrKind, TypeId, Types};
@@ -167,9 +168,11 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
             Ok(())
         }
         (Kind::Str(kind), Value::Text(text)) => check_string(*kind, text, node, true),
-        (Kind::ObjectIdentifier, Value::Text(text)) => {
-            check_string(StrKind::Utf8, text, node, false)
-        }
+        // Its text is made only for a SIZE, of which it is the length.
+        (Kind::ObjectIdentifier, Value::ObjectIdentifier(oid)) => match node.effective_size {
+            Some(_) => check_string(StrKind::Utf8, &oid.to_string(), node, false),
+            None => Ok(()),
+        },
         (Kind::OctetString, Value::Bytes(bytes)) => {
             if !in_range(
                 node.effective_size,

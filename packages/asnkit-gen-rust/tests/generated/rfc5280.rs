@@ -862,7 +862,7 @@ impl Asn1Type for Attribute {
     const NAME: &'static str = "Attribute";
 }
 
-pub type AttributeType = String;
+pub type AttributeType = asnkitrt::value::ObjectIdentifier<'static>;
 
 pub type AttributeValue = asnkitrt::value::Value<'static>;
 
@@ -1174,7 +1174,7 @@ pub type Extensions = Vec<Extension>;
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Extension {
     #[serde(rename = "extnID")]
-    pub extn_id: String,
+    pub extn_id: asnkitrt::value::ObjectIdentifier<'static>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub critical: Option<bool>,
     #[serde(rename = "extnValue")]
@@ -1233,7 +1233,7 @@ impl Asn1Type for TBSCertList {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AlgorithmIdentifier {
-    pub algorithm: String,
+    pub algorithm: asnkitrt::value::ObjectIdentifier<'static>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameters: Option<asnkitrt::value::Value<'static>>,
 }
@@ -1591,7 +1591,7 @@ impl Asn1Type for PolicyInformation {
     const NAME: &'static str = "PolicyInformation";
 }
 
-pub type CertPolicyId = String;
+pub type CertPolicyId = asnkitrt::value::ObjectIdentifier<'static>;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PolicyQualifierInfo {
@@ -1605,7 +1605,7 @@ impl Asn1Type for PolicyQualifierInfo {
     const NAME: &'static str = "PolicyQualifierInfo";
 }
 
-pub type PolicyQualifierId = String;
+pub type PolicyQualifierId = asnkitrt::value::ObjectIdentifier<'static>;
 
 pub type CPSuri = String;
 
@@ -1686,7 +1686,7 @@ pub enum GeneralName {
     #[serde(rename = "iPAddress")]
     IPAddress(asnkitrt::serde_value::OctetString),
     #[serde(rename = "registeredID")]
-    RegisteredID(String),
+    RegisteredID(asnkitrt::value::ObjectIdentifier<'static>),
 }
 
 impl Asn1Type for GeneralName {
@@ -1697,7 +1697,7 @@ impl Asn1Type for GeneralName {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AnotherName {
     #[serde(rename = "type-id")]
-    pub type_id: String,
+    pub type_id: asnkitrt::value::ObjectIdentifier<'static>,
     pub value: asnkitrt::value::Value<'static>,
 }
 
@@ -1817,7 +1817,7 @@ pub type ReasonFlags = asnkitrt::serde_value::BitString;
 
 pub type ExtKeyUsageSyntax = Vec<KeyPurposeId>;
 
-pub type KeyPurposeId = String;
+pub type KeyPurposeId = asnkitrt::value::ObjectIdentifier<'static>;
 
 pub type InhibitAnyPolicy = SkipCerts;
 
@@ -1828,7 +1828,7 @@ pub type AuthorityInfoAccessSyntax = Vec<AccessDescription>;
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AccessDescription {
     #[serde(rename = "accessMethod")]
-    pub access_method: String,
+    pub access_method: asnkitrt::value::ObjectIdentifier<'static>,
     #[serde(rename = "accessLocation")]
     pub access_location: GeneralName,
 }
@@ -1896,7 +1896,7 @@ impl Asn1Type for CRLReason {
 
 pub type CertificateIssuer = GeneralNames;
 
-pub type HoldInstructionCode = String;
+pub type HoldInstructionCode = asnkitrt::value::ObjectIdentifier<'static>;
 
 pub type InvalidityDate = asnkitrt::value::DateTime;
 

@@ -293,7 +293,7 @@ fn built_in_types_come_back() {
             data: vec![0b1010_0000],
             bits: 4,
         },
-        oid: "1.2.840.113549".into(),
+        oid: "1.2.840.113549".parse().unwrap(),
         text: "Grüße".into(),
         printable: "ABC 123".into(),
         utc: DateTime { date, time },

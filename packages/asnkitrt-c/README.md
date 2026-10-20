@@ -79,7 +79,7 @@ runtime, which is built with `asnkit_value_new_*()`,
 `asnkit_list_push()` and `asnkit_map_set()`, and read with
 `asnkit_value_kind()` and an accessor for each kind. The kinds are those
 of the Python runtime, and so of the vectors that all the runtimes are
-held to:
+held to, but for `OBJECT IDENTIFIER`, which is a `str` there:
 
 | ASN.1 | Kind | Made with | Read with |
 |---|---|---|---|
@@ -87,7 +87,8 @@ held to:
 | `BOOLEAN` | `ASNKIT_BOOLEAN` | `asnkit_value_new_boolean()` | `asnkit_value_boolean()` |
 | `INTEGER`, `ENUMERATED` with numeric enums | `ASNKIT_INTEGER` | `asnkit_value_new_integer()`, or `_integer_bytes()` for any size | `asnkit_value_integer()`, `_integer_bytes()` |
 | `REAL` | `ASNKIT_REAL` | `asnkit_value_new_real()` | `asnkit_value_real()` |
-| character strings, `OBJECT IDENTIFIER` (`"1.2.3"`), `ENUMERATED` by name, `DURATION` | `ASNKIT_TEXT` | `asnkit_value_new_text()` | `asnkit_value_text()` |
+| character strings, `ENUMERATED` by name, `DURATION` | `ASNKIT_TEXT` | `asnkit_value_new_text()` | `asnkit_value_text()` |
+| `OBJECT IDENTIFIER` (`"1.2.3"`) | `ASNKIT_OBJECT_IDENTIFIER` | `asnkit_value_new_object_identifier()` | `asnkit_value_object_identifier()`, `_object_identifier_bytes()` |
 | `OCTET STRING`, `ANY`, open types | `ASNKIT_BYTES` | `asnkit_value_new_bytes()` | `asnkit_value_bytes()` |
 | `BIT STRING` | `ASNKIT_BITS` | `asnkit_value_new_bits()` | `asnkit_value_bits()` |
 | `SEQUENCE OF`, `SET OF` | `ASNKIT_LIST` | `asnkit_value_new_list()`, `asnkit_list_push()` | `asnkit_value_length()`, `asnkit_list_get()` |

@@ -233,12 +233,15 @@ impl Encoder<'_> {
                 }
             }
             Kind::ObjectIdentifier => match value {
-                Value::Text(text) => {
-                    out.push_str(text);
+                Value::ObjectIdentifier(oid) => {
+                    use core::fmt::Write;
+
+                    // Writing to a String does not fail.
+                    let _ = write!(out, "{oid}");
 
                     Ok(())
                 }
-                _ => encode_error("Expected data of type str."),
+                _ => encode_error("Expected an OBJECT IDENTIFIER."),
             },
             Kind::Str(_) => match value {
                 Value::Text(text) => {
@@ -698,7 +701,10 @@ impl<'a, 't> Decoder<'a, 't> {
                 {
                     return self.error("Expected a dotted object identifier.");
                 }
-                Ok(Value::Text(String::from(token)))
+                match token.parse() {
+                    Ok(oid) => Ok(Value::ObjectIdentifier(oid)),
+                    Err(_) => self.error("An arc of an OBJECT IDENTIFIER is too large."),
+                }
             }
             Kind::Str(_) => Ok(Value::Text(self.string()?)),
             Kind::Enumerated { root, additions } => {

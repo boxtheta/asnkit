@@ -178,7 +178,7 @@ fn builtins() {
         ("BIT STRING", Value::Bits(vec![], 0), "''B"),
         (
             "OBJECT IDENTIFIER",
-            Value::text("1.2.840.113549"),
+            Value::ObjectIdentifier("1.2.840.113549".parse().unwrap()),
             "1.2.840.113549",
         ),
         ("UTF8String", Value::text("\u{102}"), "\"\u{102}\""),
@@ -277,7 +277,7 @@ fn vectors() {
         };
         let name = vector["type"].as_str().unwrap();
 
-        if let Ok(bytes) = spec.encode(name, &common::to_value(&vector["value"])) {
+        if let Ok(bytes) = spec.encode(name, &common::value_of(spec, name, &vector["value"])) {
             let decoded = spec.decode(name, &bytes).unwrap_or_else(|error| {
                 panic!("{name}: {error}; {}", String::from_utf8_lossy(&bytes))
             });

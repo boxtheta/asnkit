@@ -64,6 +64,12 @@ describe('values', () => {
     assert.equal(roundTrip(spec, 'Real', Infinity), Infinity);
   });
 
+  test('an OBJECT IDENTIFIER is a string', () => {
+    assert.equal(hex(spec.encode('Oid', '1.2.840.113549')), '06062a864886f70d');
+    assert.equal(spec.decode('Oid', bytes('06062a864886f70d')), '1.2.840.113549');
+    assert.throws(() => spec.encode('Oid', '1'), { name: 'EncodeError' });
+  });
+
   test('a BIT STRING is [bytes, number of bits]', () => {
     assert.equal(hex(spec.encode('Bits', [bytes('a0'), 3])), '030205a0');
     assert.deepEqual(spec.decode('Bits', bytes('030205a0')), [bytes('a0'), 3]);

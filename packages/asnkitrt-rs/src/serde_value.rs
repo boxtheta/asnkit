@@ -15,7 +15,8 @@
 //! | NULL | `()` |
 //! | OCTET STRING | [`OctetString`], or `Vec<u8>` with `#[serde(with = "asnkitrt::serde_value::bytes")]` |
 //! | BIT STRING | [`BitString`] |
-//! | OBJECT IDENTIFIER, strings | `String` |
+//! | OBJECT IDENTIFIER | [`ObjectIdentifier`] |
+//! | strings | `String` |
 //! | UTCTime, GeneralizedTime, DATE-TIME | [`DateTime`](crate::value::DateTime) |
 //! | DATE | [`Date`](crate::value::Date) |
 //! | TIME-OF-DAY | [`Time`](crate::value::Time) |
@@ -39,7 +40,7 @@ use serde::de::{self, DeserializeSeed, IntoDeserializer, Visitor};
 use serde::ser::{self, Serialize};
 
 use crate::Error;
-use crate::value::Value;
+use crate::value::{ObjectIdentifier, Value};
 
 impl ser::Error for Error {
     fn custom<T: fmt::Display>(_: T) -> Self {
@@ -62,6 +63,9 @@ const BIT_STRING: &str = "$asnkitrt::BitString";
 
 /// The names that make a date and a time of a newtype struct.
 const BIG_INT: &str = "$asnkitrt::BigInt";
+/// The name that makes an OBJECT IDENTIFIER of a newtype struct of its
+/// text.
+const OBJECT_IDENTIFIER: &str = "$asnkitrt::ObjectIdentifier";
 const DATE_TIME: &str = "$asnkitrt::DateTime";
 const DATE: &str = "$asnkitrt::Date";
 const TIME: &str = "$asnkitrt::Time";
@@ -380,6 +384,43 @@ pub mod bytes {
     }
 }
 
+/// An OBJECT IDENTIFIER is its text, as `1.2.840.113549`, to the types
+/// of serde.
+impl Serialize for ObjectIdentifier<'_> {
+    fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_newtype_struct(OBJECT_IDENTIFIER, &self.to_string())
+    }
+}
+
+impl<'de, 'a> de::Deserialize<'de> for ObjectIdentifier<'a> {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ObjectIdentifierVisitor<'a>(PhantomData<ObjectIdentifier<'a>>);
+
+        impl<'de, 'a> Visitor<'de> for ObjectIdentifierVisitor<'a> {
+            type Value = ObjectIdentifier<'a>;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an OBJECT IDENTIFIER, as 1.2.3")
+            }
+
+            fn visit_str<E: de::Error>(self, text: &str) -> Result<ObjectIdentifier<'a>, E> {
+                text.parse::<ObjectIdentifier<'static>>()
+                    .map_err(|_| E::custom("expected an OBJECT IDENTIFIER"))
+            }
+
+            fn visit_newtype_struct<D: de::Deserializer<'de>>(
+                self,
+                deserializer: D,
+            ) -> Result<ObjectIdentifier<'a>, D::Error> {
+                deserializer.deserialize_str(self)
+            }
+        }
+
+        deserializer
+            .deserialize_newtype_struct(OBJECT_IDENTIFIER, ObjectIdentifierVisitor(PhantomData))
+    }
+}
+
 // A value as the types of serde.
 
 impl Serialize for Value<'_> {
@@ -393,6 +434,7 @@ impl Serialize for Value<'_> {
             Value::BigInteger(bytes) => serializer.serialize_bytes(bytes),
             Value::Real(value) => serializer.serialize_f64(*value),
             Value::Text(text) => serializer.serialize_str(text),
+            Value::ObjectIdentifier(oid) => oid.serialize(serializer),
             Value::Bytes(bytes) => serializer.serialize_bytes(bytes),
             Value::Bits(data, bits) => {
                 let mut state = serializer.serialize_struct("BitString", 2)?;
@@ -710,6 +752,13 @@ impl ser::Serializer for ValueSerializer {
             };
         }
 
+        if name == OBJECT_IDENTIFIER {
+            return match inner {
+                Value::Text(text) => text.parse().map(Value::ObjectIdentifier),
+                _ => Err(Error::encode("Expected the text of an OBJECT IDENTIFIER.")),
+            };
+        }
+
         if name == DATE {
             return match inner {
                 Value::List(parts) => match parts.as_slice() {
@@ -986,6 +1035,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
             Value::BigInteger(bytes) => visitor.visit_bytes(bytes),
             Value::Real(value) => visitor.visit_f64(*value),
             Value::Text(text) => visitor.visit_str(text),
+            Value::ObjectIdentifier(oid) => visitor.visit_string(oid.to_string()),
             Value::Bytes(bytes) => visitor.visit_bytes(bytes),
             Value::Bits(data, bits) => visitor.visit_seq(SeqDeserializer {
                 items: alloc::vec![Value::Bytes(data.clone()), Value::Integer(*bits as i128)],
@@ -1030,6 +1080,18 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
             return match self.0.to_twos_complement() {
                 Some(bytes) => visitor.visit_newtype_struct(OwnedDeserializer(Value::Bytes(bytes))),
                 None => Err(Error::decode("Expected an INTEGER.", 0)),
+            };
+        }
+
+        if name == OBJECT_IDENTIFIER {
+            return match self.0 {
+                Value::ObjectIdentifier(oid) => {
+                    visitor.visit_newtype_struct(oid.to_string().into_deserializer())
+                }
+                Value::Text(text) => {
+                    visitor.visit_newtype_struct(text.as_str().into_deserializer())
+                }
+                _ => Err(Error::decode("Expected an OBJECT IDENTIFIER.", 0)),
             };
         }
 

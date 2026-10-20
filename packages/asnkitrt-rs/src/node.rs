@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 
 use crate::cbor::Cbor;
 use crate::kinds::number;
+use crate::value::ObjectIdentifier;
 use crate::{Error, Result};
 
 const COMPILED_SPECIFICATION: u8 = number("CompiledSpecification");
@@ -141,6 +142,10 @@ pub enum Const {
     Real(f64),
     Bool(bool),
     Text(String),
+    /// The `Text` of a choice of an ANY DEFINED BY that is defined by an
+    /// OBJECT IDENTIFIER, which `types::lower` makes, so that the value
+    /// of the member is compared with it as bytes.
+    ObjectIdentifier(ObjectIdentifier<'static>),
     Identifier(String),
     /// Digits of a hexadecimal string.
     Hex(String),

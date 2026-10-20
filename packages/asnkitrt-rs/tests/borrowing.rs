@@ -76,8 +76,16 @@ fn the_binary_codecs_borrow_the_names() {
 
         // DER adds the members left at their default at the end, which
         // the others do not, so it is the encodings that are compared.
-        assert_eq!(borrowed_names(&again), borrowed_names(&decoded), "{codec:?}");
-        assert_eq!(spec.encode("Certificate", &again).unwrap(), encoded, "{codec:?}");
+        assert_eq!(
+            borrowed_names(&again),
+            borrowed_names(&decoded),
+            "{codec:?}"
+        );
+        assert_eq!(
+            spec.encode("Certificate", &again).unwrap(),
+            encoded,
+            "{codec:?}"
+        );
     }
 }
 

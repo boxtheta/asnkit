@@ -94,7 +94,8 @@ END";
     let asni = container(source, &options);
     let spec =
         Specification::from_asni(&asni, &Checks::default(), Options::new(Codec::Der)).unwrap();
-    let value = message(Value::text("1.2.840.113549"), Value::Integer(5));
+    let rsa: asnkitrt::value::ObjectIdentifier<'static> = "1.2.840.113549".parse().unwrap();
+    let value = message(Value::ObjectIdentifier(rsa.clone()), Value::Integer(5));
     let encoded = spec.encode("T", &value).unwrap();
     assert!(encoded.windows(5).any(|part| part == [0xa0, 3, 2, 1, 5]));
     assert_eq!(spec.decode("T", &encoded).unwrap(), value);
@@ -109,7 +110,7 @@ END";
     };
     let selected = choices
         .iter()
-        .find(|(key, _)| *key == asnkitrt::node::Const::Text("1.2.840.113549".into()))
+        .find(|(key, _)| *key == asnkitrt::node::Const::ObjectIdentifier(rsa.clone()))
         .unwrap()
         .1;
     asnkitrt::check::check(spec.types(), selected, &Value::Integer(5)).unwrap();

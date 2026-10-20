@@ -12,17 +12,16 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::borrow::Borrow;
 
-use crate::ber::{
-    decode_object_identifier, decode_real, encode_object_identifier, encode_real,
-    twos_complement_to_f64,
-};
+use crate::ber::{decode_real, encode_real, twos_complement_to_f64};
 use crate::node::TagClass;
 use crate::per::{Reader, Writer};
 use crate::time;
 use crate::types::{
     Addition, Kind, MemberInfo, Members, RealFormat, StrKind, TypeId, Types, clean_bits, is_default,
 };
-use crate::value::{Date, DateTime, Lookup, Time, Value, integer_to_twos_complement};
+use crate::value::{
+    Date, DateTime, Lookup, ObjectIdentifier, Time, Value, integer_to_twos_complement,
+};
 use crate::{Error, Result};
 
 const MAX_DEPTH: usize = 128;
@@ -371,15 +370,13 @@ impl<'a> Coder<'a> {
                 _ => encode_error("Expected data of type bytes or bytearray."),
             },
             Kind::ObjectIdentifier => match value {
-                Value::Text(text) => {
-                    let encoded = encode_object_identifier(text)?;
-
-                    put_length(w, encoded.len())?;
-                    w.bytes(&encoded);
+                Value::ObjectIdentifier(oid) => {
+                    put_length(w, oid.as_bytes().len())?;
+                    w.bytes(oid.as_bytes());
 
                     Ok(())
                 }
-                _ => encode_error("Expected data of type str."),
+                _ => encode_error("Expected an OBJECT IDENTIFIER."),
             },
             Kind::Enumerated { root, additions } => {
                 self.encode_enumerated(root, additions.as_deref(), value, w)
@@ -991,7 +988,8 @@ impl<'a> Coder<'a> {
                 let length = get_length(r)?;
                 let bytes = r.octets(length)?;
 
-                decode_object_identifier(&bytes, r.position / 8, false).map(Value::Text)
+                ObjectIdentifier::decode(bytes.into_owned(), r.position / 8, false)
+                    .map(Value::ObjectIdentifier)
             }
             Kind::Enumerated { root, additions } => {
                 let first = r.uint(8)? as i128;

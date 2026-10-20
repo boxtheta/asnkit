@@ -14,7 +14,7 @@
 
 use alloc::borrow::Cow;
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::decimal;
@@ -265,7 +265,13 @@ impl<'a> Coder<'a> {
                 }
                 _ => return encode_error("Expected data of type bytes or bytearray."),
             },
-            Kind::ObjectIdentifier | Kind::Str(_) => match value {
+            Kind::ObjectIdentifier => match value {
+                Value::ObjectIdentifier(oid) => {
+                    return Ok(Element::with_text(name, &oid.to_string()));
+                }
+                _ => return encode_error("Expected an OBJECT IDENTIFIER."),
+            },
+            Kind::Str(_) => match value {
                 Value::Text(text) => return Ok(Element::with_text(name, text)),
                 _ => return encode_error("Expected data of type str."),
             },
@@ -522,7 +528,10 @@ impl<'a> Coder<'a> {
                     None => decode_error("Expected hex."),
                 }
             }
-            Kind::ObjectIdentifier => Ok(Value::text(self.text(element)?)),
+            Kind::ObjectIdentifier => match self.text(element)?.parse() {
+                Ok(oid) => Ok(Value::ObjectIdentifier(oid)),
+                Err(_) => decode_error("Expected an OBJECT IDENTIFIER."),
+            },
             Kind::Str(_) => self.string(element).map(Value::Text),
             Kind::Enumerated { root, additions } => {
                 let Some(inner) = element.children.first() else {

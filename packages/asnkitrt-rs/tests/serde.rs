@@ -11,7 +11,7 @@ use asnkitrt::container::Checks;
 use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::serde_value::{BitString, from_value, to_value};
 use asnkitrt::types::Codec;
-use asnkitrt::value::Value;
+use asnkitrt::value::{ObjectIdentifier, Value};
 use serde::{Deserialize, Serialize};
 
 fn compiled(name: &str, codec: Codec) -> Specification {
@@ -60,7 +60,7 @@ fn a_sequence_is_a_struct() {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct AlgorithmIdentifier {
-    algorithm: String,
+    algorithm: ObjectIdentifier<'static>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -111,20 +111,23 @@ fn bit_strings_and_optional_members() {
     let key = tbs.get("subjectPublicKeyInfo").unwrap();
     let typed: SubjectPublicKeyInfo = from_value(key).unwrap();
 
-    assert_eq!(typed.algorithm.algorithm, "1.2.840.10045.2.1");
+    assert_eq!(typed.algorithm.algorithm.to_string(), "1.2.840.10045.2.1");
     assert!(typed.algorithm.parameters.is_some());
     assert_eq!(typed.subject_public_key.bits, 520);
     assert_eq!(to_value(&typed).unwrap(), *key);
 
     // No parameters at all.
     let plain = AlgorithmIdentifier {
-        algorithm: "1.2.3".into(),
+        algorithm: "1.2.3".parse().unwrap(),
         parameters: None,
     };
 
     assert_eq!(
         to_value(&plain).unwrap(),
-        Value::Map(vec![("algorithm".into(), Value::Text("1.2.3".into()))])
+        Value::Map(vec![(
+            "algorithm".into(),
+            Value::ObjectIdentifier("1.2.3".parse().unwrap())
+        )])
     );
     assert_eq!(
         from_value::<AlgorithmIdentifier>(&to_value(&plain).unwrap()).unwrap(),
@@ -305,4 +308,29 @@ fn big_integers_are_values() {
     );
     assert_eq!(big.to_i128(), None);
     assert!(from_value::<BigInt>(&Value::Boolean(true)).is_err());
+}
+
+#[test]
+fn an_object_identifier_is_its_text_elsewhere() {
+    let oid: ObjectIdentifier<'static> = "1.2.840.113549".parse().unwrap();
+
+    // To the formats of serde, and to a String, as asnkit 1 had it.
+    assert_eq!(serde_json::to_string(&oid).unwrap(), "\"1.2.840.113549\"");
+    assert_eq!(
+        serde_json::from_str::<ObjectIdentifier>("\"1.2.840.113549\"").unwrap(),
+        oid
+    );
+    assert!(serde_json::from_str::<ObjectIdentifier>("\"1\"").is_err());
+    assert_eq!(
+        from_value::<String>(&Value::ObjectIdentifier(oid.clone())).unwrap(),
+        "1.2.840.113549"
+    );
+    assert_eq!(
+        to_value(&oid).unwrap(),
+        Value::ObjectIdentifier(oid.clone())
+    );
+    assert_eq!(
+        from_value::<ObjectIdentifier>(&Value::ObjectIdentifier(oid.clone())).unwrap(),
+        oid
+    );
 }

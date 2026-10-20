@@ -261,7 +261,7 @@ pub struct Builtins {
     pub nothing: (),
     pub octets: asnkitrt::serde_value::OctetString,
     pub bits: asnkitrt::serde_value::BitString,
-    pub oid: String,
+    pub oid: asnkitrt::value::ObjectIdentifier<'static>,
     pub text: String,
     pub printable: String,
     pub utc: asnkitrt::value::DateTime,

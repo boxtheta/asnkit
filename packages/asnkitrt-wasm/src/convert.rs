@@ -289,6 +289,14 @@ impl<'a> Converter<'a> {
                 Some(number) => Ok(Value::Real(number)),
                 None => self.untyped(value, depth),
             },
+            // A string, as `'1.2.3'`.
+            Kind::ObjectIdentifier => match value {
+                Js::Text(text) => match text.parse() {
+                    Ok(oid) => Ok(Value::ObjectIdentifier(oid)),
+                    Err(_) => Err("Expected an OBJECT IDENTIFIER as '1.2.3'.".into()),
+                },
+                _ => self.untyped(value, depth),
+            },
             Kind::BitString(_) => match value.pair() {
                 Some((bytes, bits)) => match (bytes, bits.as_f64()) {
                     (Js::Bytes(bytes), Some(bits)) if bits >= 0.0 && bits.fract() == 0.0 => {
@@ -621,6 +629,10 @@ fn write(buffer: &mut Vec<u8>, value: &Value) {
         Value::Text(text) => {
             buffer.push(to_js::STRING);
             write_bytes(buffer, text.as_bytes());
+        }
+        Value::ObjectIdentifier(oid) => {
+            buffer.push(to_js::STRING);
+            write_bytes(buffer, oid.to_string().as_bytes());
         }
         Value::Bytes(bytes) => {
             buffer.push(to_js::BYTES);

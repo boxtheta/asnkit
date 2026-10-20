@@ -67,6 +67,9 @@ static ALLOCATOR: Counting = Counting;
 fn held(value: &Value<'_>, counts: &mut [usize; 4]) {
     match value {
         Value::Text(_) => counts[1] += 1,
+        Value::ObjectIdentifier(oid) => {
+            counts[1] += usize::from(matches!(oid.clone().into_bytes(), Cow::Owned(_)))
+        }
         Value::Bytes(_) | Value::Bits(..) | Value::BigInteger(_) => counts[2] += 1,
         Value::List(items) => {
             counts[3] += 1;
@@ -158,7 +161,7 @@ fn main() -> ExitCode {
 
         held(&certificate, &mut counts);
         println!(
-            "{:.1} allocations per call; a decoded value holds {}: {} names, {} texts, {} byte strings, {} containers",
+            "{:.1} allocations per call; a decoded value holds {}: {} names, {} texts and OIDs, {} byte strings, {} containers",
             ALLOCATIONS.load(Ordering::Relaxed) as f64 / iterations as f64,
             counts.iter().sum::<usize>(),
             counts[0],
