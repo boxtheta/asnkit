@@ -1,0 +1,10 @@
+PKCS1-PSS DEFINITIONS EXPLICIT TAGS ::= BEGIN
+IMPORTS AlgorithmIdentifier FROM PKIX1Explicit88
+  { iso(1) identified-organization(3) dod(6) internet(1) security(5) mechanisms(5) pkix(7) id-mod(0) id-pkix1-explicit(18) };
+-- RFC 4055, with OPTIONAL in place of DEFAULT so that DER round-trips as sent.
+RSASSA-PSS-params ::= SEQUENCE {
+  hashAlgorithm      [0] AlgorithmIdentifier OPTIONAL,
+  maskGenAlgorithm   [1] AlgorithmIdentifier OPTIONAL,
+  saltLength         [2] INTEGER OPTIONAL,
+  trailerField       [3] INTEGER OPTIONAL }
+END

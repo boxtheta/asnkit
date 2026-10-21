@@ -1,0 +1,35 @@
+# The ANY DEFINED BY members of X.509 that tests/test_x509_interop.py
+# maps, compiled with ../../../examples/compiled/rfc5280.asn and
+# pkcs1_pss.asn. A selector that is not here is rejected, which the
+# test also checks.
+
+[[any_defined_by]]
+type = "PKIX1Explicit88.AlgorithmIdentifier"
+member = "parameters"
+[any_defined_by.choices]
+"1.2.840.113549.1.1.1" = "NULL"                       # rsaEncryption
+"1.2.840.113549.1.1.5" = "NULL"                       # sha1WithRSAEncryption
+"1.2.840.113549.1.1.11" = "NULL"                      # sha256WithRSAEncryption
+"1.2.840.113549.1.1.12" = "NULL"                      # sha384WithRSAEncryption
+"1.2.840.113549.1.1.13" = "NULL"                      # sha512WithRSAEncryption
+"1.2.840.113549.1.1.10" = "PKCS1-PSS.RSASSA-PSS-params"
+"1.2.840.113549.1.1.8" = "PKIX1Explicit88.AlgorithmIdentifier"  # mgf1
+"2.16.840.1.101.3.4.2.1" = "NULL"                     # sha256
+"2.16.840.1.101.3.4.2.2" = "NULL"                     # sha384
+"2.16.840.1.101.3.4.2.3" = "NULL"                     # sha512
+"1.2.840.10045.2.1" = "OBJECT IDENTIFIER"             # id-ecPublicKey: namedCurve
+"1.2.840.10045.4.3.2" = "NULL"                        # ecdsa-with-SHA256 (params absent)
+"1.2.840.10045.4.3.3" = "NULL"
+"1.2.840.10045.4.3.4" = "NULL"
+"1.3.101.112" = "NULL"                                # Ed25519 (params absent)
+"1.3.101.113" = "NULL"                                # Ed448
+
+[[any_defined_by]]
+type = "PKIX1Implicit88.PolicyQualifierInfo"
+member = "qualifier"
+choices = { "id-qt-cps" = "CPSuri", "id-qt-unotice" = "UserNotice" }
+
+[[any_defined_by]]
+type = "PKIX1Implicit88.AnotherName"
+member = "value"
+choices = { "1.3.6.1.4.1.311.20.2.3" = "UTF8String" }

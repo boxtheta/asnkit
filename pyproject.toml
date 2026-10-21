@@ -42,6 +42,13 @@ dev = [
     "cryptography>=43",
     "ruff>=0.17.0",
 ]
+# The other readers of X.509 that tests/test_x509_interop.py checks
+# against, with cryptography of dev.
+interop = [
+    "asn1crypto>=1.5",
+    "pyasn1>=0.6",
+    "pyasn1-modules>=0.4",
+]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5",

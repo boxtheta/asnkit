@@ -49,3 +49,19 @@ test_codecs.py
 --------------
 
 Tests various utility functions in the codecs module.
+
+test_x509_interop.py
+--------------------
+
+Tests X.509 with both runtimes, with and without mappings of ANY
+DEFINED BY, against OpenSSL, cryptography, asn1crypto and pyasn1: round
+trips of what OpenSSL makes, certificates built by asnkit that OpenSSL
+must accept, and encodings that are not DER. Two known bugs of the
+runtime for Python are expected failures. It needs ``openssl``, a built
+``asnkitcc`` and the ``interop`` dependency group, and is skipped
+without them; CI runs it in ``.github/workflows/x509-interop.yml``:
+
+.. code-block:: text
+
+   cargo build --release --bin asnkitcc
+   uv run --group interop python -m unittest tests.test_x509_interop
