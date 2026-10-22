@@ -56,8 +56,7 @@ test_x509_interop.py
 Tests X.509 with both runtimes, with and without mappings of ANY
 DEFINED BY, against OpenSSL, cryptography, asn1crypto and pyasn1: round
 trips of what OpenSSL makes, certificates built by asnkit that OpenSSL
-must accept, and encodings that are not DER. Two known bugs of the
-runtime for Python are expected failures. It needs ``openssl``, a built
+must accept, and encodings that are not DER. It needs ``openssl``, a built
 ``asnkitcc`` and the ``interop`` dependency group, and is skipped
 without them; CI runs it in ``.github/workflows/x509-interop.yml``:
 

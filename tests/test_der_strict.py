@@ -26,6 +26,8 @@ Oid ::= OBJECT IDENTIFIER
 Plain ::= BIT STRING
 Named ::= BIT STRING { a(0), b(1), c(2) }
 Nothing ::= NULL
+Bytes ::= OCTET STRING
+Text ::= IA5String
 Numbers ::= SET OF INTEGER
 WithDefault ::= SEQUENCE { a INTEGER DEFAULT 5, b BOOLEAN OPTIONAL }
 InOrder ::= SEQUENCE { a [0] INTEGER OPTIONAL, b [1] INTEGER OPTIONAL }
@@ -111,6 +113,28 @@ class DerStrictTest(unittest.TestCase):
 
             with self.assertRaises(asnkitrt.DecodeError):
                 codec.decode("Plain", bytes.fromhex("0300"))
+
+    def test_octet_string_in_parts(self) -> None:
+        self.check("Bytes", "24080402010204020304", b"\x01\x02\x03\x04")
+        # Of indefinite length, and with parts in parts.
+        self.check("Bytes", "248024060401010401020401030000", b"\x01\x02\x03")
+
+    def test_string_in_parts(self) -> None:
+        # The parts of a string are OCTET STRINGs.
+        self.check("Text", "3606040268690400", "hi")
+
+    def test_bit_string_in_parts(self) -> None:
+        self.check("Plain", "2307030100030204f0", (b"\xf0", 4))
+
+    def test_bit_string_in_parts_with_unused_bits_before_the_last(self) -> None:
+        for codec in (self.strict, self.lenient):
+            with self.assertRaises(asnkitrt.DecodeError):
+                codec.decode("Plain", bytes.fromhex("2308030204f0030200ff"))
+
+    def test_string_in_parts_of_another_type_is_never_decoded(self) -> None:
+        for codec in (self.strict, self.lenient):
+            with self.assertRaises(asnkitrt.DecodeError):
+                codec.decode("Bytes", bytes.fromhex("2403020101"))
 
     def test_null_with_contents_is_never_decoded(self) -> None:
         for codec in (self.strict, self.lenient):

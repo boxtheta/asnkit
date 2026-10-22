@@ -27,6 +27,7 @@ K ::= ENUMERATED { text(1), number(2) }
 T ::= SEQUENCE { kind INTEGER, payload ANY DEFINED BY kind }
 E ::= SEQUENCE { kind K, payload ANY DEFINED BY kind }
 O ::= SEQUENCE { kind OBJECT IDENTIFIER, payload ANY DEFINED BY kind }
+X ::= SEQUENCE { kind INTEGER, payload [0] EXPLICIT ANY DEFINED BY kind }
 END
 """)
             (root / "choices.toml").write_text("""
@@ -42,6 +43,10 @@ choices = { text = "UTF8String", number = "INTEGER" }
 type = "M.O"
 member = "payload"
 choices = { "1.2.3" = "UTF8String" }
+[[any_defined_by]]
+type = "M.X"
+member = "payload"
+choices = { "1" = "UTF8String", "2" = "INTEGER" }
 """)
             subprocess.run(
                 [
@@ -67,6 +72,7 @@ choices = { "1.2.3" = "UTF8String" }
                         ("T", {"kind": 2, "payload": 42}),
                         ("E", {"kind": 1 if numeric else "text", "payload": "hello"}),
                         ("O", {"kind": "1.2.3", "payload": "hello"}),
+                        ("X", {"kind": 2, "payload": 42}),
                     ]:
                         with self.subTest(codec=codec, numeric=numeric, type=name):
                             self.assertEqual(

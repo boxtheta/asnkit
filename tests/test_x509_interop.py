@@ -20,10 +20,6 @@ written by the same people nor from the same reading of the standard.
   cryptography, and the lenient readers of both make the same DER of
   those that BER allows.
 
-Two tests are expected failures, for known bugs of the runtime for
-Python: when one is fixed, its test passes, which fails the run, and
-the decorator is to be removed.
-
 The tests need ``openssl``, ``asnkitcc`` (found as tests/compiled.py
 says) and the dependency group ``interop``. Without them they are
 skipped, unless ASNKIT_INTEROP_REQUIRED is set, as in CI:
@@ -461,10 +457,6 @@ def extension_of_asn1crypto(type_name, parsed, mapped):
     return None
 
 
-def has_other_name(parsed):
-    return any(name.name == "other_name" for name in parsed)
-
-
 def verify_signature(public_key, certificate, data):
     parameters = certificate.signature_algorithm_parameters
 
@@ -770,12 +762,6 @@ class X509InteropTest(unittest.TestCase):
         rust = specification.rust
 
         self.assertEqual(rust(type_name, data), data, "Rust")
-
-        # The runtime for Python does not decode an [0] EXPLICIT ANY
-        # DEFINED BY with choices, as test_python_explicit_any_defined_by
-        # shows.
-        if mapped and type_name.endswith("AltName") and has_other_name(parsed):
-            return
 
         der = specification.der
         value = der.decode(type_name, data)
@@ -1228,9 +1214,7 @@ class X509InteropTest(unittest.TestCase):
 
     def test_lenient_makes_the_same_der(self):
         for description, name, mutation, ber, same in NOT_DER:
-            # The constructed OCTET STRING is in
-            # test_python_lenient_constructed_octet_string.
-            if not ber or mutation is constructed_octet_string:
+            if not ber:
                 continue
 
             with self.subTest(description):
@@ -1248,6 +1232,11 @@ class X509InteropTest(unittest.TestCase):
             self.assertEqual(
                 self.lenient_der(bytes.fromhex("0303070600"), "KeyUsage"),
                 (bytes.fromhex("03020106"),) * 2,
+            )
+            # A BIT STRING in parts, the first without bits.
+            self.assertEqual(
+                self.lenient_der(bytes.fromhex("2307030100030205a0"), "KeyUsage"),
+                (bytes.fromhex("030205a0"),) * 2,
             )
 
     def test_unmapped_selector_is_rejected(self):
@@ -1272,35 +1261,6 @@ class X509InteropTest(unittest.TestCase):
             plain.der.encode("Certificate", plain.der.decode("Certificate", data)), data
         )
         self.assertEqual(plain.rust("Certificate", data), data)
-
-    @unittest.expectedFailure
-    def test_python_explicit_any_defined_by(self):
-        """An otherName is an [0] EXPLICIT ANY DEFINED BY, the explicit tag
-        of which does not give the members to what it holds, in
-        ber.ExplicitTag."""
-
-        der = self.specifications["mapped"].der
-        certificate = der.decode("Certificate", self.certificates["full-rsa"])
-        data = next(
-            bytes(e["extnValue"])
-            for e in certificate["tbsCertificate"]["extensions"]
-            if e["extnID"] == EXTENSION_OIDS["SubjectAltName"]
-        )
-        names = der.decode("SubjectAltName", data)
-        self.assertIn(
-            ("otherName", {"type-id": UPN, "value": "upn@example.com"}), names
-        )
-        self.assertEqual(der.encode("SubjectAltName", names), data)
-
-    @unittest.expectedFailure
-    def test_python_lenient_constructed_octet_string(self):
-        """BER allows a constructed OCTET STRING, which the lenient reader
-        of DER of Rust reads, and that of Python does not."""
-
-        data = self.not_der("full-p256", constructed_octet_string)
-        python, rust = self.lenient_der(data)
-        self.assertEqual(python, rust)
-        self.assertEqual(python, self.certificates["full-p256"])
 
 
 if __name__ == "__main__":

@@ -696,6 +696,9 @@ class StandardDecodeMixin(object):
         False  # Whether indefinite length encoding is allowed for this type
     )
     minimal_length_required = False  # Whether the length must be minimal, as in DER
+    # Whether decode_content() is given the values of the members around
+    # it, which an ANY DEFINED BY in it is defined by
+    content_takes_values = False
 
     def decode(self, data, offset, values=None):
         """
@@ -729,7 +732,21 @@ class StandardDecodeMixin(object):
             enforce_minimal=self.minimal_length_required,
         )
 
+        if self.content_takes_values:
+            return self.decode_content_with_values(data, offset, length, values)
+
         return self.decode_content(data, offset, length)
+
+    def decode_content_with_values(self, data, offset, length, values):
+        """
+        As decode_content(), with the values of the members around it, for
+        a type with content_takes_values
+        """
+        raise NotImplementedError(
+            "Type {} does not implement decode_content_with_values() method".format(
+                type(self).__name__
+            )
+        )
 
     def decode_content(self, data, offset, length):
         """
@@ -918,7 +935,7 @@ class MembersType(StandardEncodeMixin, StandardDecodeMixin, Type):
                 if isinstance(member, AnyDefinedBy):
                     member.encode(value, encoded_members, data)
                 elif not member.is_default(value):
-                    member.encode(value, encoded_members)
+                    member.encode(value, encoded_members, data)
             except ErrorWithLocation as e:
                 # Add member location
                 e.add_location(member)
@@ -1725,15 +1742,19 @@ class ExplicitTag(StandardEncodeMixin, StandardDecodeMixin, Type):
     def set_tag(self, number, flags):
         super(ExplicitTag, self).set_tag(number, flags | Encoding.CONSTRUCTED)
 
+    # An ANY DEFINED BY that is tagged, as the value of an otherName is, is
+    # defined by the members around the tag.
+    content_takes_values = True
+
     def encode_content(self, data, values=None):
         encoded_inner = bytearray()
-        self.inner.encode(data, encoded_inner)
+        self.inner.encode(data, encoded_inner, values)
         return encoded_inner
 
-    def decode_content(self, data, offset, length):
-        values, end_offset = self.inner.decode(data, offset)
+    def decode_content_with_values(self, data, offset, length, values):
+        decoded, end_offset = self.inner.decode(data, offset, values)
 
-        check_decode_error(self.inner, values, data, offset)
+        check_decode_error(self.inner, decoded, data, offset)
 
         # Verify End of Contents tag exists for Indefinite field
         if length is None:
@@ -1743,7 +1764,7 @@ class ExplicitTag(StandardEncodeMixin, StandardDecodeMixin, Type):
                 )
             end_offset += 2
 
-        return values, end_offset
+        return decoded, end_offset
 
 
 class Recursive(compiler.Recursive, Type):

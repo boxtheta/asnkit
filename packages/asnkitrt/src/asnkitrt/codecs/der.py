@@ -140,6 +140,73 @@ class Type(Lenient, ber.StandardDecodeMixin, ber.Type):
         super().set_tag(number, flags)
 
 
+# BER, but not DER, has a string in parts, each a string of the universal
+# type of a BIT STRING, or else of an OCTET STRING, or again in parts
+# (X.690 8.6.4, 8.7.3, 8.23.6, 10.2). A lenient reader puts them together.
+class ConstructedMixin(Lenient, ber.StandardDecodeMixin):
+    segment_tag = Tag.OCTET_STRING
+
+    def decode(self, data, offset, values=None):
+        if self.lenient:
+            end = offset + self.tag_len
+            constructed_tag = bytearray(self.tag)
+            constructed_tag[0] |= Encoding.CONSTRUCTED
+
+            if data[offset:end] == constructed_tag:
+                length, start = ber.decode_length(data, end, enforce_definite=False)
+                segments, end_offset = self.decode_segments(data, start, length)
+                contents = self.join_segments(segments, offset)
+                decoded, _ = self.decode_content(contents, 0, len(contents))
+
+                return decoded, end_offset
+
+        return super().decode(data, offset, values)
+
+    def decode_segments(self, data, offset, length):
+        segments: list[bytes] = []
+        end_offset = None if length is None else offset + length
+
+        while True:
+            end_of_data, offset = ber.is_end_of_data(data, offset, end_offset)
+
+            if end_of_data:
+                return segments, offset
+
+            if offset >= len(data):
+                raise ber.OutOfByteDataError(
+                    "Ran out of data when reading tag", offset=offset
+                )
+
+            tag = data[offset]
+            constructed = tag & Encoding.CONSTRUCTED
+
+            if tag & ~Encoding.CONSTRUCTED != self.segment_tag:
+                raise self.decode_error(
+                    "Expected a part of a string with tag 0x{:02x}, but got "
+                    "0x{:02x}.".format(self.segment_tag, tag),
+                    offset,
+                )
+
+            length, offset = ber.decode_length(
+                data, offset + 1, enforce_definite=not constructed
+            )
+
+            if constructed:
+                inner, offset = self.decode_segments(data, offset, length)
+                segments.extend(inner)
+            else:
+                if offset + length > (len(data) if end_offset is None else end_offset):
+                    raise self.decode_error(
+                        "Expected a part of a string within the string.", offset
+                    )
+
+                segments.append(bytes(data[offset : offset + length]))
+                offset += length
+
+    def join_segments(self, segments, offset):
+        return b"".join(segments)
+
+
 def check_integer_is_minimal(self, data, offset, length):
     """An INTEGER, or an ENUMERATED, is in as few bytes as possible."""
 
@@ -256,7 +323,7 @@ class ObjectIdentifier(Lenient, ber.ObjectIdentifier):
         return super().decode_content(data, offset, length)
 
 
-class StringType(StandardEncodeMixin, Type):
+class StringType(ConstructedMixin, StandardEncodeMixin, Type):
     TAG: int
     ENCODING: str
 
@@ -320,10 +387,27 @@ class Integer(NamedNumbersMixin, StandardEncodeMixin, Type):
         )
 
 
-class BitString(Type):
+class BitString(ConstructedMixin, Type):
     def __init__(self, name, has_named_bits):
         super(BitString, self).__init__(name, "BIT STRING", Tag.BIT_STRING)
         self.has_named_bits = has_named_bits
+
+    segment_tag = Tag.BIT_STRING
+
+    def join_segments(self, segments, offset):
+        # Each part has its number of unused bits first, which only the
+        # last may have.
+        if not segments:
+            return b"\x00"
+
+        for index, segment in enumerate(segments, 1):
+            if not segment or (segment[0] and index < len(segments)):
+                raise self.decode_error(
+                    "Expected unused bits only in the last part of a BIT STRING.",
+                    offset,
+                )
+
+        return segments[-1][:1] + b"".join(segment[1:] for segment in segments)
 
     def is_default(self, value):
         if self.default is None:
@@ -398,7 +482,7 @@ class BitString(Type):
         return (bytes(data[offset:end_offset]), number_of_bits), end_offset
 
 
-class OctetString(StandardEncodeMixin, Type):
+class OctetString(ConstructedMixin, StandardEncodeMixin, Type):
     def __init__(self, name):
         super(OctetString, self).__init__(name, "OCTET STRING", Tag.OCTET_STRING)
 
