@@ -1704,6 +1704,14 @@ impl<'a> Coder<'a> {
 
                 for segment in segments {
                     if let Value::Bits(part, count) = segment {
+                        // Only the last part has unused bits (X.690 8.6.4).
+                        if bits % 8 != 0 {
+                            return decode_error(
+                                "Expected unused bits only in the last part of a BIT STRING.",
+                                start,
+                            );
+                        }
+
                         bytes.extend_from_slice(&part);
                         bits += count;
                     }

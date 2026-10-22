@@ -3209,6 +3209,12 @@ class BerTest(BaseTest):
         for type_name, decoded, encoded in datas:
             self.assertEqual(all_types.decode(type_name, encoded), decoded)
 
+    def test_bit_string_with_unused_bits_before_the_last_part(self):
+        all_types = fixtures.compile_files("tests/files/all_types.asn")
+
+        with self.assertRaises(fixtures.DecodeError):
+            all_types.decode("Bitstring", b"\x23\x08\x03\x02\x04\xf0\x03\x02\x00\xff")
+
     def test_decode_indefinite_length_in_primitive_encoding(self):
         """A BOOLEAN always uses primitive encoding with definite length, and
         decoding should fail if an indefinite length is found.

@@ -1261,6 +1261,12 @@ class BitString(StandardEncodeMixin, PrimitiveOrConstructedType):
         number_of_bits = 0
 
         for data, length in segments:
+            # Only the last part has unused bits (X.690 8.6.4).
+            if number_of_bits % 8:
+                raise DecodeError(
+                    "Expected unused bits only in the last part of a BIT STRING."
+                )
+
             decoded.extend(data)
             number_of_bits += length
 
