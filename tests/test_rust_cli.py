@@ -474,7 +474,7 @@ class RustConvertTest(unittest.TestCase):
             (["-t", "M", "--from", "der", "--to", "jer", "--indent", "x"], b"indent"),
             (["-t", "M", "--from", "jer", "--to", "der", "--input-hex"], b"binary"),
             (["-t", "M", "--from", "der", "--to", "jer", "--nonce", "1"], b"nonce"),
-            (["-t", "M", "--from", "gser", "--to", "der"], b"GSER is encoded only"),
+            (["-t", "M", "--from", "gser", "--to", "der"], b"GSER punctuation"),
         ]:
             with self.subTest(arguments=arguments):
                 result = self.convert(*arguments, self.asn, data=b"0\x00")

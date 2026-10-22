@@ -93,6 +93,7 @@ Python, with `out` on the import path:
 
 ```python
 from foo import Question
+
 encoded = Question(id=1, question="Is 1+1=3?").encode("uper")
 assert Question.decode(encoded, "uper").id == 1
 ```
