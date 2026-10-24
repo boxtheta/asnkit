@@ -7,11 +7,21 @@ WebAssembly runtime and compiler to npm, and makes a release on GitHub with the
 notes of `CHANGELOG.md`. Nothing is published unless all of it builds
 and passes its tests.
 
-`asnkit-gen-rust-codec` is not yet published and is not in the release
-workflow's publish list. Before its first automated release, publish it
-once, configure its crates.io trusted publisher as below, and add it
-to that list after `asnkit-gen-rust`. Its version and generated fixtures
-are still maintained with the workspace.
+Release candidates use tags such as `v2.0.0-rc1`. Cargo and npm use
+`2.0.0-rc1`; Python package metadata and `__version__` use the equivalent
+PEP 440 spelling `2.0.0rc1`. The version tests compare these spellings.
+The workflow publishes prereleases to npm's `next` tag and marks the
+GitHub release as a prerelease. Stable releases use npm's `latest` tag.
+
+`asnkit-gen-rust-codec` is included after `asnkit-gen-rust` in the publish
+list. Before its first automated release, publish it once and configure
+its crates.io trusted publisher as below. For this new crate, its
+`asnkitrt` and `asnkit-gen-rust` dependency versions must already be
+published. If the first release workflow stops at this crate, publish
+it with `cargo publish --locked -p asnkit-gen-rust-codec` from the tagged
+checkout using your crates.io credentials, configure its trusted
+publisher, then rerun the failed jobs. The workflow skips versions
+already published.
 
 ## Once, before the first release
 
@@ -23,8 +33,8 @@ are still maintained with the workspace.
   `asnkit-gen-python`: owner `boxtheta`, repository `asnkit`, workflow
   `release.yml`, environment `pypi`. No token is needed.
 - **crates.io:** publish the crates once by hand, then add a trusted
-  publisher to each of `asnkitrt`, `asnkit-compiler`, `asnkit-gen-rust`
-  and `asnkitcc`: owner `boxtheta`, repository `asnkit`, workflow
+  publisher to each of `asnkitrt`, `asnkit-compiler`, `asnkit-gen-rust`,
+  `asnkit-gen-rust-codec` and `asnkitcc`: owner `boxtheta`, repository `asnkit`, workflow
   `release.yml`, environment `crates-io`. No token is needed.
 - **npm:** publish `asnkitrt` and `asnkit-compiler` once by hand, then
   add a trusted publisher to each: GitHub Actions, owner `boxtheta`, repository `asnkit`, workflow

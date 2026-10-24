@@ -10,6 +10,8 @@ security fixes.
 
 ## [Unreleased]
 
+## [2.0.0-rc1] - 2026-10-24
+
 ### Added
 
 - Explicit `ANY DEFINED BY` type mappings in the compiler, with repeatable
@@ -238,6 +240,7 @@ WebAssembly runtime on npm.
   `application/vnd.asnkit.asnst+cbor`, guidelines for third-party
   runtimes, a corpus of `.asni` files and more than 5,300 test vectors.
 
+[2.0.0-rc1]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc1
 [1.2.0]: https://github.com/boxtheta/asnkit/releases/tag/v1.2.0
 [1.1.0]: https://github.com/boxtheta/asnkit/releases/tag/v1.1.0
 [1.0.1]: https://github.com/boxtheta/asnkit/releases/tag/v1.0.1

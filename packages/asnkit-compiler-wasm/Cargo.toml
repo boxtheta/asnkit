@@ -4,7 +4,7 @@
 
 [package]
 name = "asnkit-compiler-wasm"
-version = "1.2.0"
+version = "2.0.0-rc1"
 edition = "2024"
 rust-version = "1.88"
 description = "The compiler of asnkit for the web and JavaScript, as WebAssembly"

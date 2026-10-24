@@ -9,12 +9,8 @@ allocation except for boxed recursive values. It uses
 [`asnkitrt`](https://crates.io/crates/asnkitrt) for the rules of the
 codecs, which are those of the runtime, and builds without `std`.
 
-The plugin is not yet published to crates.io. From this repository,
-install the compiler and plugin with:
-
 ```text
-$ cargo install --path packages/asnkitcc
-$ cargo install --path packages/asnkit-gen-rust-codec
+$ cargo install asnkitcc asnkit-gen-rust-codec
 $ asnkitcc generate --plugin rust-codec --plugin-opt codec=uper -o src foo.asn    # Writes src/foo.rs.
 ```
 
@@ -34,10 +30,8 @@ assert_eq!(decoded.question, "Is 1+1=3?");
 ```
 
 The crate that uses the generated code needs `asnkitrt`, which can be
-built with `default-features = false`. Until the plugin and its runtime
-support are released, use `packages/asnkitrt-rs` from this checkout as
-a path dependency. Generate code with the matching runtime version;
-`asnkitrt::wire` may change between minor versions.
+built with `default-features = false`. Generate code with the matching
+runtime version; `asnkitrt::wire` may change between minor versions.
 
 ## Why
 

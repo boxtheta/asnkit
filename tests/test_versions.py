@@ -68,11 +68,21 @@ def versions():
     return found
 
 
+def release_version(version):
+    """Compare Python's PEP 440 rc spelling with Cargo/npm SemVer."""
+    return re.sub(r"(?<=\d)rc(\d+)$", r"-rc\1", version)
+
+
 class VersionsTest(unittest.TestCase):
+    def test_release_candidate_version_spellings(self):
+        self.assertEqual(release_version("2.0.0rc1"), "2.0.0-rc1")
+        self.assertEqual(release_version("2.0.0-rc1"), "2.0.0-rc1")
+        self.assertEqual(release_version("2.0.0"), "2.0.0")
+
     def test_all_packages_have_one_version(self):
         found = versions()
 
-        self.assertEqual(len(set(found.values())), 1, found)
+        self.assertEqual(len({release_version(v) for v in found.values()}), 1, found)
 
     def test_dependencies_between_packages_are_that_version(self):
         version = read_toml("asnkitrt", "pyproject.toml")["project"]["version"]
@@ -84,6 +94,7 @@ class VersionsTest(unittest.TestCase):
 
         for package, dependency in [
             ("asnkitcc", "asnkit-compiler"),
+            ("asnkitcc", "asnkitrt"),
             ("asnkit-gen-rust", "asnkitrt"),
             ("asnkit-gen-rust-codec", "asnkitrt"),
             ("asnkit-gen-rust-codec", "asnkit-gen-rust"),
@@ -93,7 +104,7 @@ class VersionsTest(unittest.TestCase):
                     read_toml(package, "Cargo.toml")["dependencies"][dependency][
                         "version"
                     ],
-                    version,
+                    release_version(version),
                 )
 
 

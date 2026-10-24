@@ -39,7 +39,7 @@ jobs:
       run: |
         uv sync
         uv run python -m unittest tests.test_versions
-        version=$(uv run python -c "import tomllib; print(tomllib.load(open('packages/asnkitrt/pyproject.toml', 'rb'))['project']['version'])")
+        version=$(uv run python -c "import tomllib; print(tomllib.load(open('packages/asnkitrt-rs/Cargo.toml', 'rb'))['package']['version'])")
         test "$GITHUB_REF_NAME" = "v$version"
     - name: The changelog has the version, with its date
       run: |
@@ -118,7 +118,7 @@ jobs:
       # out, so that the job can be run again after a failure.
       run: |
         version=${GITHUB_REF_NAME#v}
-        for crate in asnkitrt asnkit-compiler asnkit-gen-rust asnkitcc; do
+        for crate in asnkitrt asnkit-compiler asnkit-gen-rust asnkit-gen-rust-codec asnkitcc; do
           if curl -sf -A "asnkit release (github.com/boxtheta/asnkit)" \
               "https://crates.io/api/v1/crates/$crate/$version" > /dev/null; then
             echo "$crate $version is already published."
@@ -155,11 +155,13 @@ jobs:
       # workflow and the environment npm.
       run: |
         version=${GITHUB_REF_NAME#v}
+        dist_tag=latest
+        if [[ "$version" == *-* ]]; then dist_tag=next; fi
         for package in asnkitrt asnkit-compiler; do
           if npm view "$package@$version" version | grep -q .; then
             echo "$package $version is already published."
           else
-            npm publish --access public "./npm/$package-$version.tgz"
+            npm publish --access public --tag "$dist_tag" "./npm/$package-$version.tgz"
           fi
         done
 
@@ -187,4 +189,6 @@ jobs:
           found && /^## \[/ { exit }
           found { print }
         ' CHANGELOG.md > notes.md
-        gh release create "$GITHUB_REF_NAME" --title "asnkit $version" --notes-file notes.md --verify-tag dist/*
+        flags=()
+        if [[ "$version" == *-* ]]; then flags+=(--prerelease); fi
+        gh release create "$GITHUB_REF_NAME" --title "asnkit $version" --notes-file notes.md --verify-tag "${flags[@]}" dist/*

@@ -1,70 +1,80 @@
 # Plugins
 
-> **Note:** This is a draft. The way a plugin is run and given its files may change until it is agreed on, and until then a plugin should expect to be changed with it.
+`asnkitcc generate --plugin NAME` compiles the ASN.1 files and sends the
+compiled specification, with the source text in it, to `asnkit-gen-NAME`
+on standard input. The plugin writes the files it makes into the output
+directory (`-o`, default `.`), and exits with `0` if it succeeded or a
+non-zero code if it did not, with any error message on standard error.
 
-A plugin is a program that makes something from an ASN.1 specification,
-such as code in a language. `asnkitcc generate` compiles the
-specification and runs the plugin on it:
+Any program on `PATH` whose name begins with `asnkit-gen-` is a plugin.
 
-```text
-$ asnkitcc generate --plugin python -o out foo.asn
-$ asnkitcc generate --plugin ./my-plugin --plugin-opt name=foo -o out foo.asn
+## Protocol
+
+Standard input is a CBOR map (RFC 8949):
+
+| Key | Value |
+|---|---|
+| `"asni"` | Byte string: the compiled `.asni` file, with `sources[i].text` set |
+| `"options"` | Map of string to string: the `--plugin-opt KEY=VALUE` flags |
+
+Nothing is read from standard output; everything the plugin writes goes
+to files in the current working directory, which `asnkitcc` sets to the
+`-o` directory before it starts the plugin.
+
+## Writing a plugin in Python
+
+```python
+#!/usr/bin/env python3
+import sys
+import cbor2
+import asnkitrt.syntax
+
+request = cbor2.load(sys.stdin.buffer)
+header, specification = asnkitrt.syntax.load_asni(request["asni"])
+options = request["options"]
+
+for module_name, module in specification.modules.items():
+    for type_name, type_descriptor in module.types.items():
+        ...
 ```
 
-The plugin `python` is the program `asnkit-gen-python`, found
-where programs are found, as for `git` and its commands. A plugin
-given with a `/` in it is the program at that path. A plugin is of
-any language, and only needs something that reads CBOR if it reads the
-files below.
-
-## How a plugin is run
-
-The plugin is run with these arguments:
-
-- `--asni FILE` — The compiled specification, an `.asni` file. It is not signed,
-  encrypted, bound to something or made with a nonce, as it is meant to
-  be put in what the plugin makes and loaded from there. `asnkitcc generate` refuses the options for those.
-
-- `--asnst FILE` — The syntax tree of the same specification, an `.asnst` file. It
-  has the text of the ASN.1 files and where everything is found in them.
-
-- `--out FOLDER` — Where the plugin writes what it makes. The folder exists.
-
-- `--opt KEY=VALUE` — An option of the plugin, as given to `asnkitcc generate` with
-  `--plugin-opt KEY=VALUE`. Once for each, in the order they were
-  given. A plugin rejects an option it does not know of.
-
-The files are in a folder of their own, which is removed once the plugin
-is done. The plugin reads them while it runs and does not keep them.
-
-A plugin tells how it did with its exit status: 0 is that it made what
-was asked for, and anything else is that it did not. What it writes to
-standard error is shown to the person running it as it is, and what it
-writes to standard output as well.
-
-Most plugins want the compiled specification (`--asni`), where
-everything is resolved: `COMPONENTS OF`, tags, parameterized types and
-the modules that types come from are all worked out. The syntax tree is
-for those that want what is written, such as the names of the files, or
-the order of the members as the specification gives it.
-
-What a plugin makes is under the license its author gives it. What
-the plugins of this repository make, with the helper code they copy
-into it, may be used under terms of your choice, as the header of each
-file they write says.
-
-The formats are in [file formats](file_formats.md).
+The schema of `specification` is in `docs/file_formats.md`, and the
+classes that `load_asni` returns are in `asnkitrt/syntax.py`. Each
+`header.metadata.sources[i]` has `name`, `sha256` and `text`, the ASN.1
+source text that was compiled.
 
 ## asnkit-gen-python
 
-The first plugin makes a Python module that imports `asnkitrt`, has the
-compiled specification in it as bytes, and has data classes with
-`encode()`, `decode()`, `to_value()` and `from_value()`. Its
-options are `name`, the name of the module, `codec`, which the
-module encodes and decodes with if not told otherwise (default
-`ber`), and `embed`, which is `false` for a module without the
-compiled specification, which is then given to it with its
-`use_asni()` (default `true`). See `packages/asnkit-gen-python/README.rst`.
+The first plugin, `asnkit-gen-python`, is in `packages/asnkit-gen-python`.
+It writes one `.py` file with a `TypedDict` for each `SEQUENCE` and
+`SET`, a `Literal` for each `ENUMERATED`, a union of single-key
+`TypedDict`s for each `CHOICE`, a type alias for each other named type,
+and a class for each type with `encode()`, `decode()` and
+`check_constraints()` methods that check the type of their argument with
+mypy and pyright.
+
+```text
+$ pip install asnkit-gen-python
+$ asnkitcc generate --plugin python -o src/asn foo.asn
+```
+
+```python
+from asn import foo
+
+encoded = foo.Question.encode({"id": 1, "question": "Is 1+1=3?"})
+decoded = foo.Question.decode(encoded)
+# decoded is foo.QuestionDict, so mypy knows decoded["id"] is int.
+```
+
+Options, passed with `--plugin-opt KEY=VALUE`:
+
+`codec`
+: The default codec of `encode()` and `decode()` (default `ber`). Every
+  method also accepts `codec=` to use another at the call.
+
+`module`
+: The name of the `.py` file to write, without `.py` (default: the stem
+  of the first `.asn` file, converted to `snake_case`).
 
 ## asnkit-gen-rust
 
@@ -95,6 +105,4 @@ heap the runtime keeps a specification on is too much. Its options are
 `codec`, `name`, `no_std`, `integer` and
 `unsupported`, which is `skip` to leave out the types it does not
 support yet rather than to fail. Only the selected codec's methods and
-helpers are emitted. See
-[`packages/asnkit-gen-rust-codec/README.md`](../packages/asnkit-gen-rust-codec/README.md)
-for installation from source; the plugin is not yet published.
+helpers are emitted. See `packages/asnkit-gen-rust-codec/README.md`.

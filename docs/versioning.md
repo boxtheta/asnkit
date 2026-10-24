@@ -69,6 +69,14 @@ fix that cannot be made otherwise: it may change what a decoder
 rejects, in a patch release and in a back-port to an older minor
 release (see `SECURITY.md`), and `CHANGELOG.md` says so.
 
+## Release candidates
+
+A release candidate uses `MAJOR.MINOR.PATCH-rcN`, for example
+`2.0.0-rc1`, in Git tags, Cargo and npm. Python uses the equivalent
+PEP 440 spelling `2.0.0rc1`. Candidates may still change before the
+stable release. Install them explicitly: npm publishes them under
+`next`, and GitHub marks them as prereleases.
+
 ## Earlier releases
 
 This policy applies to the releases after 1.1.0. 1.0.1 changed what

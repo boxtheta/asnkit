@@ -4,7 +4,7 @@
 
 [package]
 name = "asnkit-gen-rust-codec"
-version = "1.2.0"
+version = "2.0.0-rc1"
 edition = "2024"
 rust-version = "1.88"
 description = "asnkit plugin that makes Rust code that encodes and decodes ASN.1 with BER, DER and UPER, without the specification and without allocating"
@@ -26,8 +26,8 @@ name = "asnkit-gen-rust-codec"
 path = "src/main.rs"
 
 [dependencies]
-asnkitrt = { version = "1.2.0", path = "../asnkitrt-rs", default-features = false, features = ["std"] }
-asnkit-gen-rust = { version = "1.2.0", path = "../asnkit-gen-rust" }
+asnkitrt = { version = "2.0.0-rc1", path = "../asnkitrt-rs", default-features = false, features = ["std"] }
+asnkit-gen-rust = { version = "2.0.0-rc1", path = "../asnkit-gen-rust" }
 
 [dev-dependencies]
 asnkitrt = { path = "../asnkitrt-rs" }
