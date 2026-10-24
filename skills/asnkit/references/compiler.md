@@ -127,8 +127,19 @@ With `embed=false`, compile the same schema separately. Python requires
 `Specification::from_asni(...)` result to the models. This supports
 protected schemas without embedding an unchecked copy.
 
+For embedded Rust, the not-yet-published plugin can be installed from
+the repository with `cargo install --path packages/asnkit-gen-rust-codec`;
+use `asnkitcc generate --plugin rust-codec` to generate BER, DER and
+UPER codecs that do not load the schema. Buffer-based methods avoid allocations
+except for boxed recursive values; decoded values
+borrow the input, and `encode_der(&mut buffer)` writes into a given
+buffer. Only the matching `asnkitrt` is needed, with
+`default-features = false`; use a path dependency on
+`packages/asnkitrt-rs` until this runtime support is released.
+
 For generator options and value mappings consult
-`packages/asnkit-gen-python/README.rst`, `packages/asnkit-gen-rust/README.md`;
+`packages/asnkit-gen-python/README.rst`, `packages/asnkit-gen-rust/README.md`,
+`packages/asnkit-gen-rust-codec/README.md`;
 for custom plugin implementation consult `docs/plugins.md`.
 
 ## ANY DEFINED BY mappings

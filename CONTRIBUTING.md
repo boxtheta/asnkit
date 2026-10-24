@@ -167,9 +167,13 @@ that you are allowed to.
 - **`examples/asni.asn`** describes the node tree, so a change to the
   shape of a node changes it, its converter in `tests/test_asni_asn.py`
   and its golden case.
-- **Generated code:** after a change to `asnkit-gen-rust`, make its
-  files again with
-  `UPDATE_GENERATED=1 cargo test -p asnkit-gen-rust --test generated`.
+- **Generated code:** after a change to `asnkit-gen-rust` or to
+  `asnkit-gen-rust-codec`, make its files again with
+  `UPDATE_GENERATED=1 cargo test -p asnkit-gen-rust --test generated`
+  or `UPDATE_GENERATED=1 cargo test -p asnkit-gen-rust-codec --test generated`.
+  After a change to the latter or to
+  `asnkitrt`, run the vectors with what it makes:
+  `cargo test --release --manifest-path packages/asnkit-gen-rust-codec/tests/vectors/Cargo.toml`.
 
 ## Releases
 

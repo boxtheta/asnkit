@@ -3,7 +3,9 @@
 The compiler accepts explicit type mappings for `ANY DEFINED BY` members.
 The mappings are written into the existing `AnyDefinedByType.choices`
 field of the `.asni` format, which the runtimes already understand.
-No file-format version change is needed.
+No file-format version change is needed. The compiled `.asni` is
+self-contained: loading or converting it, or using a generated model
+that embeds it, does not need the TOML files.
 
 An `ANY DEFINED BY` member has the type selected by another member of the
 same `SEQUENCE` or `SET`. ASN.1 does not supply the mapping from selector

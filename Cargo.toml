@@ -6,7 +6,7 @@
 # workspace of pyproject.toml.
 [workspace]
 resolver = "3"
-members = ["packages/asnkit-compiler", "packages/asnkit-compiler-wasm", "packages/asnkit-gen-rust", "packages/asnkitcc", "packages/asnkitrt-c", "packages/asnkitrt-rs", "packages/asnkitrt-wasm"]
+members = ["packages/asnkit-compiler", "packages/asnkit-compiler-wasm", "packages/asnkit-gen-rust", "packages/asnkit-gen-rust-codec", "packages/asnkitcc", "packages/asnkitrt-c", "packages/asnkitrt-rs", "packages/asnkitrt-wasm"]
 
 # Release, with the symbols a profiler needs to name the functions, as
 # `packages/asnkitrt-rs/examples/profile.py` builds with.

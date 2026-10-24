@@ -7,6 +7,12 @@ WebAssembly runtime and compiler to npm, and makes a release on GitHub with the
 notes of `CHANGELOG.md`. Nothing is published unless all of it builds
 and passes its tests.
 
+`asnkit-gen-rust-codec` is not yet published and is not in the release
+workflow's publish list. Before its first automated release, publish it
+once, configure its crates.io trusted publisher as below, and add it
+to that list after `asnkit-gen-rust`. Its version and generated fixtures
+are still maintained with the workspace.
+
 ## Once, before the first release
 
 - **GitHub environments:** create `pypi`, `crates-io` and `npm` in the
@@ -43,7 +49,8 @@ and passes its tests.
    - `packages/asnkit-gen-python/pyproject.toml`, its dependency on
      `asnkitrt`, and `packages/asnkit-gen-python/src/asnkit_gen_python/version.py`
    - the `Cargo.toml` of each crate, and the versions of the
-     dependencies of `asnkitcc` and `asnkit-gen-rust` on the others
+     dependencies of `asnkitcc`, `asnkit-gen-rust` and
+     `asnkit-gen-rust-codec` on the others
    - `packages/asnkitrt-wasm/package.json` and
      `packages/asnkit-compiler-wasm/package.json`
 
@@ -67,9 +74,13 @@ and passes its tests.
      what the compiler makes.
    - `examples/generated/foo.py`, as `tests/test_gen_python.py` tells
      when it fails.
-   - The Rust code: `UPDATE_GENERATED=1 cargo test -p asnkit-gen-rust --test generated`.
-   - `packages/asnkit-gen-rust/tests/no_std/Cargo.lock`, a crate of its
-     own: `cargo update -p asnkitrt` in its folder.
+   - The Rust code: `UPDATE_GENERATED=1 cargo test -p asnkit-gen-rust --test generated`,
+     and the same with `-p asnkit-gen-rust-codec`.
+   - `packages/asnkit-gen-rust/tests/no_std/Cargo.lock`,
+     `packages/asnkit-gen-rust-codec/tests/no_std/Cargo.lock` and
+     `packages/asnkit-gen-rust-codec/tests/vectors/Cargo.lock`, crates
+     of their own: `cargo update -p asnkitrt` in each folder, and
+     `-p asnkit-gen-rust-codec` too in the last.
 
 4. In `CHANGELOG.md`, give the section of the version its date
    (`## [1.2.3] - 2026-10-15`) and add the link at the end.

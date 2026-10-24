@@ -7,6 +7,7 @@
 
 use alloc::format;
 use alloc::string::String;
+use core::fmt::{self, Write};
 
 use crate::value::{Date, DateTime, Time, Value};
 use crate::{Error, Result};
@@ -149,11 +150,11 @@ impl Cursor<'_> {
     }
 }
 
-fn format_offset(offset: i32) -> String {
+fn write_offset(offset: i32, out: &mut (impl Write + ?Sized)) -> fmt::Result {
     let sign = if offset < 0 { '-' } else { '+' };
     let offset = offset.abs();
 
-    format!("{sign}{:02}{:02}", offset / 60, offset % 60)
+    write!(out, "{sign}{:02}{:02}", offset / 60, offset % 60)
 }
 
 /// The seconds from the start of year 1 of `value`, in UTC.
@@ -235,39 +236,51 @@ fn two_digit_year(year: u32) -> i32 {
 
 /// A UTCTime string. `restricted` is the form DER has.
 pub fn utc_time_to_string(value: &DateTime, restricted: bool) -> String {
-    if restricted {
-        let utc = to_utc(value);
+    let mut string = String::new();
 
-        return format!(
-            "{:02}{:02}{:02}{:02}{:02}{:02}Z",
-            utc.date.year % 100,
-            utc.date.month,
-            utc.date.day,
-            utc.time.hour,
-            utc.time.minute,
-            utc.time.second
-        );
-    }
-
-    let mut string = format!(
-        "{:02}{:02}{:02}{:02}{:02}",
-        value.date.year % 100,
-        value.date.month,
-        value.date.day,
-        value.time.hour,
-        value.time.minute
-    );
-
-    if value.time.second > 0 {
-        string.push_str(&format!("{:02}", value.time.second));
-    }
-
-    match value.time.offset {
-        None => string.push('Z'),
-        Some(offset) => string.push_str(&format_offset(offset)),
-    }
+    write_utc_time(value, restricted, &mut string);
 
     string
+}
+
+/// The same, written to `out`, with no allocation.
+pub fn write_utc_time(value: &DateTime, restricted: bool, out: &mut impl Write) {
+    // Writing to a `String` or a `TimeText` does not fail.
+    let _ = (|| -> fmt::Result {
+        if restricted {
+            let utc = to_utc(value);
+
+            return write!(
+                out,
+                "{:02}{:02}{:02}{:02}{:02}{:02}Z",
+                utc.date.year % 100,
+                utc.date.month,
+                utc.date.day,
+                utc.time.hour,
+                utc.time.minute,
+                utc.time.second
+            );
+        }
+
+        write!(
+            out,
+            "{:02}{:02}{:02}{:02}{:02}",
+            value.date.year % 100,
+            value.date.month,
+            value.date.day,
+            value.time.hour,
+            value.time.minute
+        )?;
+
+        if value.time.second > 0 {
+            write!(out, "{:02}", value.time.second)?;
+        }
+
+        match value.time.offset {
+            None => out.write_char('Z'),
+            Some(offset) => write_offset(offset, out),
+        }
+    })();
 }
 
 pub fn utc_time_from_string(string: &str, restricted: bool) -> Result<DateTime> {
@@ -312,50 +325,113 @@ pub fn utc_time_from_string(string: &str, restricted: bool) -> Result<DateTime> 
 
 /// A GeneralizedTime string. `restricted` is the form DER has.
 pub fn generalized_time_to_string(value: &DateTime, restricted: bool) -> String {
-    let fraction = |microsecond: u32| -> String {
-        if microsecond > 0 {
-            let digits = format!("{microsecond:06}");
+    let mut string = String::new();
 
-            format!(".{}", digits.trim_end_matches('0'))
-        } else {
-            String::new()
-        }
-    };
-
-    if restricted {
-        let utc = to_utc(value);
-
-        return format!(
-            "{:04}{:02}{:02}{:02}{:02}{:02}{}Z",
-            utc.date.year,
-            utc.date.month,
-            utc.date.day,
-            utc.time.hour,
-            utc.time.minute,
-            utc.time.second,
-            fraction(value.time.microsecond)
-        );
-    }
-
-    let mut string = format!(
-        "{:04}{:02}{:02}{:02}{:02}",
-        value.date.year, value.date.month, value.date.day, value.time.hour, value.time.minute
-    );
-
-    // A fraction after the minute would be one of a minute (X.680 46.3).
-    if value.time.second != 0 || value.time.microsecond != 0 {
-        string.push_str(&format!("{:02}", value.time.second));
-    }
-
-    string.push_str(&fraction(value.time.microsecond));
-
-    match value.time.offset {
-        Some(offset) if offset != 0 => string.push_str(&format_offset(offset)),
-        Some(_) => string.push('Z'),
-        None => {}
-    }
+    write_generalized_time(value, restricted, &mut string);
 
     string
+}
+
+/// The same, written to `out`, with no allocation.
+pub fn write_generalized_time(value: &DateTime, restricted: bool, out: &mut impl Write) {
+    // The fraction of a second, with no zero digits at its end.
+    let fraction = |microsecond: u32, out: &mut dyn Write| -> fmt::Result {
+        if microsecond == 0 {
+            return Ok(());
+        }
+
+        let mut digits = microsecond;
+        let mut count = 6;
+
+        while digits.is_multiple_of(10) {
+            digits /= 10;
+            count -= 1;
+        }
+
+        write!(out, ".{digits:0count$}")
+    };
+
+    let _ = (|| -> fmt::Result {
+        if restricted {
+            let utc = to_utc(value);
+
+            write!(
+                out,
+                "{:04}{:02}{:02}{:02}{:02}{:02}",
+                utc.date.year,
+                utc.date.month,
+                utc.date.day,
+                utc.time.hour,
+                utc.time.minute,
+                utc.time.second,
+            )?;
+            fraction(value.time.microsecond, out)?;
+
+            return out.write_char('Z');
+        }
+
+        write!(
+            out,
+            "{:04}{:02}{:02}{:02}{:02}",
+            value.date.year, value.date.month, value.date.day, value.time.hour, value.time.minute
+        )?;
+
+        // A fraction after the minute would be one of a minute (X.680 46.3).
+        if value.time.second != 0 || value.time.microsecond != 0 {
+            write!(out, "{:02}", value.time.second)?;
+        }
+
+        fraction(value.time.microsecond, out)?;
+
+        match value.time.offset {
+            Some(offset) if offset != 0 => write_offset(offset, out),
+            Some(_) => out.write_char('Z'),
+            None => Ok(()),
+        }
+    })();
+}
+
+/// The text of a time, as `write_utc_time` and `write_generalized_time`
+/// write it, in a buffer of its own. What does not fit is left out,
+/// which a time of a year of no more than 4 digits always does.
+pub struct TimeText {
+    bytes: [u8; 48],
+    length: usize,
+}
+
+impl TimeText {
+    pub fn new() -> TimeText {
+        TimeText {
+            bytes: [0; 48],
+            length: 0,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.length]
+    }
+
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(self.as_bytes()).unwrap_or_default()
+    }
+}
+
+impl Default for TimeText {
+    fn default() -> Self {
+        TimeText::new()
+    }
+}
+
+impl Write for TimeText {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        let end = self.length + text.len();
+        let slot = self.bytes.get_mut(self.length..end).ok_or(fmt::Error)?;
+
+        slot.copy_from_slice(text.as_bytes());
+        self.length = end;
+
+        Ok(())
+    }
 }
 
 pub fn generalized_time_from_string(string: &str, restricted: bool) -> Result<DateTime> {

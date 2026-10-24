@@ -208,10 +208,37 @@ jobs:
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
       with:
-        workspaces: packages/asnkit-gen-rust/tests/no_std
+        workspaces: |
+          packages/asnkit-gen-rust/tests/no_std
+          packages/asnkit-gen-rust-codec/tests/no_std
     - name: Build for a device
       run: |
         cargo build --locked --manifest-path packages/asnkit-gen-rust/tests/no_std/Cargo.toml --target thumbv7em-none-eabi
+        cargo build --locked --manifest-path packages/asnkit-gen-rust-codec/tests/no_std/Cargo.toml --target thumbv7em-none-eabi
+
+  # What asnkit-gen-rust-codec makes for each specification of
+  # tests/vectors is held to the vectors of BER, DER and UPER, and has
+  # no warnings of clippy.
+  plugin-codec-vectors:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: packages/asnkit-gen-rust-codec/tests/vectors
+    - name: Lint
+      run: |
+        cargo clippy --locked --manifest-path packages/asnkit-gen-rust-codec/tests/vectors/Cargo.toml --all-targets -- -D warnings
+    - name: Test
+      run: |
+        cargo test --locked --release --manifest-path packages/asnkit-gen-rust-codec/tests/vectors/Cargo.toml -- --nocapture
 
   # The Python tests encode and decode with the specifications in
   # tests/fixtures, which this compiler made. They must be what it

@@ -1,0 +1,17 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# The code of the plugin for a device: built for a target that has no
+# std, to see that what it makes needs none. This is not a member of the
+# workspace.
+[package]
+name = "codec-no-std-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+asnkitrt = { path = "../../../asnkitrt-rs", default-features = false }
+
+[workspace]

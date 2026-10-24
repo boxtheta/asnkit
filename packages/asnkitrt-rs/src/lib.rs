@@ -82,6 +82,7 @@ pub mod serde_value;
 pub mod time;
 pub mod types;
 pub mod value;
+pub mod wire;
 #[cfg(feature = "xer")]
 pub mod xer;
 #[cfg(feature = "xer")]

@@ -1,0 +1,35 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "asnkit-gen-rust-codec"
+version = "1.2.0"
+edition = "2024"
+rust-version = "1.88"
+description = "asnkit plugin that makes Rust code that encodes and decodes ASN.1 with BER, DER and UPER, without the specification and without allocating"
+license = "Apache-2.0"
+repository = "https://github.com/boxtheta/asnkit"
+readme = "README.md"
+keywords = ["asn1", "codegen", "ber", "der", "no_std"]
+categories = ["development-tools", "encoding"]
+# The tests are held to files of the repository that are not in the
+# package.
+exclude = ["tests/"]
+
+[lib]
+name = "asnkit_gen_rust_codec"
+path = "src/lib.rs"
+
+[[bin]]
+name = "asnkit-gen-rust-codec"
+path = "src/main.rs"
+
+[dependencies]
+asnkitrt = { version = "1.2.0", path = "../asnkitrt-rs", default-features = false, features = ["std"] }
+asnkit-gen-rust = { version = "1.2.0", path = "../asnkit-gen-rust" }
+
+[dev-dependencies]
+asnkitrt = { path = "../asnkitrt-rs" }
+flate2 = "1"
+serde_json = { version = "1", features = ["arbitrary_precision"] }

@@ -217,12 +217,21 @@ fn check_object_identifier(
     bytes: &[u8],
     minimal: bool,
 ) -> core::result::Result<(), (&'static str, usize)> {
+    check_object_identifier_bytes(bytes.iter().copied(), bytes.len(), minimal)
+}
+
+/// The same, of `length` bytes that are not in one slice.
+pub(crate) fn check_object_identifier_bytes(
+    bytes: impl Iterator<Item = u8>,
+    length: usize,
+    minimal: bool,
+) -> core::result::Result<(), (&'static str, usize)> {
     let mut arc: u128 = 0;
     let mut start = true;
 
-    for (index, byte) in bytes.iter().enumerate() {
+    for (index, byte) in bytes.enumerate() {
         // A subidentifier is in as few bytes as possible.
-        if minimal && start && *byte == 0x80 {
+        if minimal && start && byte == 0x80 {
             return Err((
                 "Expected the subidentifiers of an OBJECT IDENTIFIER in as few bytes as possible.",
                 index,
@@ -241,7 +250,7 @@ fn check_object_identifier(
         };
     }
 
-    if bytes.is_empty() || !start {
+    if length == 0 || !start {
         return Err(("Expected an OBJECT IDENTIFIER.", 0));
     }
 

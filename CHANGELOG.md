@@ -30,6 +30,26 @@ security fixes.
   `arcs()` and `as_bytes()`. With serde it is its text.
 - `Specification::decode_owned()` and `Value::into_owned()`, which give
   a value that borrows nothing, and `Value::reborrow()`.
+- `asnkit-gen-rust-codec`, a plugin that makes Rust code that encodes
+  and decodes the types of a specification with BER, DER and UPER
+  without loading it, for embedded targets: a
+  value is encoded into a buffer that is given, and a value that is
+  decoded borrows the data. These operations avoid heap allocation
+  except for boxed recursive values; `to_*` convenience methods allocate.
+  Its code for RFC 5280 is 50.8 KiB of flash
+  on a Cortex-M4 and uses no heap, where the runtime with
+  `rfc5280.asni` is 210.7 KiB and keeps 398.5 KiB of heap. It does not
+  support REAL, EXTERNAL, DATE, TIME-OF-DAY, DATE-TIME, DURATION or the
+  table of an `ANY DEFINED BY` yet.
+- `asnkitrt::wire`, what that code is built on: the views `Octets`,
+  `BitString`, `Text`, `Oid`, `Integer` and `SequenceOf`, which borrow
+  what is decoded, the readers and writers of BER and UPER of
+  `wire::ber` and `wire::per`, which do not allocate, and the trait
+  `Asn1`. The interpreter of PER and UPER uses the same numbers, sizes
+  and strings, and `asnkitrt::per::BitSink` is what both write with.
+- `Error::BufferTooSmall` in the Rust runtime, with the size an
+  encoding needs, and `time::write_utc_time()` and
+  `time::write_generalized_time()`, which write to a `fmt::Write`.
 - `ASNKIT_OBJECT_IDENTIFIER` in the C API, with
   `asnkit_value_new_object_identifier()`,
   `asnkit_value_object_identifier()` and
@@ -83,6 +103,10 @@ security fixes.
   without counting the years from year 1, borrows the names, texts,
   bytes and object identifiers of a decoded value, and looks a member
   up in the order of the type when encoding.
+- PER and UPER in the Rust runtime encode a small SEQUENCE a third
+  faster, and an X.509 certificate 8 to 13% faster, as they write the
+  bits of an OCTET STRING, a BIT STRING and a string at once, with the
+  same bytes.
 - GSER writes a REAL given as an integer as the float it is, `8.0E0`
   and not `8E0`, in the runtime for Python too, so that the runtime for
   WebAssembly, where every number is a float, writes the same.

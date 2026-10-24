@@ -17,12 +17,12 @@ use core::borrow::Borrow;
 use crate::ber::{decode_real, encode_real};
 use crate::time;
 use crate::types::{
-    Addition, Codec, Kind, MemberInfo, Members, Range, StrKind, TypeId, Types, clean_bits,
-    is_default,
+    Addition, Codec, Kind, MemberInfo, Members, Range, StrKind, TypeId, Types, is_default,
 };
 use crate::value::{
     Date, DateTime, Lookup, ObjectIdentifier, Time, Value, integer_to_twos_complement,
 };
+use crate::wire::{self, BitString, Octets, Text};
 use crate::{Error, Result};
 
 const MAX_DEPTH: usize = 128;
@@ -32,12 +32,12 @@ fn encode_error<T>(what: &'static str) -> Result<T> {
 }
 
 /// The number of bits it takes to write `size`.
-fn bits_of(size: u128) -> usize {
+pub fn bits_of(size: u128) -> usize {
     (128 - size.leading_zeros()) as usize
 }
 
 /// The same, as a power of two.
-fn bits_of_power_of_two(size: u128) -> usize {
+pub fn bits_of_power_of_two(size: u128) -> usize {
     if size == 0 {
         return 0;
     }
@@ -51,7 +51,7 @@ fn bits_of_power_of_two(size: u128) -> usize {
     power
 }
 
-fn bytes_of(size: u128) -> usize {
+pub fn bytes_of(size: u128) -> usize {
     if size == 0 {
         1
     } else {
@@ -165,7 +165,7 @@ fn plus(bytes: &[u8], min: i128) -> Value<'static> {
 
 /// The bounds of a size, of which a missing lower bound is 0 (X.691 16.4,
 /// 17.2, 20.2, 30.3). `None` if there is no upper bound.
-fn size_bounds(size: Option<Range>) -> Option<(i128, i128)> {
+pub(crate) fn size_bounds(size: Option<Range>) -> Option<(i128, i128)> {
     let size = size?;
 
     Some((size.min.unwrap_or(0), size.max?))
@@ -174,21 +174,21 @@ fn size_bounds(size: Option<Range>) -> Option<(i128, i128)> {
 /// The size a value is encoded with: the one of its type or, if the size
 /// is extensible and the value is not in its root, none (X.691 16.6,
 /// 17.3, 20.4, 30.4). Writes the bit that tells which, if there is one.
-fn extended(size: Option<Range>, length: i128, w: &mut Writer) -> Option<Range> {
+pub(crate) fn extended(size: Option<Range>, length: i128, w: &mut impl BitSink) -> Option<Range> {
     if !size.is_some_and(|size| size.extensible) {
         return size;
     }
 
     let inside = in_size(size, length);
 
-    w.bit(!inside);
+    BitSink::bit(w, !inside);
 
     if inside { size } else { None }
 }
 
 /// Rejects a value that is not of the size of its type, which can not be
 /// encoded.
-fn check_size(size: Option<Range>, length: i128) -> Result<()> {
+pub(crate) fn check_size(size: Option<Range>, length: i128) -> Result<()> {
     if in_size(size, length) {
         Ok(())
     } else {
@@ -197,7 +197,7 @@ fn check_size(size: Option<Range>, length: i128) -> Result<()> {
 }
 
 /// The same, when decoding.
-fn read_extended(size: Option<Range>, r: &mut Reader<'_>) -> Result<Option<Range>> {
+pub(crate) fn read_extended(size: Option<Range>, r: &mut Reader<'_>) -> Result<Option<Range>> {
     if size.is_some_and(|size| size.extensible) && r.bit()? {
         return Ok(None);
     }
@@ -205,7 +205,7 @@ fn read_extended(size: Option<Range>, r: &mut Reader<'_>) -> Result<Option<Range
     Ok(size)
 }
 
-fn is_unbound(range: Option<Range>) -> bool {
+pub(crate) fn is_unbound(range: Option<Range>) -> bool {
     match size_bounds(range) {
         None => true,
         Some((_, max)) => max > 65535,
@@ -229,7 +229,7 @@ impl Writer {
         }
     }
 
-    pub(crate) fn bit(&mut self, bit: bool) {
+    pub fn bit(&mut self, bit: bool) {
         if self.bits.is_multiple_of(8) {
             self.bytes.push(0);
         }
@@ -272,7 +272,7 @@ impl Writer {
     }
 
     /// The `count` low bits of `value`, the most significant first.
-    pub(crate) fn uint(&mut self, value: u128, mut count: usize) {
+    pub fn uint(&mut self, value: u128, mut count: usize) {
         if count > 128 {
             self.zeros(count - 128);
             count = 128;
@@ -308,7 +308,7 @@ impl Writer {
         }
     }
 
-    pub(crate) fn bytes(&mut self, data: &[u8]) {
+    pub fn bytes(&mut self, data: &[u8]) {
         if self.bits.is_multiple_of(8) {
             self.bytes.extend_from_slice(data);
             self.bits += 8 * data.len();
@@ -317,7 +317,7 @@ impl Writer {
         }
     }
 
-    pub(crate) fn align_always(&mut self) {
+    pub fn align_always(&mut self) {
         self.zeros((8 - self.bits % 8) % 8);
     }
 
@@ -345,6 +345,30 @@ impl Writer {
 
     pub(crate) fn sub(&self) -> Writer {
         Writer::new(self.aligned)
+    }
+}
+
+/// What bits are written to: the `Writer` of the interpreter, which
+/// grows, and `wire::per::Writer`, which fills a buffer that is given.
+/// The numbers and lengths of X.691 are written the same to both.
+pub trait BitSink {
+    fn bit(&mut self, bit: bool);
+    /// The `count` low bits of `value`, the most significant first.
+    fn uint(&mut self, value: u128, count: usize);
+    fn bytes(&mut self, data: &[u8]);
+    /// The first `count` bits of `data`.
+    fn bits_of(&mut self, data: &[u8], count: usize);
+    /// Zero bits up to the next byte.
+    fn align_always(&mut self);
+    /// If it is aligned PER, which pads to bytes where UPER does not.
+    fn aligned(&self) -> bool;
+    /// How many bits are written.
+    fn position(&self) -> usize;
+
+    fn align(&mut self) {
+        if self.aligned() {
+            self.align_always();
+        }
     }
 
     /// A length. Fragments are the caller's, see `Fragmenter`.
@@ -426,9 +450,39 @@ impl Writer {
     }
 }
 
+impl BitSink for Writer {
+    fn bit(&mut self, bit: bool) {
+        Writer::bit(self, bit);
+    }
+
+    fn uint(&mut self, value: u128, count: usize) {
+        Writer::uint(self, value, count);
+    }
+
+    fn bytes(&mut self, data: &[u8]) {
+        Writer::bytes(self, data);
+    }
+
+    fn bits_of(&mut self, data: &[u8], count: usize) {
+        Writer::bits_of(self, data, count);
+    }
+
+    fn align_always(&mut self) {
+        Writer::align_always(self);
+    }
+
+    fn aligned(&self) -> bool {
+        self.aligned
+    }
+
+    fn position(&self) -> usize {
+        self.bits
+    }
+}
+
 /// The parts a length is written in: the length of each is written
 /// as it is asked for, so that the caller writes the part after it.
-struct Fragmenter {
+pub struct Fragmenter {
     length: usize,
     offset: usize,
     chunk: usize,
@@ -436,7 +490,7 @@ struct Fragmenter {
 }
 
 impl Fragmenter {
-    pub(crate) fn new(length: usize) -> Fragmenter {
+    pub fn new(length: usize) -> Fragmenter {
         Fragmenter {
             length,
             offset: 0,
@@ -446,7 +500,7 @@ impl Fragmenter {
     }
 
     /// The offset and the size of the next part, after writing its length.
-    fn next(&mut self, w: &mut Writer) -> Option<(usize, usize)> {
+    pub fn next(&mut self, w: &mut impl BitSink) -> Option<(usize, usize)> {
         if self.done {
             return None;
         }
@@ -465,13 +519,18 @@ impl Fragmenter {
     }
 }
 
-pub(crate) struct Reader<'a> {
+/// Reads bits, from the first of `data`.
+#[derive(Clone)]
+pub struct Reader<'a> {
     pub(crate) data: &'a [u8],
     pub(crate) position: usize,
     pub(crate) aligned: bool,
     /// How many more items and characters may be decoded. Some take no
     /// bits, so the data alone does not keep a length in check.
     pub(crate) budget: usize,
+    /// How deep the values of recursive types are, which generated code
+    /// counts.
+    pub(crate) depth: usize,
 }
 
 fn out_of_data<T>(position: usize) -> Result<T> {
@@ -483,7 +542,43 @@ fn decode_error<T>(what: &'static str, position: usize) -> Result<T> {
 }
 
 impl<'a> Reader<'a> {
-    pub(crate) fn spend(&mut self, count: usize) -> Result<()> {
+    /// A reader at the start of `data`, with a budget of items in
+    /// proportion to it.
+    pub fn new(data: &'a [u8], aligned: bool) -> Reader<'a> {
+        Reader {
+            data,
+            position: 0,
+            aligned,
+            budget: 8 * data.len() + 1024,
+            depth: 0,
+        }
+    }
+
+    /// The bit it is at.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    pub fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    /// Goes into a value of a recursive type, as deep as values may be.
+    pub fn enter(&mut self) -> Result<()> {
+        if self.depth >= MAX_DEPTH {
+            return decode_error("The data is nested too deeply.", self.position);
+        }
+
+        self.depth += 1;
+
+        Ok(())
+    }
+
+    pub fn leave(&mut self) {
+        self.depth -= 1;
+    }
+
+    pub fn spend(&mut self, count: usize) -> Result<()> {
         match self.budget.checked_sub(count) {
             Some(budget) => {
                 self.budget = budget;
@@ -494,11 +589,11 @@ impl<'a> Reader<'a> {
         }
     }
 
-    pub(crate) fn left(&self) -> usize {
+    pub fn left(&self) -> usize {
         8 * self.data.len() - self.position
     }
 
-    pub(crate) fn bit(&mut self) -> Result<bool> {
+    pub fn bit(&mut self) -> Result<bool> {
         if self.left() == 0 {
             return out_of_data(self.position);
         }
@@ -510,7 +605,7 @@ impl<'a> Reader<'a> {
         Ok(bit)
     }
 
-    pub(crate) fn uint(&mut self, count: usize) -> Result<u128> {
+    pub fn uint(&mut self, count: usize) -> Result<u128> {
         if count > self.left() {
             return out_of_data(self.position);
         }
@@ -537,7 +632,7 @@ impl<'a> Reader<'a> {
     }
 
     /// `count` bits, as bytes with the bits first.
-    pub(crate) fn bits(&mut self, count: usize) -> Result<Vec<u8>> {
+    pub fn bits(&mut self, count: usize) -> Result<Vec<u8>> {
         if count > self.left() {
             return out_of_data(self.position);
         }
@@ -571,7 +666,7 @@ impl<'a> Reader<'a> {
         Ok(bytes)
     }
 
-    pub(crate) fn bytes(&mut self, count: usize) -> Result<Vec<u8>> {
+    pub fn bytes(&mut self, count: usize) -> Result<Vec<u8>> {
         if count > self.left() / 8 {
             return out_of_data(self.position);
         }
@@ -589,7 +684,7 @@ impl<'a> Reader<'a> {
 
     /// `count` bits, borrowed from the data when they are whole bytes of
     /// it.
-    pub(crate) fn bit_octets(&mut self, count: usize) -> Result<Cow<'a, [u8]>> {
+    pub fn bit_octets(&mut self, count: usize) -> Result<Cow<'a, [u8]>> {
         if count.is_multiple_of(8) {
             self.octets(count / 8)
         } else {
@@ -598,7 +693,7 @@ impl<'a> Reader<'a> {
     }
 
     /// The same, borrowed from the data when they are whole bytes of it.
-    pub(crate) fn octets(&mut self, count: usize) -> Result<Cow<'a, [u8]>> {
+    pub fn octets(&mut self, count: usize) -> Result<Cow<'a, [u8]>> {
         if self.position.is_multiple_of(8) && count <= self.left() / 8 {
             let start = self.position / 8;
 
@@ -613,7 +708,7 @@ impl<'a> Reader<'a> {
     /// Skips the `count` bits that tell which members are there, which
     /// `bit_at` reads from where it returns. It runs out of data where
     /// reading them one at a time does.
-    pub(crate) fn presence(&mut self, count: usize) -> Result<usize> {
+    pub fn presence(&mut self, count: usize) -> Result<usize> {
         if count > self.left() {
             return out_of_data(8 * self.data.len());
         }
@@ -626,11 +721,11 @@ impl<'a> Reader<'a> {
     }
 
     /// The bit at `position`, which is one that was skipped.
-    pub(crate) fn bit_at(&self, position: usize) -> bool {
+    pub fn bit_at(&self, position: usize) -> bool {
         self.data[position / 8] & (0x80 >> (position % 8)) != 0
     }
 
-    pub(crate) fn skip(&mut self, count: usize) -> Result<()> {
+    pub fn skip(&mut self, count: usize) -> Result<()> {
         if count > self.left() {
             return out_of_data(self.position);
         }
@@ -640,17 +735,17 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    pub(crate) fn align_always(&mut self) {
+    pub fn align_always(&mut self) {
         self.position += (8 - self.position % 8) % 8;
     }
 
-    fn align(&mut self) {
+    pub fn align(&mut self) {
         if self.aligned {
             self.align_always();
         }
     }
 
-    fn length(&mut self) -> Result<usize> {
+    pub fn length(&mut self) -> Result<usize> {
         let value = self.uint(8)? as usize;
 
         if value & 0x80 == 0 {
@@ -669,7 +764,7 @@ impl<'a> Reader<'a> {
     }
 
     /// The lengths of the parts, one at a time: the caller reads each.
-    fn constrained_whole_number(&mut self, min: i128, max: i128, count: usize) -> Result<i128> {
+    pub fn constrained_whole_number(&mut self, min: i128, max: i128, count: usize) -> Result<i128> {
         let range = (max as u128).wrapping_sub(min as u128).wrapping_add(1);
         let value = if range != 0 && range <= 255 {
             self.uint(count)?
@@ -687,14 +782,14 @@ impl<'a> Reader<'a> {
         Ok((value as i128).wrapping_add(min))
     }
 
-    fn unconstrained_whole_number(&mut self) -> Result<Value<'static>> {
+    pub fn unconstrained_whole_number(&mut self) -> Result<Value<'static>> {
         let length = self.length()?;
         let bytes = self.bytes(length)?;
 
         Ok(Value::from_twos_complement(&bytes))
     }
 
-    fn normally_small_whole_number(&mut self) -> Result<u128> {
+    pub fn normally_small_whole_number(&mut self) -> Result<u128> {
         if !self.bit()? {
             self.uint(6)
         } else {
@@ -704,7 +799,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn normally_small_length(&mut self) -> Result<usize> {
+    pub fn normally_small_length(&mut self) -> Result<usize> {
         if !self.bit()? {
             Ok(self.uint(6)? as usize + 1)
         } else if !self.bit()? {
@@ -718,9 +813,18 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Bytes that are read, borrowed if they are a slice of the data.
+fn octets_cow(octets: Octets<'_>) -> Cow<'_, [u8]> {
+    match octets.as_slice() {
+        Some(bytes) => Cow::Borrowed(bytes),
+        None => Cow::Owned(octets.to_vec()),
+    }
+}
+
 /// The characters a string of a known multiplier can have: those of its
 /// kind, or those of its permitted alphabet.
-enum Characters {
+#[derive(Debug, Clone)]
+pub enum Characters {
     /// " 0123456789".
     Numeric,
     Printable,
@@ -729,11 +833,17 @@ enum Characters {
     Bmp,
     Universal,
     /// Sorted, with no character twice.
-    Custom(Vec<u32>),
+    Custom(Cow<'static, [u32]>),
 }
 
 impl Characters {
-    fn count(&self) -> u64 {
+    /// The characters of a permitted alphabet, sorted, with no character
+    /// twice.
+    pub const fn custom(codes: &'static [u32]) -> Characters {
+        Characters::Custom(Cow::Borrowed(codes))
+    }
+
+    pub fn count(&self) -> u64 {
         match self {
             Characters::Numeric => 11,
             Characters::Printable => 74,
@@ -746,7 +856,7 @@ impl Characters {
     }
 
     /// The greatest code of a character.
-    fn greatest(&self) -> u32 {
+    pub fn greatest(&self) -> u32 {
         match self {
             Characters::Numeric => 57,
             Characters::Printable => 122,
@@ -758,7 +868,7 @@ impl Characters {
         }
     }
 
-    fn contains(&self, code: u32) -> bool {
+    pub fn contains(&self, code: u32) -> bool {
         match self {
             Characters::Numeric => code == 32 || (48..=57).contains(&code),
             Characters::Printable => {
@@ -776,7 +886,7 @@ impl Characters {
     /// The place of a character in the canonical order, counted from 0.
     /// Only those of a NumericString and of a permitted alphabet are ever
     /// counted so (X.691 30.5.4).
-    fn index(&self, code: u32) -> Option<u32> {
+    pub fn index(&self, code: u32) -> Option<u32> {
         match self {
             Characters::Numeric if code == 32 => Some(0),
             Characters::Numeric => Some(code - 47),
@@ -785,7 +895,7 @@ impl Characters {
         }
     }
 
-    fn at(&self, index: u32) -> Option<u32> {
+    pub fn at(&self, index: u32) -> Option<u32> {
         match self {
             Characters::Numeric => match index {
                 0 => Some(32),
@@ -800,16 +910,17 @@ impl Characters {
 
 /// The characters of a string of a known multiplier, and how a character
 /// is a number.
-struct Alphabet {
-    characters: Characters,
+#[derive(Debug, Clone)]
+pub struct Alphabet {
+    pub characters: Characters,
     /// A character is its place in the canonical order, and not its code,
     /// when the greatest code does not fit in the bits of a character
     /// (X.691 30.5.4).
-    by_index: bool,
+    pub by_index: bool,
 }
 
 impl Alphabet {
-    fn encode(&self, code: u32) -> Result<u32> {
+    pub fn encode(&self, code: u32) -> Result<u32> {
         if !self.characters.contains(code) {
             return encode_error("Expected a character in the permitted alphabet.");
         }
@@ -823,7 +934,7 @@ impl Alphabet {
             .ok_or_else(|| Error::encode("Expected a character in the permitted alphabet."))
     }
 
-    fn decode(&self, value: u32, position: usize) -> Result<u32> {
+    pub fn decode(&self, value: u32, position: usize) -> Result<u32> {
         let code = if self.by_index {
             self.characters.at(value)
         } else {
@@ -838,13 +949,14 @@ impl Alphabet {
 }
 
 /// How a string of a known multiplier is coded.
-struct Known {
-    alphabet: Alphabet,
-    bits_per_character: usize,
+#[derive(Debug, Clone)]
+pub struct Known {
+    pub alphabet: Alphabet,
+    pub bits_per_character: usize,
 }
 
 impl Known {
-    pub(crate) fn new(kind: StrKind, characters: &Option<Vec<char>>, aligned: bool) -> Known {
+    pub fn new(kind: StrKind, characters: &Option<Vec<char>>, aligned: bool) -> Known {
         let characters = match characters {
             Some(characters) => {
                 let mut codes: Vec<u32> = characters.iter().map(|c| u32::from(*c)).collect();
@@ -852,7 +964,7 @@ impl Known {
                 codes.sort_unstable();
                 codes.dedup();
 
-                Characters::Custom(codes)
+                Characters::Custom(Cow::Owned(codes))
             }
             None => match kind {
                 StrKind::Numeric => Characters::Numeric,
@@ -921,6 +1033,7 @@ pub fn decode<'a>(types: &'a Types, id: TypeId, data: &'a [u8]) -> Result<Value<
         position: 0,
         aligned: coder.aligned,
         budget: 8 * data.len() + 1024,
+        depth: 0,
     };
 
     coder.decode_type(id, &mut reader, 0)
@@ -1083,7 +1196,12 @@ impl<'a> Coder<'a> {
     }
 
     fn encode_integer(&self, number: &Value, range: Option<Range>, w: &mut Writer) -> Result<()> {
-        let bytes = number.to_twos_complement().unwrap();
+        let bytes = match number {
+            Value::Integer(value) => return wire::per::integer(w, *value, range),
+            Value::BigInteger(bytes) => bytes,
+            _ => return encode_error("Expected data of type int or str."),
+        };
+        // More than 128 bits: beyond the bounds, or past the lower one.
         let lower = range.and_then(|range| range.min);
         let upper = range.and_then(|range| range.max);
         let inside = in_range(number, lower, upper);
@@ -1095,51 +1213,21 @@ impl<'a> Coder<'a> {
             if !inside {
                 w.align();
 
-                return w.unconstrained_whole_number(&bytes);
+                return w.unconstrained_whole_number(bytes);
             }
         } else if !inside {
             return encode_error("The value is not in the range.");
         }
 
-        let (Some(min), Some(max)) = (lower, upper) else {
-            w.align();
+        w.align();
 
-            return match lower {
-                // A semi-constrained whole number: the value less the lower
-                // bound (X.691 13.2.3, 11.7).
-                Some(min) => w.unconstrained_whole_number(&less(&bytes, min)),
-                // An unconstrained whole number (13.2.4, 11.8).
-                None => w.unconstrained_whole_number(&bytes),
-            };
-        };
-        let Value::Integer(value) = number else {
-            return encode_error("The value is not in the range.");
-        };
-        let value = *value;
-        let size = (max as u128).wrapping_sub(min as u128);
-        let count = bits_of(size);
-
-        if !self.aligned {
-            w.uint((value as u128).wrapping_sub(min as u128), count);
-
-            return Ok(());
+        match lower {
+            // A semi-constrained whole number: the value less the lower
+            // bound (X.691 13.2.3, 11.7).
+            Some(min) => w.unconstrained_whole_number(&less(bytes, min)),
+            // An unconstrained whole number (13.2.4, 11.8).
+            None => w.unconstrained_whole_number(bytes),
         }
-
-        let count = if size <= 65535 {
-            count
-        } else {
-            let indefinite = bits_of((count.div_ceil(8) - 1) as u128);
-            let length = bytes_of((value as u128).wrapping_sub(min as u128));
-
-            w.constrained_whole_number(length as i128 - 1, 0, 1i128 << indefinite, indefinite);
-            w.align();
-
-            8 * length
-        };
-
-        w.constrained_whole_number(value, min, max, count);
-
-        Ok(())
     }
 
     /// An integer of which a bound does not fit in an `i128`, as
@@ -1232,111 +1320,19 @@ impl<'a> Coder<'a> {
             return encode_error("Expected more bits of data.");
         }
 
-        let (data, bits) = if named {
-            // Trailing zero bits are left out, but for the minimum (X.691
-            // 16.2, 16.3).
-            let (mut data, mut count) = clean_bits(bytes, 8 * bytes.len(), true);
+        // With named bits, those that are zero at the end of all of the
+        // bytes are left out.
+        let count = if named { 8 * bytes.len() } else { bits };
 
-            if let Some(min) = size.and_then(|size| size.min)
-                && (count as i128) < min
-            {
-                count = min as usize;
-                data.resize(count.div_ceil(8), 0);
-            }
-
-            (data, count)
-        } else {
-            (Vec::from(bytes), bits)
-        };
-        let size = extended(size, bits as i128, w);
-
-        check_size(size, bits as i128)?;
-
-        if is_unbound(size) {
-            w.align();
-
-            let mut fragments = Fragmenter::new(bits);
-
-            while let Some((offset, length)) = fragments.next(w) {
-                w.bits_of(&data[offset / 8..], length);
-            }
-
-            return Ok(());
-        }
-
-        let (min, max) = size_bounds(size).unwrap();
-        let count = bits_of((max - min) as u128);
-
-        if min != max {
-            if self.aligned {
-                w.constrained_whole_number(bits as i128, min, max, count);
-
-                // No padding for nothing (X.691 11.9.3.3).
-                if bits > 0 {
-                    w.align();
-                }
-            } else {
-                w.uint((bits as i128 - min) as u128, count);
-            }
-        } else if self.aligned && min > 16 {
-            w.align();
-        }
-
-        w.bits_of(&data, bits);
-
-        Ok(())
+        wire::per::bit_string(w, &BitString::new(bytes, count), named, size)
     }
 
     fn encode_octet_string(&self, data: &[u8], size: Option<Range>, w: &mut Writer) -> Result<()> {
-        let size = extended(size, data.len() as i128, w);
-
-        check_size(size, data.len() as i128)?;
-
-        let Some((min, max)) = size_bounds(size).filter(|_| !is_unbound(size)) else {
-            return self.encode_unbound_octets(data, w);
-        };
-        let span = (max - min) as u128;
-
-        if span == 0 && max >= 65536 {
-            return self.encode_unbound_octets(data, w);
-        }
-
-        let count = bits_of(span);
-        let mut align = true;
-
-        if min != max {
-            if self.aligned {
-                w.constrained_whole_number(data.len() as i128, min, max, count);
-            } else {
-                w.uint((data.len() as i128 - min) as u128, count);
-            }
-
-            // No padding for nothing (X.691 11.9.3.3).
-            align = !data.is_empty();
-        } else if max <= 2 {
-            align = false;
-        }
-
-        if align && self.aligned {
-            w.align();
-        }
-
-        w.bytes(data);
-
-        Ok(())
+        wire::per::octet_string(w, &Octets::new(data), size)
     }
 
     fn encode_unbound_octets(&self, data: &[u8], w: &mut Writer) -> Result<()> {
-        w.align();
-
-        let mut fragments = Fragmenter::new(data.len());
-
-        while let Some((offset, length)) = fragments.next(w) {
-            w.align();
-            w.bytes(&data[offset..offset + length]);
-        }
-
-        Ok(())
+        wire::per::octet_string(w, &Octets::new(data), None)
     }
 
     /// The value of an open type of the type `id`, see `put_open_type`.
@@ -1380,28 +1376,14 @@ impl<'a> Coder<'a> {
             Value::Integer(number) if self.types.numeric_enums => i128::from(entry.1) == *number,
             _ => false,
         };
-        let count = bits_of(root.len().saturating_sub(1) as u128);
-
-        if let Some(index) = sorted.iter().position(find) {
-            if additions.is_some() {
-                w.bit(false);
-            }
-
-            w.uint(index as u128, count);
-
-            return Ok(());
-        }
-
-        let Some(additions) = additions else {
-            return encode_error("Expected an enumeration value.");
+        let index = match sorted.iter().position(find) {
+            Some(index) => Ok(index),
+            None => Err(additions
+                .and_then(|additions| additions.iter().position(|entry| find(&entry)))
+                .ok_or_else(|| Error::encode("Expected an enumeration value."))?),
         };
-        let index = additions
-            .iter()
-            .position(|entry| find(&entry))
-            .ok_or_else(|| Error::encode("Expected an enumeration value."))?;
 
-        w.bit(true);
-        w.normally_small_whole_number(index as u128);
+        wire::per::enumerated(w, root.len(), additions.is_some(), index);
 
         Ok(())
     }
@@ -1429,28 +1411,7 @@ impl<'a> Coder<'a> {
         }
 
         if let Some(index) = root_index {
-            if members.root.len() > 1 {
-                let maximum = members.root.len() - 1;
-                let count = bits_of(maximum as u128);
-
-                if !self.aligned {
-                    w.uint(index as u128, count);
-                } else if maximum <= 65535 {
-                    w.constrained_whole_number(index as i128, 0, maximum as i128, count);
-                } else {
-                    let indefinite = bits_of((count.div_ceil(8) - 1) as u128);
-                    let length = bytes_of(index as u128);
-
-                    w.constrained_whole_number(
-                        length as i128 - 1,
-                        0,
-                        1i128 << indefinite,
-                        indefinite,
-                    );
-                    w.align();
-                    w.constrained_whole_number(index as i128, 0, maximum as i128, 8 * length);
-                }
-            }
+            wire::per::choice_index(w, members.root.len(), index);
 
             return self
                 .encode_type(members.root[members.order[index]].ty, inner, w, depth + 1)
@@ -1476,41 +1437,22 @@ impl<'a> Coder<'a> {
         w: &mut Writer,
         depth: usize,
     ) -> Result<()> {
-        let length = items.len() as i128;
-        let size = extended(size, length, w);
-
-        check_size(size, length)?;
-
-        if is_unbound(size) {
-            w.align();
-
-            let mut fragments = Fragmenter::new(items.len());
-
-            while let Some((offset, count)) = fragments.next(w) {
-                for (index, item) in items[offset..offset + count].iter().enumerate() {
-                    self.encode_type(element, item, w, depth + 1)
-                        .map_err(|error| error.in_element(offset + index))?;
-                }
+        if wire::per::count(w, items.len(), size)? {
+            for (index, item) in items.iter().enumerate() {
+                self.encode_type(element, item, w, depth + 1)
+                    .map_err(|error| error.in_element(index))?;
             }
 
             return Ok(());
         }
 
-        let (min, max) = size_bounds(size).unwrap();
+        let mut fragments = Fragmenter::new(items.len());
 
-        if min != max {
-            let count = bits_of((max - min) as u128);
-
-            if self.aligned {
-                w.constrained_whole_number(length, min, max, count);
-            } else {
-                w.uint((length - min) as u128, count);
+        while let Some((offset, count)) = fragments.next(w) {
+            for (index, item) in items[offset..offset + count].iter().enumerate() {
+                self.encode_type(element, item, w, depth + 1)
+                    .map_err(|error| error.in_element(offset + index))?;
             }
-        }
-
-        for (index, item) in items.iter().enumerate() {
-            self.encode_type(element, item, w, depth + 1)
-                .map_err(|error| error.in_element(index))?;
         }
 
         Ok(())
@@ -1531,45 +1473,7 @@ impl<'a> Coder<'a> {
             | StrKind::Visible
             | StrKind::Bmp
             | StrKind::Universal => self.encode_known(kind, text, size, characters, w),
-            _ => {
-                let bytes: Vec<u8> = match kind {
-                    StrKind::Utf8 => Vec::from(text.as_bytes()),
-                    StrKind::Universal => text
-                        .chars()
-                        .flat_map(|c| u32::from(c).to_be_bytes())
-                        .collect(),
-                    _ => text
-                        .chars()
-                        .map(|c| {
-                            u8::try_from(u32::from(c))
-                                .map_err(|_| Error::encode("A character is not Latin-1."))
-                        })
-                        .collect::<Result<_>>()?,
-                };
-                let multiplier = if kind == StrKind::Universal { 4 } else { 1 };
-                // The length is of characters, except for UTF8String.
-                let count = if kind == StrKind::Utf8 {
-                    bytes.len()
-                } else {
-                    text.chars().count()
-                };
-
-                w.align();
-
-                let mut fragments = Fragmenter::new(count);
-
-                while let Some((offset, length)) = fragments.next(w) {
-                    let (start, end) = if kind == StrKind::Utf8 {
-                        (offset, offset + length)
-                    } else {
-                        (offset * multiplier, (offset + length) * multiplier)
-                    };
-
-                    w.bytes(&bytes[start..end]);
-                }
-
-                Ok(())
-            }
+            _ => wire::per::other_string(w, &Text::new(text), kind),
         }
     }
 
@@ -1582,56 +1486,8 @@ impl<'a> Coder<'a> {
         w: &mut Writer,
     ) -> Result<()> {
         let known = Known::new(kind, characters, self.aligned);
-        let codes: Vec<u32> = text.chars().map(u32::from).collect();
-        let length = codes.len() as i128;
-        // Outside the root of an extensible size, with the permitted
-        // alphabet still (X.691 30.4).
-        let size = extended(size, length, w);
 
-        check_size(size, length)?;
-
-        let put = |w: &mut Writer, codes: &[u32]| -> Result<()> {
-            for code in codes {
-                w.uint(
-                    u128::from(known.alphabet.encode(*code)?),
-                    known.bits_per_character,
-                );
-            }
-
-            Ok(())
-        };
-
-        if is_unbound(size) {
-            w.align();
-
-            let mut fragments = Fragmenter::new(codes.len());
-
-            while let Some((offset, count)) = fragments.next(w) {
-                put(w, &codes[offset..offset + count])?;
-            }
-
-            return Ok(());
-        }
-
-        let (min, max) = size_bounds(size).unwrap();
-
-        if min != max {
-            let count = bits_of((max - min) as u128);
-
-            if self.aligned {
-                w.constrained_whole_number(length, min, max, count);
-
-                if max * known.bits_per_character as i128 >= 16 && length > 0 {
-                    w.align();
-                }
-            } else {
-                w.uint((length - min) as u128, count);
-            }
-        } else if self.aligned && max * known.bits_per_character as i128 > 16 {
-            w.align();
-        }
-
-        put(w, &codes)
+        wire::per::known_string(w, &Text::new(text), size, &known)
     }
 
     fn encode_date(&self, date: &Date, w: &mut Writer) -> Result<()> {
@@ -1672,13 +1528,7 @@ impl<'a> Coder<'a> {
     }
 
     fn put_range(&self, value: i128, min: i128, max: i128, w: &mut Writer) {
-        let count = bits_of((max - min) as u128);
-
-        if self.aligned {
-            w.constrained_whole_number(value, min, max, count);
-        } else {
-            w.uint((value - min) as u128, count);
-        }
+        wire::per::range(w, value, min, max);
     }
 
     fn encode_time_of_day(&self, time: &Time, w: &mut Writer) -> Result<()> {
@@ -2038,26 +1888,7 @@ impl<'a> Coder<'a> {
                 None => r.unconstrained_whole_number(),
             };
         };
-        let size = (max as u128).wrapping_sub(min as u128);
-        let count = bits_of(size);
-
-        if !self.aligned {
-            return Ok(Value::Integer((r.uint(count)? as i128).wrapping_add(min)));
-        }
-
-        let count = if size <= 65535 {
-            count
-        } else {
-            let indefinite = bits_of((count.div_ceil(8) - 1) as u128);
-            let length = r.constrained_whole_number(0, 1i128 << indefinite, indefinite)? + 1;
-
-            r.align();
-
-            8 * length as usize
-        };
-
-        r.constrained_whole_number(min, max, count)
-            .map(Value::Integer)
+        wire::per::read_bounded(r, min, max).map(Value::Integer)
     }
 
     /// An integer of which a bound does not fit in an `i128`, as
@@ -2176,64 +2007,13 @@ impl<'a> Coder<'a> {
     }
 
     fn decode_octet_string(&self, size: Option<Range>, r: &mut Reader<'a>) -> Result<Value<'a>> {
-        let size = read_extended(size, r)?;
-        let unbound = |r: &mut Reader<'a>| self.decode_unbound_octets(r).map(Value::Bytes);
-        let Some((min, max)) = size_bounds(size).filter(|_| !is_unbound(size)) else {
-            return unbound(r);
-        };
-        let span = (max - min) as u128;
-
-        if span == 0 && max >= 65536 {
-            return unbound(r);
-        }
-
-        let count = bits_of(span);
-        let mut length = min;
-        let mut align = true;
-
-        if min != max {
-            length = if self.aligned {
-                r.constrained_whole_number(min, max, count)?
-            } else {
-                r.uint(count)? as i128 + min
-            };
-            align = length > 0;
-        } else if max <= 2 {
-            align = false;
-        }
-
-        if align {
-            r.align();
-        }
-
-        r.octets(length as usize).map(Value::Bytes)
+        wire::per::read_octet_string(r, size).map(|octets| Value::Bytes(octets_cow(octets)))
     }
 
     /// The octets of an unconstrained OCTET STRING, in fragments if there
     /// are 16384 or more.
     fn decode_unbound_octets(&self, r: &mut Reader<'a>) -> Result<Cow<'a, [u8]>> {
-        r.align();
-
-        let mut data = Vec::new();
-
-        loop {
-            let length = r.length()?;
-
-            r.align();
-
-            // Most are a fragment.
-            if data.is_empty() && length < 16384 {
-                return r.octets(length);
-            }
-
-            data.extend_from_slice(&r.octets(length)?);
-
-            if length < 16384 {
-                break;
-            }
-        }
-
-        Ok(Cow::Owned(data))
+        wire::per::read_unbound_octets(r).map(octets_cow)
     }
 
     /// The value of an open type of the type `id`, see `get_open_type`.
@@ -2280,6 +2060,7 @@ impl<'a> Coder<'a> {
             position: 0,
             aligned: r.aligned,
             budget: r.budget,
+            depth: r.depth,
         };
         // Where in all of the data, or at the open type if it is in
         // fragments.
@@ -2328,21 +2109,14 @@ impl<'a> Coder<'a> {
             }
         };
 
-        if additions.is_some() && r.bit()? {
-            let index = r.normally_small_whole_number()? as usize;
-
-            return Ok(additions
-                .and_then(|additions| additions.get(index))
-                .map_or(Value::Null, named));
-        }
-
-        let count = bits_of(root.len().saturating_sub(1) as u128);
-        let index = r.uint(count)? as usize;
-
-        match sorted.get(index) {
-            Some(entry) => Ok(named(entry)),
-            None => decode_error("Expected an enumeration index.", r.position),
-        }
+        Ok(
+            match wire::per::read_enumerated(r, root.len(), additions.is_some())? {
+                Ok(index) => named(sorted[index]),
+                Err(index) => additions
+                    .and_then(|additions| additions.get(index))
+                    .map_or(Value::Null, named),
+            },
+        )
     }
 
     fn decode_choice(
@@ -2376,25 +2150,7 @@ impl<'a> Coder<'a> {
             };
         }
 
-        let mut index = 0;
-
-        if members.root.len() > 1 {
-            let maximum = members.root.len() - 1;
-            let count = bits_of(maximum as u128);
-
-            index = if !self.aligned {
-                r.uint(count)? as usize
-            } else if maximum <= 65535 {
-                r.constrained_whole_number(0, maximum as i128, count)? as usize
-            } else {
-                let indefinite = bits_of((count.div_ceil(8) - 1) as u128);
-                let length = r.constrained_whole_number(0, 1i128 << indefinite, indefinite)? + 1;
-
-                r.align();
-
-                r.constrained_whole_number(0, maximum as i128, 8 * length as usize)? as usize
-            };
-        }
+        let index = wire::per::read_choice_index(r, members.root.len())?;
 
         match members.order.get(index).map(|index| &members.root[*index]) {
             Some(member) => {
@@ -2418,52 +2174,34 @@ impl<'a> Coder<'a> {
         r: &mut Reader<'a>,
         depth: usize,
     ) -> Result<Value<'a>> {
-        let size = read_extended(size, r)?;
+        let (length, fragmented) = wire::per::read_count(r, size)?;
         let mut items = Vec::new();
-
-        if is_unbound(size) {
-            r.align();
-
-            loop {
-                let count = r.length()?;
-
-                r.spend(count)?;
-
-                for _ in 0..count {
-                    items.push(
-                        self.decode_type(element, r, depth + 1)
-                            .map_err(|error| error.in_element(items.len()))?,
-                    );
-                }
-
-                if count < 16384 {
-                    break;
-                }
+        let read = |r: &mut Reader<'a>, count: usize, items: &mut Vec<Value<'a>>| {
+            for _ in 0..count {
+                items.push(
+                    self.decode_type(element, r, depth + 1)
+                        .map_err(|error| error.in_element(items.len()))?,
+                );
             }
+
+            Ok::<(), Error>(())
+        };
+
+        if !fragmented {
+            read(r, length, &mut items)?;
 
             return Ok(Value::List(items));
         }
 
-        let length = {
-            let (min, max) = size_bounds(size).unwrap();
-            let count = bits_of((max - min) as u128);
+        loop {
+            let count = r.length()?;
 
-            if min == max {
-                min as usize
-            } else if self.aligned {
-                r.constrained_whole_number(min, max, count)? as usize
-            } else {
-                r.uint(count)? as usize + min as usize
+            r.spend(count)?;
+            read(r, count, &mut items)?;
+
+            if count < 16384 {
+                break;
             }
-        };
-
-        r.spend(length)?;
-
-        for _ in 0..length {
-            items.push(
-                self.decode_type(element, r, depth + 1)
-                    .map_err(|error| error.in_element(items.len()))?,
-            );
         }
 
         Ok(Value::List(items))
@@ -2485,36 +2223,12 @@ impl<'a> Coder<'a> {
             | StrKind::Universal => self
                 .decode_known(kind, size, characters, r)
                 .map(|text| Value::Text(Cow::Owned(text))),
-            _ => {
-                r.align();
-
-                let mut bytes = Cow::Borrowed(&[][..]);
-
-                loop {
-                    let length = r.length()?;
-                    let part = r.octets(length)?;
-
-                    // Most are a fragment.
-                    if bytes.is_empty() && length < 16384 {
-                        bytes = part;
-
-                        break;
-                    }
-
-                    bytes.to_mut().extend_from_slice(&part);
-
-                    if length < 16384 {
-                        break;
-                    }
-                }
-
-                match bytes {
-                    Cow::Borrowed(bytes) => crate::ber::string_text(kind, bytes, r.position),
-                    Cow::Owned(bytes) => crate::ber::string_text(kind, &bytes, r.position)
-                        .map(|text| Cow::Owned(text.into_owned())),
-                }
-                .map(Value::Text)
+            _ => match octets_cow(wire::per::read_unbound_octets(r)?) {
+                Cow::Borrowed(bytes) => crate::ber::string_text(kind, bytes, r.position),
+                Cow::Owned(bytes) => crate::ber::string_text(kind, &bytes, r.position)
+                    .map(|text| Cow::Owned(text.into_owned())),
             }
+            .map(Value::Text),
         }
     }
 
@@ -2526,76 +2240,15 @@ impl<'a> Coder<'a> {
         r: &mut Reader<'a>,
     ) -> Result<String> {
         let known = Known::new(kind, characters, self.aligned);
-        let size = read_extended(size, r)?;
-
         let mut text = String::new();
-        let get = |r: &mut Reader<'a>, count: usize, text: &mut String| -> Result<()> {
-            r.spend(count)?;
 
-            for _ in 0..count {
-                let value = r.uint(known.bits_per_character)? as u32;
-                let code = known.alphabet.decode(value, r.position)?;
-
-                text.push(
-                    char::from_u32(code)
-                        .ok_or_else(|| Error::decode("Bad character.", r.position))?,
-                );
-            }
-
-            Ok(())
-        };
-
-        if is_unbound(size) {
-            r.align();
-
-            loop {
-                let count = r.length()?;
-
-                get(r, count, &mut text)?;
-
-                if count < 16384 {
-                    break;
-                }
-            }
-
-            return Ok(text);
-        }
-
-        let (min, max) = size_bounds(size).unwrap();
-        let count = bits_of((max - min) as u128);
-        let length;
-
-        if min != max {
-            length = if self.aligned {
-                r.constrained_whole_number(min, max, count)?
-            } else {
-                r.uint(count)? as i128 + min
-            };
-
-            if self.aligned && max * known.bits_per_character as i128 >= 16 && length > 0 {
-                r.align();
-            }
-        } else {
-            length = min;
-
-            if self.aligned && max * known.bits_per_character as i128 > 16 {
-                r.align();
-            }
-        }
-
-        get(r, length as usize, &mut text)?;
+        wire::per::read_known_chars(r, size, &known, |character| text.push(character))?;
 
         Ok(text)
     }
 
     fn get_range(&self, min: i128, max: i128, r: &mut Reader<'a>) -> Result<i128> {
-        let count = bits_of((max - min) as u128);
-
-        if self.aligned {
-            r.constrained_whole_number(min, max, count)
-        } else {
-            Ok(r.uint(count)? as i128 + min)
-        }
+        wire::per::read_range(r, min, max)
     }
 
     fn decode_date(&self, r: &mut Reader<'a>) -> Result<Date> {
@@ -2916,6 +2569,7 @@ mod tests {
             position,
             aligned: false,
             budget: usize::MAX,
+            depth: 0,
         }
     }
 }

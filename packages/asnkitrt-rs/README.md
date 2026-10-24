@@ -61,6 +61,81 @@ let decoded = foo.decode("Question", &encoded)?;
 Requesting a codec that is not compiled in returns
 `Error::Unsupported`.
 
+## Sizes
+
+BER, DER, OER, PER and UPER are always compiled in, so the smallest
+build is the core alone. SLOC are the lines of the crate's own code
+that are compiled in, without comments, blank lines or tests; the
+dependencies are not counted. The sizes are those of a program that
+loads a `.asni` file and decodes, checks and encodes a value with a
+codec chosen at run time, so that every codec compiled in is linked,
+built with `lto = true`, `codegen-units = 1`, `panic = "abort"` and
+`strip = true`. These baseline measurements were taken with 1.2.0
+and Rust 1.99, before the `wire` module and generated-code work below;
+they are not measurements of the current source tree. KiB means 1024
+bytes. Unless the row says `default`, default features are disabled.
+The `Runtime` column subtracts the baseline executable size;
+`Over the core` is the increase over the first row. Differences are
+calculated before rounding.
+
+On a computer (`aarch64-apple-darwin`, `opt-level = 3`, with `std`),
+where the same program without the runtime is 295.5 KiB:
+
+| Features | SLOC | Binary | Runtime | Over the core |
+|---|---:|---:|---:|---:|
+| `std` (the core) | 9,557 | 667.5 KiB | 372.0 KiB | |
+| `std`, `jer` | 10,697 | 699.8 KiB | 404.3 KiB | +32.3 KiB |
+| `std`, `gser` | 10,645 | 716.0 KiB | 420.4 KiB | +48.5 KiB |
+| `std`, `xer` | 10,637 | 748.3 KiB | 452.7 KiB | +80.8 KiB |
+| `std`, `jer`, `xer`, `gser` | 12,314 | 796.7 KiB | 501.2 KiB | +129.2 KiB |
+| default | 13,751 | 861.3 KiB | 565.8 KiB | +193.9 KiB |
+
+`xer` includes `quick-xml`, and the default features add `signing`,
+`encryption` and `bigint` with their dependencies. `serde` adds lines
+but nothing to a program that does not call `to_value` or
+`from_value`.
+
+On a device (`thumbv7em-none-eabi`, a Cortex-M4 or M7, `opt-level =
+"z"`, without `std`), as flash (`.text`, `.rodata`, `.data` and
+`.ARM.exidx`), where the same program without the runtime is 868 bytes:
+
+| Features | SLOC | Flash | Over the core |
+|---|---:|---:|---:|
+| none (the core) | 9,553 | 202.6 KiB | |
+| `jer` | 10,693 | 229.5 KiB | +26.9 KiB |
+| `gser` | 10,641 | 232.3 KiB | +29.7 KiB |
+| `jer`, `gser` | 11,513 | 243.1 KiB | +40.5 KiB |
+| `signing`, `encryption` | 9,578 | 235.5 KiB | +32.9 KiB |
+| `signing`, `encryption`, `jer`, `gser` | 11,538 | 276.1 KiB | +73.4 KiB |
+
+`xer` and `bigint` need `std` and are not available there. These flash
+figures cover the probe, not the rest of an application or its firmware.
+The interpreter needs a global allocator, and RAM can be the tighter
+limit: in these examples, a loaded specification occupies roughly 30 to
+42 times its `.asni` size, with a higher peak during loading. The heap
+measurements below are from a 64-bit computer; they are not device RAM
+requirements:
+
+| Specification | `.asni` | Kept | Peak while loading |
+|---|---:|---:|---:|
+| `examples/compiled/foo.asni` | 244 B | 9.2 KiB | 15.3 KiB |
+| `examples/compiled/information_object.asni` | 2.1 KiB | 59.9 KiB | 126.4 KiB |
+| `examples/compiled/rfc5280.asni` | 12.3 KiB | 519.4 KiB | 970.5 KiB |
+
+Decoding, checking and encoding a certificate of RFC 5280 in DER takes
+4 to 8 KiB more in that host measurement. Budget separately for the
+input, output, stack and application state on the intended target.
+
+For a fixed specification on a memory-constrained target,
+[`asnkit-gen-rust-codec`](../asnkit-gen-rust-codec/README.md) generates
+BER, DER and UPER codecs using `asnkitrt::wire`, without loading a
+`.asni` file. Its buffer-based encoding and borrowed views avoid heap
+allocation except for boxed recursive values; its `to_*` convenience
+methods allocate. See that plugin for the RFC 5280 flash comparison
+and the supported types and constraints.
+
+## Errors
+
 An error with a value, encoding, decoding or checking it, tells where
 in the value it is, as `Message.tags[1]: Expected data of type str.`;
 `Error::location()` gives the steps. So does an `Error::Unsupported`

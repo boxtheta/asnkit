@@ -39,6 +39,7 @@ def versions():
         "asnkit-compiler-wasm",
         "asnkitcc",
         "asnkit-gen-rust",
+        "asnkit-gen-rust-codec",
     ]:
         found[package + "/Cargo.toml"] = read_toml(package, "Cargo.toml")["package"][
             "version"
@@ -84,6 +85,8 @@ class VersionsTest(unittest.TestCase):
         for package, dependency in [
             ("asnkitcc", "asnkit-compiler"),
             ("asnkit-gen-rust", "asnkitrt"),
+            ("asnkit-gen-rust-codec", "asnkitrt"),
+            ("asnkit-gen-rust-codec", "asnkit-gen-rust"),
         ]:
             with self.subTest(package=package):
                 self.assertEqual(

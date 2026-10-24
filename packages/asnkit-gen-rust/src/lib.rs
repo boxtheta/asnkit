@@ -179,7 +179,7 @@ pub fn snake(name: &str) -> String {
 }
 
 /// A name of a field or a function as Rust has it.
-fn identifier(name: String) -> String {
+pub fn identifier(name: String) -> String {
     if NOT_RAW.contains(&name.as_str()) {
         format!("{name}_")
     } else if KEYWORDS.contains(&name.as_str()) {
@@ -192,7 +192,7 @@ fn identifier(name: String) -> String {
 /// The components of the graph of what is held in what, in which a
 /// type that is held by itself, directly or not, can not be held by
 /// value. A SEQUENCE OF is not an edge, as a list is on the heap.
-fn components(types: &Types) -> Vec<usize> {
+pub fn components(types: &Types) -> Vec<usize> {
     let count = types.nodes.len();
     let edges: Vec<Vec<usize>> = types
         .nodes

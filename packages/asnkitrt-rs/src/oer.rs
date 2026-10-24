@@ -48,6 +48,7 @@ pub fn decode<'a>(types: &'a Types, id: TypeId, data: &'a [u8]) -> Result<Value<
         position: 0,
         aligned: true,
         budget: 8 * data.len() + 1024,
+        depth: 0,
     };
 
     Coder { types }.decode_type(id, &mut r, 0)
@@ -1358,6 +1359,7 @@ impl<'a> Coder<'a> {
             position: 0,
             aligned: true,
             budget: r.budget,
+            depth: r.depth,
         };
         let value = coder.decode_type(id, &mut inner, depth + 1)?;
 

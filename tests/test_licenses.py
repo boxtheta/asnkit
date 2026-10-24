@@ -21,6 +21,7 @@ class LicensesTest(unittest.TestCase):
             ("LICENSE-COMPILER", "asnkitcc"),
             ("LICENSE-COMPILER", "asnkit-gen-python"),
             ("LICENSE-COMPILER", "asnkit-gen-rust"),
+            ("LICENSE-COMPILER", "asnkit-gen-rust-codec"),
         ]:
             with self.subTest(path=path, package=package):
                 self.assertEqual(

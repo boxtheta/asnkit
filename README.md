@@ -44,6 +44,7 @@ with an error rather than encoded wrongly.
 | **Plugins** | Generate code from a compiled specification. | | | |
 | `asnkit-gen-python` | Python data classes. | [`packages/asnkit-gen-python`](packages/asnkit-gen-python) | [PyPI](https://pypi.org/project/asnkit-gen-python/) | Apache-2.0 |
 | `asnkit-gen-rust` | Rust structs and enums with `serde`. | [`packages/asnkit-gen-rust`](packages/asnkit-gen-rust) | [crates.io](https://crates.io/crates/asnkit-gen-rust) | Apache-2.0 |
+| `asnkit-gen-rust-codec` | Rust BER, DER and UPER codecs with borrowed values and caller-provided buffers, for embedded targets. | [`packages/asnkit-gen-rust-codec`](packages/asnkit-gen-rust-codec) | not yet | Apache-2.0 |
 
 All the packages are released together, with one version; see
 [CHANGELOG.md](CHANGELOG.md). Within a major version, the `.asni` and

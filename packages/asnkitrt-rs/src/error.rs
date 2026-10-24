@@ -120,6 +120,9 @@ pub enum Error {
     Unsupported(&'static str, Location),
     /// A type that is not in the specification.
     NoSuchType,
+    /// The buffer an encoding is written to is too small: it needs this
+    /// many bytes.
+    BufferTooSmall(usize),
 }
 
 impl fmt::Display for Error {
@@ -164,6 +167,9 @@ impl fmt::Display for Error {
             | Error::Constraints(what, _)
             | Error::Unsupported(what, _) => what,
             Error::NoSuchType => "The type is not found in the specification.",
+            Error::BufferTooSmall(needed) => {
+                return write!(f, "The buffer is too small: the encoding is {needed} bytes.");
+            }
             Error::Decode(what, _, _) => what,
         })
     }

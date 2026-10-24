@@ -107,30 +107,42 @@ fn encode_error<T>(what: &'static str) -> Result<T> {
 }
 
 fn write_tag(tag: &WireTag, out: &mut Vec<u8>) {
-    let flags = match tag.class {
+    let (bytes, count) = tag_bytes(tag.class, tag.constructed, tag.number);
+
+    out.extend_from_slice(&bytes[..count]);
+}
+
+/// The bytes of a tag, of which there are at most 11, and how many.
+pub(crate) fn tag_bytes(class: TagClass, constructed: bool, number: u64) -> ([u8; 11], usize) {
+    let flags = match class {
         TagClass::Universal => 0x00,
         TagClass::Application => 0x40,
         TagClass::ContextSpecific => 0x80,
         TagClass::Private => 0xc0,
-    } | if tag.constructed { 0x20 } else { 0 };
+    } | if constructed { 0x20 } else { 0 };
+    let mut bytes = [0; 11];
 
-    if tag.number < 31 {
-        out.push(flags | tag.number as u8);
-    } else {
-        out.push(flags | 0x1f);
+    if number < 31 {
+        bytes[0] = flags | number as u8;
 
-        let mut groups = Vec::new();
-        let mut number = tag.number;
-
-        while number > 0 {
-            groups.push(0x80 | (number & 0x7f) as u8);
-            number >>= 7;
-        }
-
-        groups[0] &= 0x7f;
-        groups.reverse();
-        out.extend_from_slice(&groups);
+        return (bytes, 1);
     }
+
+    bytes[0] = flags | 0x1f;
+
+    let groups = (64 - number.leading_zeros() as usize).div_ceil(7);
+
+    for group in 0..groups {
+        let bits = (number >> (7 * (groups - 1 - group))) as u8 & 0x7f;
+
+        bytes[1 + group] = if group + 1 < groups {
+            0x80 | bits
+        } else {
+            bits
+        };
+    }
+
+    (bytes, 1 + groups)
 }
 
 /// A TLV of `tag`, of which `contents` writes the contents after the
@@ -165,7 +177,7 @@ fn write_tlv(
 
 /// The tag at `offset`: the class, if it is constructed, the number
 /// and the offset after it.
-fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u64, usize)> {
+pub(crate) fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u64, usize)> {
     let first = *data
         .get(offset)
         .ok_or_else(|| Error::decode("Ran out of data when reading tag", offset))?;
@@ -218,7 +230,7 @@ fn skip_tag(data: &[u8], offset: usize) -> Result<usize> {
 
 /// Reads a length: `None` is indefinite. Checks that there is as much
 /// data after it.
-fn read_length(
+pub(crate) fn read_length(
     data: &[u8],
     offset: usize,
     enforce_definite: bool,
@@ -1434,15 +1446,7 @@ impl<'a> Coder<'a> {
 
         match kind {
             Kind::Boolean => {
-                if length != 1 {
-                    return decode_error("Expected BOOLEAN contents length 1.", offset);
-                }
-
-                if self.strict && contents[0] != 0x00 && contents[0] != 0xff {
-                    return decode_error("Expected BOOLEAN contents of 0x00 or 0xff.", offset);
-                }
-
-                Ok(Value::Boolean(contents[0] != 0))
+                crate::wire::ber::check_boolean(contents, self.strict, offset).map(Value::Boolean)
             }
             Kind::Integer(_) => {
                 self.check_minimal_integer(contents, offset)?;
@@ -1549,22 +1553,7 @@ impl<'a> Coder<'a> {
     }
 
     fn check_minimal_integer(&self, contents: &[u8], offset: usize) -> Result<()> {
-        if !self.strict {
-            return Ok(());
-        }
-
-        if contents.is_empty() {
-            return decode_error("Expected at least one byte of an INTEGER.", offset);
-        }
-
-        if contents.len() > 1
-            && ((contents[0] == 0x00 && contents[1] < 0x80)
-                || (contents[0] == 0xff && contents[1] >= 0x80))
-        {
-            return decode_error("Expected an INTEGER in as few bytes as possible.", offset);
-        }
-
-        Ok(())
+        crate::wire::ber::check_integer_contents(contents, self.strict, offset)
     }
 
     fn decode_bit_string(
@@ -1573,37 +1562,9 @@ impl<'a> Coder<'a> {
         named: bool,
         offset: usize,
     ) -> Result<Value<'a>> {
-        let Some((&unused, bytes)) = contents.split_first() else {
-            return decode_error("Expected at least one byte of a BIT STRING.", offset);
-        };
+        let bits = crate::wire::ber::check_bit_string(contents, self.strict, named, offset)?;
 
-        if unused > 7 || (bytes.is_empty() && unused != 0) {
-            return decode_error("Expected at most 7 unused bits of a BIT STRING.", offset);
-        }
-
-        let bits = 8 * bytes.len() - usize::from(unused);
-
-        if self.strict {
-            if unused != 0
-                && bytes
-                    .last()
-                    .is_some_and(|last| last & ((1 << unused) - 1) != 0)
-            {
-                return decode_error(
-                    "Expected the unused bits of a BIT STRING to be zero.",
-                    offset,
-                );
-            }
-
-            if named && bits > 0 && bytes.last().is_some_and(|last| last >> unused & 1 == 0) {
-                return decode_error(
-                    "Expected a BIT STRING with named bits without trailing zero bits.",
-                    offset,
-                );
-            }
-        }
-
-        Ok(Value::Bits(Cow::Borrowed(bytes), bits))
+        Ok(Value::Bits(Cow::Borrowed(&contents[1..]), bits))
     }
 
     /// A string in parts, the way BER allows.

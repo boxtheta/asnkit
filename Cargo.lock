@@ -79,6 +79,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "asnkit-gen-rust-codec"
+version = "1.2.0"
+dependencies = [
+ "asnkit-gen-rust",
+ "asnkitrt",
+ "flate2",
+ "serde_json",
+]
+
+[[package]]
 name = "asnkitcc"
 version = "1.2.0"
 dependencies = [
