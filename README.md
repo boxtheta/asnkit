@@ -12,7 +12,7 @@ can happen anywhere. A compiler turns ASN.1 into a compiled
 specification IR, an `.asni` file. A runtime loads that file to encode and
 decode. It never parses ASN.1 itself, which keeps it small enough for
 embedded devices and makes it behave the same in every language. Plugins
-generate code, such as data classes, from the same file.
+generate code, such as data classes or Rust codecs, from the same file.
 
 ```text
 foo.asn --> compiler --> foo.asni --> runtime: encode, decode
@@ -44,7 +44,7 @@ with an error rather than encoded wrongly.
 | **Plugins** | Generate code from a compiled specification. | | | |
 | `asnkit-gen-python` | Python data classes. | [`packages/asnkit-gen-python`](packages/asnkit-gen-python) | [PyPI](https://pypi.org/project/asnkit-gen-python/) | Apache-2.0 |
 | `asnkit-gen-rust` | Rust structs and enums with `serde`. | [`packages/asnkit-gen-rust`](packages/asnkit-gen-rust) | [crates.io](https://crates.io/crates/asnkit-gen-rust) | Apache-2.0 |
-| `asnkit-gen-rust-codec` | Rust BER, DER and UPER codecs with borrowed values and caller-provided buffers, for embedded targets. | [`packages/asnkit-gen-rust-codec`](packages/asnkit-gen-rust-codec) | not yet | Apache-2.0 |
+| `asnkit-gen-rust-codec` | Rust codecs for one selected encoding: BER, DER or UPER, with borrowed values and caller-provided buffers. | [`packages/asnkit-gen-rust-codec`](packages/asnkit-gen-rust-codec) | not yet | Apache-2.0 |
 
 All the packages are released together, with one version; see
 [CHANGELOG.md](CHANGELOG.md). Within a major version, the `.asni` and
@@ -269,6 +269,57 @@ See the `examples` folder for more, [`docs/plugins.md`](docs/plugins.md)
 for how plugins work and how to write one, and
 [`docs/file_formats.md`](docs/file_formats.md) for what an `.asni` file
 contains.
+
+### Generated Rust codecs
+
+[`asnkit-gen-rust-codec`](packages/asnkit-gen-rust-codec) generates Rust
+types with encoding and decoding methods for one selected codec: BER
+(the default), DER or UPER. The generated code needs no `.asni` file at
+runtime. It borrows decoded data from the input and encodes into a
+caller-provided buffer, avoiding heap allocations except for boxed
+recursive values. Allocating `to_ber()`, `to_der()` or `to_uper()` helpers
+are also available.
+
+The plugin is not yet published. Install it and the matching compiler
+from this checkout, then generate UPER code for the example above:
+
+```sh
+cargo install --path packages/asnkitcc
+cargo install --path packages/asnkit-gen-rust-codec
+asnkitcc generate --plugin rust-codec --plugin-opt codec=uper -o src tests/files/foo.asn
+```
+
+```rust
+mod foo;
+
+use foo::Question;
+
+let question = Question { id: 1, question: "Is 1+1=3?".into() };
+let mut buffer = [0u8; 64];
+let length = question.encode_uper(&mut buffer)?;
+let decoded = Question::decode_uper(&buffer[..length])?;
+
+assert_eq!(decoded.question, "Is 1+1=3?");
+```
+
+Only the selected codec's methods are emitted. The consuming crate needs
+the matching `asnkitrt` from `packages/asnkitrt-rs` as a path dependency;
+`default-features = false` supports builds without `std`. Use the plugin
+option `no_std=true` when generating for those builds.
+
+Across 37 X.509 certificates on an Apple M5, generated BER/DER decoding
+took about 0.74 µs per certificate and buffer encoding about 1.52 µs;
+UPER took about 0.76 µs and 3.64 µs respectively. All three used zero
+heap allocations for decoding, length calculation and buffer encoding.
+The decoded value occupied 768 bytes on this 64-bit target, borrowing
+its input; this is not peak stack usage. See the
+[benchmark results and reproduction command](packages/asnkit-gen-rust-codec/README.md#generated-code-benchmarks)
+for buffer sizes and measurement details, and the
+[plugin documentation](packages/asnkit-gen-rust-codec/README.md)
+for options and supported types. Generated codecs support fewer types
+and constraint checks than the interpreter; their
+[limitations](packages/asnkit-gen-rust-codec/README.md#not-supported-yet)
+are listed separately.
 
 ## Command line
 
