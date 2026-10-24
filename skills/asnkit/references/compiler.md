@@ -129,8 +129,10 @@ protected schemas without embedding an unchecked copy.
 
 For embedded Rust, the not-yet-published plugin can be installed from
 the repository with `cargo install --path packages/asnkit-gen-rust-codec`;
-use `asnkitcc generate --plugin rust-codec` to generate BER, DER and
-UPER codecs that do not load the schema. Buffer-based methods avoid allocations
+use `asnkitcc generate --plugin rust-codec --plugin-opt codec=der` to
+generate DER codecs that do not load the schema. The `codec` option
+selects only `ber` (default), `der` or `uper`; other codecs are not emitted.
+Buffer-based methods avoid allocations
 except for boxed recursive values; decoded values
 borrow the input, and `encode_der(&mut buffer)` writes into a given
 buffer. Only the matching `asnkitrt` is needed, with

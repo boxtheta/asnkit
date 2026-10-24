@@ -15,7 +15,7 @@ keywords = ["asn1", "codegen", "ber", "der", "no_std"]
 categories = ["development-tools", "encoding"]
 # The tests are held to files of the repository that are not in the
 # package.
-exclude = ["tests/"]
+exclude = ["tests/", "benches/"]
 
 [lib]
 name = "asnkit_gen_rust_codec"
@@ -33,3 +33,7 @@ asnkit-gen-rust = { version = "1.2.0", path = "../asnkit-gen-rust" }
 asnkitrt = { path = "../asnkitrt-rs" }
 flate2 = "1"
 serde_json = { version = "1", features = ["arbitrary_precision"] }
+
+[[bench]]
+name = "codecs"
+harness = false

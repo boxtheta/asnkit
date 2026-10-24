@@ -36,8 +36,10 @@ security fixes.
   value is encoded into a buffer that is given, and a value that is
   decoded borrows the data. These operations avoid heap allocation
   except for boxed recursive values; `to_*` convenience methods allocate.
-  Its code for RFC 5280 is 50.8 KiB of flash
-  on a Cortex-M4 and uses no heap, where the runtime with
+  Select one codec with `--plugin-opt codec=ber|der|uper` (default
+  `ber`); only that codec's methods and helpers are generated.
+  The earlier output with all three codecs for RFC 5280 used 50.8 KiB
+  of flash on a Cortex-M4 and no heap, where the runtime with
   `rfc5280.asni` is 210.7 KiB and keeps 398.5 KiB of heap. It does not
   support REAL, EXTERNAL, DATE, TIME-OF-DAY, DATE-TIME, DURATION or the
   table of an `ANY DEFINED BY` yet.

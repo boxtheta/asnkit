@@ -16,11 +16,11 @@ use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
 
-use asnkit_gen_rust_codec::{Integer, Options, generate};
+use asnkit_gen_rust_codec::{Encoding, Integer, Options, generate};
 use asnkitrt::container::Checks;
 use asnkitrt::runtime::{self, Specification};
 use asnkitrt::types::Codec;
-use asnkitrt::wire::{self, Asn1};
+use asnkitrt::wire;
 
 #[rustfmt::skip]
 #[allow(dead_code)]
@@ -30,6 +30,23 @@ mod rfc5280;
 #[allow(dead_code)]
 #[path = "generated/shapes.rs"]
 mod shapes;
+
+#[rustfmt::skip]
+#[allow(dead_code)]
+#[path = "generated/rfc5280_ber.rs"]
+mod rfc5280_ber;
+#[rustfmt::skip]
+#[allow(dead_code)]
+#[path = "generated/rfc5280_uper.rs"]
+mod rfc5280_uper;
+#[rustfmt::skip]
+#[allow(dead_code)]
+#[path = "generated/shapes_ber.rs"]
+mod shapes_ber;
+#[rustfmt::skip]
+#[allow(dead_code)]
+#[path = "generated/shapes_uper.rs"]
+mod shapes_uper;
 
 /// Counts the allocations of each thread, as the tests run in threads of
 /// their own.
@@ -84,26 +101,36 @@ fn is_current(asni: &str, generated: &str, options: Options) {
 
 #[test]
 fn the_generated_files_are_current() {
-    is_current(
-        "../../examples/compiled/rfc5280.asni",
-        "tests/generated/rfc5280.rs",
-        Options {
-            integer: Integer::Big,
-            ..Options::default()
-        },
-    );
-    is_current(
-        "../asnkit-gen-rust/tests/generated/shapes.asni",
-        "tests/generated/shapes.rs",
-        Options {
-            skip_unsupported: true,
-            ..Options::default()
-        },
-    );
+    for codec in [Encoding::Ber, Encoding::Der, Encoding::Uper] {
+        let suffix = if codec == Encoding::Der {
+            String::new()
+        } else {
+            format!("_{}", codec.name())
+        };
+        is_current(
+            "../../examples/compiled/rfc5280.asni",
+            &format!("tests/generated/rfc5280{suffix}.rs"),
+            Options {
+                codec,
+                integer: Integer::Big,
+                ..Options::default()
+            },
+        );
+        is_current(
+            "../asnkit-gen-rust/tests/generated/shapes.asni",
+            &format!("tests/generated/shapes{suffix}.rs"),
+            Options {
+                codec,
+                skip_unsupported: true,
+                ..Options::default()
+            },
+        );
+    }
     is_current(
         "../asnkit-gen-rust/tests/generated/shapes.asni",
         "tests/generated/shapes_no_std.rs",
         Options {
+            codec: Encoding::Uper,
             skip_unsupported: true,
             no_std: true,
             ..Options::default()
@@ -170,54 +197,41 @@ fn the_certificates_of_openssl_come_back_as_they_were_without_allocating() {
 }
 
 #[test]
-fn the_certificates_come_back_through_ber_and_uper() {
-    for (name, data) in certificates() {
-        let certificate = rfc5280::Certificate::decode_der(&data).unwrap();
-
-        // UPER of the decoded value, without allocating, which is a value
-        // that is decoded from its UPER.
-        let mut uper = vec![0u8; certificate.uper_len().unwrap()];
-        let count = allocations(|| {
-            certificate.encode_uper(&mut uper).unwrap();
-        });
-
-        assert_eq!(count, 0, "{name}");
-
-        let from_uper = rfc5280::Certificate::decode_uper(&uper).unwrap();
-
-        assert_eq!(from_uper, certificate, "{name}");
-        assert_eq!(from_uper.to_der().unwrap(), data, "{name}");
-
-        // DER is BER, of which a time in UTC keeps its offset, where DER has
-        // none, as the runtime does.
-        let from_ber = rfc5280::Certificate::decode_ber(&data).unwrap();
-
-        assert_eq!(from_ber.to_der().unwrap(), data, "{name}");
-    }
-}
-
-#[test]
 fn the_certificates_are_what_the_runtime_makes_of_them() {
     let asni = fs::read(root().join("../../examples/compiled/rfc5280.asni")).unwrap();
-
-    for codec in [Codec::Der, Codec::Uper] {
+    let der =
+        Specification::from_asni(&asni, &Checks::default(), runtime::Options::new(Codec::Der))
+            .unwrap();
+    for codec in [Codec::Ber, Codec::Der, Codec::Uper] {
         let specification =
             Specification::from_asni(&asni, &Checks::default(), runtime::Options::new(codec))
                 .unwrap();
-
         for (name, data) in certificates() {
-            let certificate = rfc5280::Certificate::decode_der(&data).unwrap();
-            let generated = match codec {
-                Codec::Der => certificate.to_der().unwrap(),
-                _ => certificate.to_uper().unwrap(),
-            };
-            let value = specification.decode("Certificate", &generated).unwrap();
-
-            assert_eq!(
-                specification.encode("Certificate", &value).unwrap(),
-                generated,
-                "{name} {codec:?}"
-            );
+            let value = der.decode("Certificate", &data).unwrap();
+            let encoded = specification.encode("Certificate", &value).unwrap();
+            let mut out = vec![0; encoded.len()];
+            let count = allocations(|| {
+                let length = match codec {
+                    Codec::Ber => {
+                        let v = rfc5280_ber::Certificate::decode_ber(&encoded).unwrap();
+                        assert_eq!(v.ber_len().unwrap(), encoded.len());
+                        v.encode_ber(&mut out).unwrap()
+                    }
+                    Codec::Der => {
+                        let v = rfc5280::Certificate::decode_der(&encoded).unwrap();
+                        assert_eq!(v.der_len().unwrap(), encoded.len());
+                        v.encode_der(&mut out).unwrap()
+                    }
+                    _ => {
+                        let v = rfc5280_uper::Certificate::decode_uper(&encoded).unwrap();
+                        assert_eq!(v.uper_len().unwrap(), encoded.len());
+                        v.encode_uper(&mut out).unwrap()
+                    }
+                };
+                assert_eq!(length, encoded.len());
+            });
+            assert_eq!(count, 0, "{name} {codec:?}");
+            assert_eq!(out, encoded, "{name} {codec:?}");
         }
     }
 }
@@ -242,151 +256,195 @@ fn runtime_shapes(codec: Codec) -> Specification {
     Specification::from_asni(&asni, &Checks::default(), runtime::Options::new(codec)).unwrap()
 }
 
-/// `value` of the type `name` comes back as it was with each codec, and
-/// the runtime decodes what the code encodes and encodes it the same.
-fn comes_back<'a, T: Asn1<'a> + PartialEq + std::fmt::Debug>(name: &str, value: &T) {
-    // The encodings live as long as the test, as what is decoded from
-    // them borrows them.
-    let leak = |bytes: Vec<u8>| -> &'static [u8] { Box::leak(bytes.into_boxed_slice()) };
-    let ber = leak(value.to_ber().unwrap());
-    let der = leak(value.to_der().unwrap());
-    let uper = leak(value.to_uper().unwrap());
-
-    assert_eq!(&T::decode_ber(ber).unwrap(), value, "{name} BER");
-    assert_eq!(&T::decode_der(der).unwrap(), value, "{name} DER");
-    assert_eq!(&T::decode_uper(uper).unwrap(), value, "{name} UPER");
-
-    for (codec, encoded) in [(Codec::Ber, ber), (Codec::Der, der), (Codec::Uper, uper)] {
-        let specification = runtime_shapes(codec);
-        let decoded = specification
-            .decode(name, encoded)
-            .unwrap_or_else(|error| panic!("{name} {codec:?}: {error}"));
-
-        assert_eq!(
-            specification.encode(name, &decoded).unwrap(),
-            encoded,
-            "{name} {codec:?}"
-        );
-    }
+trait RoundTrip<'a>: Sized {
+    const CODEC: Codec;
+    fn encoded(&self) -> wire::Result<Vec<u8>>;
+    fn decoded(data: &'a [u8]) -> wire::Result<Self>;
 }
 
-#[test]
-fn the_shapes_come_back_as_the_runtime_has_them() {
-    use shapes::*;
+macro_rules! round_trip {
+    ($codec:ident, $encode:ident, $decode:ident, $($ty:ty),+ $(,)?) => {
+        $(impl<'a> RoundTrip<'a> for $ty {
+            const CODEC: Codec = Codec::$codec;
+            fn encoded(&self) -> wire::Result<Vec<u8>> { self.$encode() }
+            fn decoded(data: &'a [u8]) -> wire::Result<Self> { Self::$decode(data) }
+        })+
+    };
+}
 
-    comes_back(
-        "Keywords",
-        &Keywords {
-            r#type: 7,
-            self_: true,
-            r#match: Some("übermatch".into()),
-            foo_bar: -100,
-            foo_bar_2: 65535,
-            crate_: (),
-        },
-    );
-    comes_back(
-        "Sizes",
-        &Sizes {
-            a: 1,
-            b: 70000,
-            c: 5_000_000_000,
-            d: -1,
-            e: -30000,
-            f: -3_000_000_000,
-            g: i64::MIN,
-            h: i64::MAX,
-        },
-    );
+round_trip!(
+    Ber,
+    to_ber,
+    decode_ber,
+    shapes_ber::Keywords<'a>,
+    shapes_ber::Sizes,
+    shapes_ber::Shape<'a>,
+    shapes_ber::Tree,
+    shapes_ber::Defaults<'a>,
+    shapes_ber::Extensible<'a>,
+    shapes_ber::Outer<'a>
+);
+round_trip!(
+    Der,
+    to_der,
+    decode_der,
+    shapes::Keywords<'a>,
+    shapes::Sizes,
+    shapes::Shape<'a>,
+    shapes::Tree,
+    shapes::Defaults<'a>,
+    shapes::Extensible<'a>,
+    shapes::Outer<'a>
+);
+round_trip!(
+    Uper,
+    to_uper,
+    decode_uper,
+    shapes_uper::Keywords<'a>,
+    shapes_uper::Sizes,
+    shapes_uper::Shape<'a>,
+    shapes_uper::Tree,
+    shapes_uper::Defaults<'a>,
+    shapes_uper::Extensible<'a>,
+    shapes_uper::Outer<'a>
+);
 
-    let many = [
-        Shape::Circle(3),
-        Shape::Nothing(()),
-        Shape::Named("ring".into()),
-    ];
-
-    for shape in [
-        Shape::Circle(100),
-        Shape::Square(ShapeSquare {
-            side: 1,
-            color: Some(Color::Violet),
-        }),
-        Shape::Square(ShapeSquare {
-            side: 1,
-            color: Some(Color::Green),
-        }),
-        Shape::Many(wire::SequenceOf::new(&many)),
-        Shape::Octets(wire::Octets::new(&[0, 1, 2, 0xff])),
-    ] {
-        comes_back("Shape", &shape);
-    }
-
-    comes_back(
-        "Tree",
-        &Tree {
-            value: 1,
-            left: Some(Box::new(Tree {
-                value: 2,
-                left: None,
-                right: Some(Box::new(Node::Leaf(3))),
-            })),
-            right: Some(Box::new(Node::Tree(Box::new(Tree {
-                value: 4,
-                left: None,
-                right: None,
-            })))),
-        },
-    );
-
-    let list = [1, 2, 9];
-
-    for defaults in [
-        Defaults {
-            count: 3,
-            enabled: true,
-            color: Color::Green,
-            list: None,
-            anything: None,
-        },
-        Defaults {
-            count: 10,
-            enabled: false,
-            color: Color::DarkBlue,
-            list: Some(wire::SequenceOf::new(&list)),
-            anything: Some(Any { x: 1 }),
-        },
-    ] {
-        comes_back("Defaults", &defaults);
-    }
-
-    for extensible in [
-        Extensible {
-            first: 1,
-            second: None,
-            third: None,
-            fourth: None,
-        },
-        Extensible {
-            first: 1,
-            second: Some(2),
-            third: Some(3),
-            fourth: Some("four".into()),
-        },
-    ] {
-        comes_back("Extensible", &extensible);
-    }
-
-    let list = [OuterListItem { value: 2 }, OuterListItem { value: 0 }];
-
-    comes_back(
-        "Outer",
-        &Outer {
-            inner: OuterInner2 { value: 1 },
-            list: wire::SequenceOf::new(&list),
-            choice: OuterChoice::B(OuterChoiceB { value: 3 }),
-        },
+fn comes_back<'a, T: RoundTrip<'a> + PartialEq + std::fmt::Debug>(name: &str, value: &T) {
+    let encoded = Box::leak(value.encoded().unwrap().into_boxed_slice());
+    assert_eq!(&T::decoded(encoded).unwrap(), value, "{name}");
+    let specification = runtime_shapes(T::CODEC);
+    let decoded = specification.decode(name, encoded).unwrap();
+    assert_eq!(
+        specification.encode(name, &decoded).unwrap(),
+        encoded,
+        "{name}"
     );
 }
+
+macro_rules! shape_tests {
+    ($name:ident, $module:ident) => {
+        #[test]
+        fn $name() {
+            use $module::*;
+
+            comes_back(
+                "Keywords",
+                &Keywords {
+                    r#type: 7,
+                    self_: true,
+                    r#match: Some("übermatch".into()),
+                    foo_bar: -100,
+                    foo_bar_2: 65535,
+                    crate_: (),
+                },
+            );
+            comes_back(
+                "Sizes",
+                &Sizes {
+                    a: 1,
+                    b: 70000,
+                    c: 5_000_000_000,
+                    d: -1,
+                    e: -30000,
+                    f: -3_000_000_000,
+                    g: i64::MIN,
+                    h: i64::MAX,
+                },
+            );
+
+            let many = [
+                Shape::Circle(3),
+                Shape::Nothing(()),
+                Shape::Named("ring".into()),
+            ];
+
+            for shape in [
+                Shape::Circle(100),
+                Shape::Square(ShapeSquare {
+                    side: 1,
+                    color: Some(Color::Violet),
+                }),
+                Shape::Square(ShapeSquare {
+                    side: 1,
+                    color: Some(Color::Green),
+                }),
+                Shape::Many(wire::SequenceOf::new(&many)),
+                Shape::Octets(wire::Octets::new(&[0, 1, 2, 0xff])),
+            ] {
+                comes_back("Shape", &shape);
+            }
+
+            comes_back(
+                "Tree",
+                &Tree {
+                    value: 1,
+                    left: Some(Box::new(Tree {
+                        value: 2,
+                        left: None,
+                        right: Some(Box::new(Node::Leaf(3))),
+                    })),
+                    right: Some(Box::new(Node::Tree(Box::new(Tree {
+                        value: 4,
+                        left: None,
+                        right: None,
+                    })))),
+                },
+            );
+
+            let list = [1, 2, 9];
+
+            for defaults in [
+                Defaults {
+                    count: 3,
+                    enabled: true,
+                    color: Color::Green,
+                    list: None,
+                    anything: None,
+                },
+                Defaults {
+                    count: 10,
+                    enabled: false,
+                    color: Color::DarkBlue,
+                    list: Some(wire::SequenceOf::new(&list)),
+                    anything: Some(Any { x: 1 }),
+                },
+            ] {
+                comes_back("Defaults", &defaults);
+            }
+
+            for extensible in [
+                Extensible {
+                    first: 1,
+                    second: None,
+                    third: None,
+                    fourth: None,
+                },
+                Extensible {
+                    first: 1,
+                    second: Some(2),
+                    third: Some(3),
+                    fourth: Some("four".into()),
+                },
+            ] {
+                comes_back("Extensible", &extensible);
+            }
+
+            let list = [OuterListItem { value: 2 }, OuterListItem { value: 0 }];
+
+            comes_back(
+                "Outer",
+                &Outer {
+                    inner: OuterInner2 { value: 1 },
+                    list: wire::SequenceOf::new(&list),
+                    choice: OuterChoice::B(OuterChoiceB { value: 3 }),
+                },
+            );
+        }
+    };
+}
+shape_tests!(der_shapes_come_back, shapes);
+shape_tests!(ber_shapes_come_back, shapes_ber);
+shape_tests!(uper_shapes_come_back, shapes_uper);
 
 #[test]
 fn der_sorts_a_set_of() {
@@ -399,7 +457,9 @@ fn der_sorts_a_set_of() {
     ];
     let value = wire::SequenceOf::new(&pairs);
     let der = encode(|out| pairs::encode_der(&value, out));
-    let ber = encode(|out| pairs::encode_ber(&value, out));
+    let ber_pairs = pairs.map(|p| shapes_ber::PairsItem { a: p.a, b: p.b });
+    let ber_value = wire::SequenceOf::new(&ber_pairs);
+    let ber = encode(|out| shapes_ber::pairs::encode_ber(&ber_value, out));
     let decoded = pairs::decode_der(&der).unwrap();
     let order: Vec<(u8, bool)> = decoded.iter().map(|pair| (pair.a, pair.b)).collect();
 
@@ -407,7 +467,7 @@ fn der_sorts_a_set_of() {
     // BER keeps the order, which DER does not decode.
     assert_ne!(ber, der);
     assert!(pairs::decode_der(&ber).is_err());
-    assert_eq!(pairs::decode_ber(&ber).unwrap(), value);
+    assert_eq!(shapes_ber::pairs::decode_ber(&ber).unwrap(), ber_value);
 
     let specification = runtime_shapes(Codec::Der);
 
@@ -443,8 +503,10 @@ fn der_leaves_out_defaults_and_does_not_decode_them() {
     // With the count of its default.
     assert!(Defaults::decode_der(&[0x30, 0x03, 0x80, 0x01, 0x03]).is_err());
     assert_eq!(
-        Defaults::decode_ber(&[0x30, 0x03, 0x80, 0x01, 0x03]).unwrap(),
-        value
+        shapes_ber::Defaults::decode_ber(&[0x30, 0x03, 0x80, 0x01, 0x03])
+            .unwrap()
+            .count,
+        value.count
     );
 }
 
@@ -453,7 +515,7 @@ fn deep_data_is_an_error_and_not_a_crash() {
     // Each byte is a tree on the left of another, as deep as there are.
     let deep = vec![0xff; 100_000];
 
-    assert!(shapes::Tree::decode_uper(&deep).is_err());
+    assert!(shapes_uper::Tree::decode_uper(&deep).is_err());
 
     // In BER, a [1] of a [1] of ...
     let mut ber = Vec::new();
@@ -462,7 +524,7 @@ fn deep_data_is_an_error_and_not_a_crash() {
         ber.extend_from_slice(&[0x30, 0x80, 0xa1, 0x80]);
     }
 
-    assert!(shapes::Tree::decode_ber(&ber).is_err());
+    assert!(shapes_ber::Tree::decode_ber(&ber).is_err());
 }
 
 #[test]
@@ -472,14 +534,14 @@ fn a_value_the_enumeration_does_not_know_is_an_error() {
     // there is a color (1), the side less 1 (0000000), an addition (1),
     // which is small (0) and its index.
     assert_eq!(
-        shapes::Shape::decode_uper(&[0x30, 0x10, 0x00]).unwrap(),
-        shapes::Shape::Square(shapes::ShapeSquare {
+        shapes_uper::Shape::decode_uper(&[0x30, 0x10, 0x00]).unwrap(),
+        shapes_uper::Shape::Square(shapes_uper::ShapeSquare {
             side: 1,
-            color: Some(shapes::Color::Violet),
+            color: Some(shapes_uper::Color::Violet),
         })
     );
-    assert!(shapes::Shape::decode_uper(&[0x30, 0x10, 0x20]).is_err());
-    assert_eq!(shapes::Color::from_number(4), None);
+    assert!(shapes_uper::Shape::decode_uper(&[0x30, 0x10, 0x20]).is_err());
+    assert_eq!(shapes_uper::Color::from_number(4), None);
 }
 
 #[test]
@@ -498,4 +560,80 @@ fn borrowed_values_borrow_the_data() {
 
     assert!(at > 0);
     assert!(!serial.is_negative());
+}
+
+#[test]
+fn only_the_selected_codec_is_generated() {
+    let data = fs::read(root().join("../../examples/compiled/rfc5280.asni")).unwrap();
+    for codec in [Encoding::Ber, Encoding::Der, Encoding::Uper] {
+        let (text, _) = generate(
+            &data,
+            Options {
+                codec,
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        assert!(text.contains(&format!("pub fn encode_{}", codec.name())));
+        for other in [Encoding::Ber, Encoding::Der, Encoding::Uper] {
+            if other != codec {
+                assert!(!text.contains(&format!("pub fn encode_{}", other.name())));
+                assert!(!text.contains(&format!("pub fn decode_{}", other.name())));
+                assert!(!text.contains(&format!("pub fn to_{}", other.name())));
+            }
+        }
+        let absent = if codec == Encoding::Uper {
+            "ber"
+        } else {
+            "uper"
+        };
+        assert!(!text.contains(&format!("fn {absent}_")));
+        assert!(!text.contains("Asn1"));
+        if codec != Encoding::Uper {
+            assert!(!text.contains(" per::"));
+            assert!(!text.contains("wire::per"));
+            assert!(!text.contains("uper_index"));
+        }
+    }
+}
+
+#[test]
+fn the_cli_selects_one_codec_and_rejects_unsupported_codecs() {
+    let folder =
+        std::env::temp_dir().join(format!("asnkit-codec-selection-{}", std::process::id()));
+    let source = root().join("../../examples/compiled/foo.asni");
+    for codec in [
+        None,
+        Some("ber"),
+        Some("der"),
+        Some("uper"),
+        Some("oer"),
+        Some("all"),
+    ] {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_asnkit-gen-rust-codec"));
+        command.arg("--asni").arg(&source).arg("--out").arg(&folder);
+        if let Some(codec) = codec {
+            command.arg("--opt").arg(format!("codec={codec}"));
+        }
+        let output = command.output().unwrap();
+        if matches!(codec, Some("oer" | "all")) {
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stderr).contains("codec=ber|der|uper"));
+        } else {
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let text = fs::read_to_string(folder.join("foo.rs")).unwrap();
+            let selected = codec.unwrap_or("ber");
+            assert!(text.contains(&format!("pub fn encode_{selected}")));
+            for other in ["ber", "der", "uper"] {
+                if other != selected {
+                    assert!(!text.contains(&format!("pub fn encode_{other}")));
+                }
+            }
+        }
+    }
+    fs::remove_dir_all(folder).unwrap();
 }

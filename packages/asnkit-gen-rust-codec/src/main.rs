@@ -8,7 +8,8 @@
 //! asnkit-gen-rust-codec --asni FILE [--asnst FILE] --out FOLDER [--opt KEY=VALUE ...]
 //! ```
 //!
-//! It writes one Rust module to the folder. The options are `name`,
+//! It writes one Rust module for the selected codec to the folder.
+//! The options are `codec` (`ber`, the default, `der` or `uper`), `name`,
 //! which is the name of the module without `.rs` (default: that of the
 //! first file the specification is from), `no_std`, which is `true` for
 //! code that needs `alloc` and not `std` (default `false`), `integer`,
@@ -19,7 +20,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use asnkit_gen_rust_codec::{Error, Integer, Options, VERSION, generate};
+use asnkit_gen_rust_codec::{Encoding, Error, Integer, Options, VERSION, generate};
 
 const USAGE: &str =
     "usage: asnkit-gen-rust-codec --asni FILE [--asnst FILE] --out FOLDER [--opt KEY=VALUE ...]";
@@ -52,7 +53,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Option<Arguments>, String> {
             }
             "--help" | "-h" => {
                 println!(
-                    "{USAGE}\n\nMakes Rust code that encodes and decodes the types of a compiled ASN.1 specification with BER, DER and UPER. Run by `asnkitcc generate`."
+                    "{USAGE}\n\nMakes Rust code that encodes and decodes the types of a compiled ASN.1 specification with one selected codec: --opt codec=ber|der|uper (default ber). Run by `asnkitcc generate`."
                 );
 
                 return Ok(None);
@@ -83,6 +84,9 @@ fn run(arguments: &Arguments) -> Result<(), Error> {
         let (key, value) = item.split_once('=').unwrap_or((item, ""));
 
         match key {
+            "codec" if Encoding::parse(value).is_some() => {
+                options.codec = Encoding::parse(value).unwrap_or_default();
+            }
             "name" if !value.is_empty() => name = Some(value.to_string()),
             "no_std" if ["true", "false"].contains(&value) => options.no_std = value == "true",
             "unsupported" if ["skip", "error"].contains(&value) => {
@@ -93,7 +97,7 @@ fn run(arguments: &Arguments) -> Result<(), Error> {
             }
             _ => {
                 return Err(Error(format!(
-                    "Expected the option {item} as name=NAME, no_std=true|false, integer=i64|i128|big or unsupported=skip|error."
+                    "Expected the option {item} as codec=ber|der|uper, name=NAME, no_std=true|false, integer=i64|i128|big or unsupported=skip|error."
                 )));
             }
         }

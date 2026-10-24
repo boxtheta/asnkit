@@ -17,3 +17,8 @@ pub mod rfc5280;
 #[allow(dead_code)]
 #[path = "../../generated/shapes_no_std.rs"]
 pub mod shapes;
+
+#[rustfmt::skip]
+#[allow(dead_code)]
+#[path = "../../generated/rfc5280_ber.rs"]
+pub mod rfc5280_ber;

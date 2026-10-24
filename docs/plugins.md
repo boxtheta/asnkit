@@ -85,14 +85,16 @@ its `load()`, which the code that uses it loads (default `true`). See
 
 The third plugin, `asnkit-gen-rust-codec`, makes a Rust module that
 encodes and decodes the types of the specification with BER, DER and
-UPER, with code of its own for each type, as `asnkitrt::wire` has it,
+UPER, selected with `--plugin-opt codec=ber|der|uper` (default `ber`),
+with code of its own for each type using `asnkitrt::wire`,
 without the compiled specification: a value that is decoded borrows
 the data. Buffer-based encoding and borrowed decoding avoid allocations
 except for boxed recursive values; the `to_*` convenience methods
 allocate. It is for embedded targets, where the
 heap the runtime keeps a specification on is too much. Its options are
-`name`, `no_std` and `integer`, as those of `asnkit-gen-rust`, and
+`codec`, `name`, `no_std`, `integer` and
 `unsupported`, which is `skip` to leave out the types it does not
-support yet rather than to fail. See
+support yet rather than to fail. Only the selected codec's methods and
+helpers are emitted. See
 [`packages/asnkit-gen-rust-codec/README.md`](../packages/asnkit-gen-rust-codec/README.md)
 for installation from source; the plugin is not yet published.

@@ -9,7 +9,7 @@
 //!
 //!   cargo test --manifest-path packages/asnkit-gen-rust-codec/tests/vectors/Cargo.toml
 
-use asnkitrt::wire::{Asn1, Error, Result};
+use asnkitrt::wire::{Error, Result};
 
 include!(concat!(env!("OUT_DIR"), "/run.rs"));
 
@@ -30,41 +30,12 @@ fn encoded(encode: impl Fn(&mut [u8]) -> Result<usize>) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn by_trait<'a, T: Asn1<'a>>(codec: &str, data: &'a [u8]) -> Result<Vec<u8>> {
-    let value = match codec {
-        "ber" => T::decode_ber(data),
-        "der" => T::decode_der(data),
-        _ => T::decode_uper(data),
-    }?;
-
-    match codec {
-        "ber" => encoded(|out| value.encode_ber(out)),
-        "der" => encoded(|out| value.encode_der(out)),
-        _ => encoded(|out| value.encode_uper(out)),
-    }
-}
-
-type Decode<'a, T> = fn(&'a [u8]) -> Result<T>;
-type Encode<T> = fn(&T, &mut [u8]) -> Result<usize>;
-
-#[allow(clippy::too_many_arguments)]
 fn by_functions<'a, T>(
-    codec: &str,
     data: &'a [u8],
-    decode_ber: Decode<'a, T>,
-    decode_der: Decode<'a, T>,
-    decode_uper: Decode<'a, T>,
-    encode_ber: Encode<T>,
-    encode_der: Encode<T>,
-    encode_uper: Encode<T>,
+    decode: fn(&'a [u8]) -> Result<T>,
+    encode: fn(&T, &mut [u8]) -> Result<usize>,
 ) -> Result<Vec<u8>> {
-    let (decode, encode) = match codec {
-        "ber" => (decode_ber, encode_ber),
-        "der" => (decode_der, encode_der),
-        _ => (decode_uper, encode_uper),
-    };
     let value = decode(data)?;
-
     encoded(|out| encode(&value, out))
 }
 

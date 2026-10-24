@@ -1,7 +1,8 @@
 # asnkit-gen-rust-codec
 
 A plugin for `asnkitcc` that generates Rust code that encodes and
-decodes the types of an ASN.1 specification with BER, DER and UPER. The
+decodes the types of an ASN.1 specification with one selected codec:
+BER, DER or UPER. The
 code is made for the specification, which it does not load: it needs no
 `.asni` file. Buffer-based encoding and borrowed decoding avoid heap
 allocation except for boxed recursive values. It uses
@@ -14,13 +15,12 @@ install the compiler and plugin with:
 ```text
 $ cargo install --path packages/asnkitcc
 $ cargo install --path packages/asnkit-gen-rust-codec
-$ asnkitcc generate --plugin rust-codec -o src foo.asn    # Writes src/foo.rs.
+$ asnkitcc generate --plugin rust-codec --plugin-opt codec=uper -o src foo.asn    # Writes src/foo.rs.
 ```
 
 ```rust
 mod foo;
 
-use asnkitrt::wire::Asn1;
 use foo::Question;
 
 let question = Question { id: 1, question: "Is 1+1=3?".into() };
@@ -48,8 +48,10 @@ RFC 5280 keeps nothing on the heap, and a certificate decoded with it is
 a value of 432 bytes in that probe that borrows the rest from the data.
 
 Built for a Cortex-M4 (`thumbv7em-none-eabi`, `opt-level = "z"`, LTO),
-a program that decodes a certificate and encodes it again in DER or in
-UPER is shown below. Both flash probes use `default-features = false`,
+the earlier generator that emitted all three codecs produced the
+comparison below for a program using DER and UPER. These are baseline
+measurements, not measurements of the current single-codec output. Both
+flash probes use `default-features = false`,
 `codegen-units = 1`, `panic = "abort"` and `strip = true`; flash counts
 `.text`, `.rodata`, `.data` and `.ARM.exidx`. Heap figures are from the
 WebAssembly probe, not a Cortex-M4 execution, and exclude application
@@ -63,22 +65,77 @@ buffers and stack usage.
 The runtime does more: it encodes and decodes any specification it is
 given, with all of its codecs, and checks constraints.
 
+## Generated-code benchmarks
+
+Run from the repository root:
+
+```sh
+cargo bench -p asnkit-gen-rust-codec --bench codecs
+```
+
+The benchmark uses the current separate BER, DER and UPER generated RFC
+5280 modules and all 37 DER certificates in `asnkitrt-rs/tests/fixtures/x509`.
+The interpreter converts the same certificates to each wire format during
+setup. Every generated decode/length/encode result is checked against that
+input before timing. Setup, file access, allocation checks and output-buffer
+allocation are outside the timed loops.
+
+Measured on Apple M5, `aarch64-apple-darwin`, Rust 1.99.1, using Cargo's
+standard optimized bench profile (`opt-level = 3`, no LTO). Times are
+microseconds per certificate, with equal weight per fixture, taking the
+median of seven batches after at least 30 ms of calibration/warm-up per
+operation. These are local throughput measurements, not latency guarantees.
+
+| Selected codec | Decode | Encoded length | Buffer encode | Decode + buffer encode |
+|---|---:|---:|---:|---:|
+| BER | 0.737 µs | 1.148 µs | 1.515 µs | 2.131 µs |
+| DER | 0.741 µs | 1.161 µs | 1.530 µs | 2.165 µs |
+| UPER | 0.757 µs | 3.103 µs | 3.642 µs | 4.516 µs |
+
+Encoding and length timings use values decoded before timing. Decoding
+returns borrowing views, including lazy `SequenceOf` collections; it does
+not materialize an owned tree or visit every element through an application
+iterator. Round-trip timing calls decode then encode, without a separate
+length call. The harness uses `black_box` on inputs and results.
+
+| Selected codec | Decoded value, inline | Encoded input / required output | Decode + length + buffer encode heap | `to_*()` heap |
+|---|---:|---:|---:|---:|
+| BER | 768 B | 370–1,101 B each | 0 allocations, 0 B peak | 1 allocation, 370–1,101 B |
+| DER | 768 B | 370–1,101 B each | 0 allocations, 0 B peak | 1 allocation, 370–1,101 B |
+| UPER | 768 B | 313–1,026 B each | 0 allocations, 0 B peak | 1 allocation, 313–1,026 B |
+
+Heap counts cover all 37 certificates. `to_*()` figures are per certificate;
+requested bytes and peak live bytes are equal here and exclude allocator
+metadata. The 768 B figure is `size_of::<Certificate>()` on this 64-bit target,
+not peak stack usage. The decoded value borrows the input, which must stay
+alive. With distinct input and exactly sized output buffers, their combined
+storage plus the inline value is 1,508–2,970 B for BER/DER and 1,394–2,820 B
+for UPER. These sums exclude call-stack temporaries, allocator overhead and
+harness storage; they are not total process RAM or measured peak stack.
+The earlier 432 B WebAssembly result above used a different target.
+
 ## Encoding and decoding
 
-Each struct and enum of a named type implements `asnkitrt::wire::Asn1`:
+Each named struct and enum has inherent methods for the selected codec.
+For example, `codec=der` generates:
 
-- `encode_ber()`, `encode_der()` and `encode_uper()` write the value
-  into a buffer that is given, and return how many bytes it is. If the
-  buffer is too small they return `Error::BufferTooSmall` with the size
-  it needs, which `ber_len()`, `der_len()` and `uper_len()` also tell.
-  `to_ber()`, `to_der()` and `to_uper()` are allocating convenience
-  methods that return a `Vec`; there is no separate `alloc` feature.
-- `decode_ber()`, `decode_der()` and `decode_uper()` decode a value that
-  borrows the data. `decode_der()` checks that the data is DER.
+- `encode_der(&mut buffer)`, which returns the number of bytes written,
+  or `Error::BufferTooSmall` with the required size.
+- `der_len()`, which returns the required buffer size.
+- `to_der()`, an allocating convenience method returning a `Vec`.
+- `decode_der(&data)`, which checks DER and returns a value borrowing
+  the input.
 
-A named type that is not a struct or an enum of its own, as
-`Name ::= UTF8String`, is a `type` with a module of the same functions:
-`name::encode_der(&value, &mut buffer)`.
+BER and UPER use the corresponding `_ber` and `_uper` names. Methods
+and helpers for the other codecs are omitted; generated types no longer
+implement the runtime's all-codec `Asn1` trait. To use several codecs,
+generate a separate module for each using the `name` option. These
+modules define separate Rust types.
+
+A named type that is an alias, such as `Name ::= UTF8String`, has a
+module with encoding and decoding functions for the selected codec,
+for example `name::encode_der(&value, &mut buffer)` and
+`name::decode_der(&data)`.
 
 To avoid allocations, use the buffer-based `encode_*` methods and
 borrowed views. Recursive values stored in a `Box` still allocate when
@@ -118,6 +175,11 @@ holds it and the member, and a name that is taken gets a number.
 ## Options
 
 Options are given with `--plugin-opt KEY=VALUE`:
+
+`codec`
+: The single codec to generate: `ber` (default), `der` or `uper`.
+  Other values are rejected. This is independent of `asnkitcc -e`,
+  which selects the input ASN.1 source text encoding.
 
 `name`
 : The name of the module, without `.rs`. Default: the name of the first
@@ -168,8 +230,9 @@ Where it differs from the runtime, on purpose:
 types, and checks that what it encodes the runtime decodes and encodes
 the same, that the certificates of `asnkitrt` come back as they were,
 and that decoding and encoding them allocates nothing.
-`tests/vectors` holds the code of each specification of
-`tests/vectors` of the repository to the vectors of BER, DER and UPER:
+`tests/vectors` generates a separate module for each supported codec
+of each specification, and checks it against the repository's BER, DER
+and UPER vectors:
 
 ```text
 cargo test --release --manifest-path packages/asnkit-gen-rust-codec/tests/vectors/Cargo.toml

@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Makes the text of a Rust module that encodes and decodes the types of
-//! a compiled ASN.1 specification with BER, DER and UPER, with code of
+//! a compiled ASN.1 specification with one selected codec (BER, DER or
+//! UPER), with code of
 //! its own for each type, without the specification and without
 //! allocating.
 //!
@@ -75,8 +76,38 @@ impl Integer {
     }
 }
 
+/// The single codec emitted by the generator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Encoding {
+    #[default]
+    Ber,
+    Der,
+    Uper,
+}
+
+impl Encoding {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "ber" => Some(Self::Ber),
+            "der" => Some(Self::Der),
+            "uper" => Some(Self::Uper),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ber => "ber",
+            Self::Der => "der",
+            Self::Uper => "uper",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Options {
+    /// Emit only this codec (default: BER).
+    pub codec: Encoding,
     /// The code needs `alloc` and not `std`.
     pub no_std: bool,
     pub integer: Integer,
@@ -135,7 +166,7 @@ pub struct GeneratedType {
     /// The name of its Rust type.
     pub rust: String,
     /// The module of its functions, if it is not a struct or an enum of
-    /// its own, which implement `Asn1`.
+    /// its own, which have inherent methods for the selected codec.
     pub functions: Option<String>,
 }
 
@@ -792,7 +823,7 @@ impl<'a> Generator<'a> {
             .join(" | ")
     }
 
-    /// The functions of the type `id`: its BER and UPER, both ways.
+    /// The functions of the type `id` for the selected codec, both ways.
     fn node_functions(&mut self, id: TypeId, out: &mut String) {
         let node = &self.types.nodes[id];
         let concrete = node.concrete;
@@ -809,249 +840,257 @@ impl<'a> Generator<'a> {
             (tags.clone(), None)
         };
 
-        // BER, writing.
-        let mut body = String::new();
+        if self.options.codec != Encoding::Uper {
+            // BER, writing.
+            let mut body = String::new();
 
-        for (index, tag) in explicit.iter().enumerate() {
-            let _ = writeln!(
-                body,
-                "    let t{index} = w.open({}, true, {});",
-                class(tag.class),
-                tag.number
-            );
-        }
-
-        if let Some(base) = base {
-            let _ = writeln!(
-                body,
-                "    let b = w.open({}, {}, {});",
-                class(base.class),
-                base.constructed,
-                base.number
-            );
-        }
-
-        let contents = match kind {
-            Kind::Boolean => "w.boolean(*v);".to_string(),
-            Kind::Integer(_) if self.is_big(id) => "w.big_integer(v);".to_string(),
-            Kind::Integer(_) if ty == "i128" => "w.integer(*v);".to_string(),
-            Kind::Integer(_) => "w.integer(i128::from(*v));".to_string(),
-            Kind::Null => "let _ = v;".to_string(),
-            Kind::BitString(named) => format!("w.bit_string(v, {}, der);", !named.is_empty()),
-            Kind::OctetString | Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
-                "w.octets(v);".to_string()
+            for (index, tag) in explicit.iter().enumerate() {
+                let _ = writeln!(
+                    body,
+                    "    let t{index} = w.open({}, true, {});",
+                    class(tag.class),
+                    tag.number
+                );
             }
-            Kind::ObjectIdentifier => "w.oid(v);".to_string(),
-            Kind::Enumerated { .. } => "w.integer(i128::from(v.number()));".to_string(),
-            Kind::Str(string) => format!("w.text(v, wire::StrKind::{string:?})?;"),
-            Kind::Utc => "w.utc_time(v, der);".to_string(),
-            Kind::Generalized => "w.generalized_time(v, der);".to_string(),
-            Kind::Sequence(_) | Kind::Set(_) | Kind::Choice(_) => {
-                format!(
-                    "ber_write_contents_{}(v, w, der)?;",
-                    self.need_content(concrete)
-                )
+
+            if let Some(base) = base {
+                let _ = writeln!(
+                    body,
+                    "    let b = w.open({}, {}, {});",
+                    class(base.class),
+                    base.constructed,
+                    base.number
+                );
             }
-            Kind::SequenceOf(element) | Kind::SetOf(element) => format!(
-                "v.write_ber(w, der, {}, ber_write_{})?;",
-                matches!(kind, Kind::SetOf(_)),
-                self.need(*element)
-            ),
-            _ => unreachable!("not supported"),
-        };
 
-        let _ = writeln!(body, "    {contents}");
-
-        if base.is_some() {
-            body.push_str("    w.close(b);\n");
-        }
-
-        for index in (0..explicit.len()).rev() {
-            let _ = writeln!(body, "    w.close(t{index});");
-        }
-
-        let _ = write!(
-            out,
-            "#[allow(unused_variables)]\nfn ber_write_{id}(v: &{argument}, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {{\n{body}    Ok(())\n}}\n\n"
-        );
-
-        // BER, reading.
-        let mut body = String::new();
-
-        for (index, tag) in explicit.iter().enumerate() {
-            let _ = writeln!(
-                body,
-                "    let t{index} = r.constructed({}, {})?;",
-                class(tag.class),
-                tag.number
-            );
-        }
-
-        let read = match (kind, base) {
-            (Kind::Choice(_), _) => {
-                format!("ber_read_contents_{}(r)?", self.need_content(concrete))
-            }
-            (Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType, _) => {
-                "wire::Octets::new(r.any()?)".to_string()
-            }
-            (_, Some(base)) => {
-                let tag = format!("{}, {}", class(base.class), base.number);
-                let primitive = |read: &str| {
-                    format!("{{\n        let c = r.primitive({tag})?;\n        {read}\n    }}")
-                };
-
-                match kind {
-                    Kind::Boolean => primitive("ber::boolean(r, c)?"),
-                    Kind::Integer(_) if self.is_big(id) => primitive("ber::big_integer(r, c)?"),
-                    Kind::Integer(_) => primitive("ber::fit(r, ber::integer(r, c)?)?"),
-                    Kind::Null => primitive("ber::null(r, c)?"),
-                    Kind::BitString(named) => {
-                        format!("r.bit_string({tag}, {})?", !named.is_empty())
-                    }
-                    Kind::OctetString => format!("r.octet_string({tag})?"),
-                    Kind::ObjectIdentifier => primitive("ber::oid(r, c)?"),
-                    Kind::Enumerated { .. } => primitive(&format!(
-                        "{}::from_number(ber::integer(r, c)?)\n            .ok_or_else(|| wire::Error::decode(\"Expected an enumeration value.\", r.position()))?",
-                        self.names[&concrete]
-                    )),
-                    Kind::Str(string) => format!("r.text({tag}, wire::StrKind::{string:?})?"),
-                    Kind::Utc => primitive("ber::utc_time(r, c)?"),
-                    Kind::Generalized => primitive("ber::generalized_time(r, c)?"),
-                    Kind::Sequence(members) | Kind::Set(members) => {
-                        let close = if members.additions.is_some() {
-                            "skip_rest"
-                        } else {
-                            "close"
-                        };
-
-                        format!(
-                            "{{\n        let g = r.constructed({tag})?;\n        let v = ber_read_contents_{}(r, &g)?;\n        r.{close}(g)?;\n        v\n    }}",
-                            self.need_content(concrete)
-                        )
-                    }
-                    Kind::SequenceOf(element) | Kind::SetOf(element) => format!(
-                        "{{\n        let g = r.constructed({tag})?;\n        let v = wire::SequenceOf::read_ber(r, &g, {}, ber_read_{})?;\n        r.close(g)?;\n        v\n    }}",
-                        matches!(kind, Kind::SetOf(_)),
-                        self.need(*element)
-                    ),
-                    _ => unreachable!("not supported"),
+            let contents = match kind {
+                Kind::Boolean => "w.boolean(*v);".to_string(),
+                Kind::Integer(_) if self.is_big(id) => "w.big_integer(v);".to_string(),
+                Kind::Integer(_) if ty == "i128" => "w.integer(*v);".to_string(),
+                Kind::Integer(_) => "w.integer(i128::from(*v));".to_string(),
+                Kind::Null => "let _ = v;".to_string(),
+                Kind::BitString(named) => format!("w.bit_string(v, {}, der);", !named.is_empty()),
+                Kind::OctetString | Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
+                    "w.octets(v);".to_string()
                 }
+                Kind::ObjectIdentifier => "w.oid(v);".to_string(),
+                Kind::Enumerated { .. } => "w.integer(i128::from(v.number()));".to_string(),
+                Kind::Str(string) => format!("w.text(v, wire::StrKind::{string:?})?;"),
+                Kind::Utc => "w.utc_time(v, der);".to_string(),
+                Kind::Generalized => "w.generalized_time(v, der);".to_string(),
+                Kind::Sequence(_) | Kind::Set(_) | Kind::Choice(_) => {
+                    format!(
+                        "ber_write_contents_{}(v, w, der)?;",
+                        self.need_content(concrete)
+                    )
+                }
+                Kind::SequenceOf(element) | Kind::SetOf(element) => format!(
+                    "v.write_ber(w, der, {}, ber_write_{})?;",
+                    matches!(kind, Kind::SetOf(_)),
+                    self.need(*element)
+                ),
+                _ => unreachable!("not supported"),
+            };
+
+            let _ = writeln!(body, "    {contents}");
+
+            if base.is_some() {
+                body.push_str("    w.close(b);\n");
             }
-            _ => unreachable!("a type with a tag of its own has one"),
-        };
 
-        let _ = writeln!(body, "    let v = {read};");
+            for index in (0..explicit.len()).rev() {
+                let _ = writeln!(body, "    w.close(t{index});");
+            }
 
-        for index in (0..explicit.len()).rev() {
-            let _ = writeln!(body, "    r.close(t{index})?;");
+            let _ = write!(
+                out,
+                "#[allow(unused_variables)]\nfn ber_write_{id}(v: &{argument}, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {{\n{body}    Ok(())\n}}\n\n"
+            );
+
+            // BER, reading.
+            let mut body = String::new();
+
+            for (index, tag) in explicit.iter().enumerate() {
+                let _ = writeln!(
+                    body,
+                    "    let t{index} = r.constructed({}, {})?;",
+                    class(tag.class),
+                    tag.number
+                );
+            }
+
+            let read = match (kind, base) {
+                (Kind::Choice(_), _) => {
+                    format!("ber_read_contents_{}(r)?", self.need_content(concrete))
+                }
+                (Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType, _) => {
+                    "wire::Octets::new(r.any()?)".to_string()
+                }
+                (_, Some(base)) => {
+                    let tag = format!("{}, {}", class(base.class), base.number);
+                    let primitive = |read: &str| {
+                        format!("{{\n        let c = r.primitive({tag})?;\n        {read}\n    }}")
+                    };
+
+                    match kind {
+                        Kind::Boolean => primitive("ber::boolean(r, c)?"),
+                        Kind::Integer(_) if self.is_big(id) => primitive("ber::big_integer(r, c)?"),
+                        Kind::Integer(_) => primitive("ber::fit(r, ber::integer(r, c)?)?"),
+                        Kind::Null => primitive("ber::null(r, c)?"),
+                        Kind::BitString(named) => {
+                            format!("r.bit_string({tag}, {})?", !named.is_empty())
+                        }
+                        Kind::OctetString => format!("r.octet_string({tag})?"),
+                        Kind::ObjectIdentifier => primitive("ber::oid(r, c)?"),
+                        Kind::Enumerated { .. } => primitive(&format!(
+                            "{}::from_number(ber::integer(r, c)?)\n            .ok_or_else(|| wire::Error::decode(\"Expected an enumeration value.\", r.position()))?",
+                            self.names[&concrete]
+                        )),
+                        Kind::Str(string) => format!("r.text({tag}, wire::StrKind::{string:?})?"),
+                        Kind::Utc => primitive("ber::utc_time(r, c)?"),
+                        Kind::Generalized => primitive("ber::generalized_time(r, c)?"),
+                        Kind::Sequence(members) | Kind::Set(members) => {
+                            let close = if members.additions.is_some() {
+                                "skip_rest"
+                            } else {
+                                "close"
+                            };
+
+                            format!(
+                                "{{\n        let g = r.constructed({tag})?;\n        let v = ber_read_contents_{}(r, &g)?;\n        r.{close}(g)?;\n        v\n    }}",
+                                self.need_content(concrete)
+                            )
+                        }
+                        Kind::SequenceOf(element) | Kind::SetOf(element) => format!(
+                            "{{\n        let g = r.constructed({tag})?;\n        let v = wire::SequenceOf::read_ber(r, &g, {}, ber_read_{})?;\n        r.close(g)?;\n        v\n    }}",
+                            matches!(kind, Kind::SetOf(_)),
+                            self.need(*element)
+                        ),
+                        _ => unreachable!("not supported"),
+                    }
+                }
+                _ => unreachable!("a type with a tag of its own has one"),
+            };
+
+            let _ = writeln!(body, "    let v = {read};");
+
+            for index in (0..explicit.len()).rev() {
+                let _ = writeln!(body, "    r.close(t{index})?;");
+            }
+
+            let _ = write!(
+                out,
+                "#[allow(unused_variables, clippy::let_unit_value)]\nfn ber_read_{id}<'a>(r: &mut ber::Reader<'a>) -> wire::Result<{ty}> {{\n{body}    Ok(v)\n}}\n\n"
+            );
         }
 
-        let _ = write!(
-            out,
-            "#[allow(unused_variables, clippy::let_unit_value)]\nfn ber_read_{id}<'a>(r: &mut ber::Reader<'a>) -> wire::Result<{ty}> {{\n{body}    Ok(v)\n}}\n\n"
-        );
+        if self.options.codec == Encoding::Uper {
+            // UPER, writing.
+            let size = range(node.effective_size);
+            let write = match kind {
+                Kind::Boolean => "w.bit(*v);".to_string(),
+                Kind::Integer(_) if self.is_big(id) => {
+                    format!("per::big_integer(w, v, {})?;", range(node.effective_range))
+                }
+                Kind::Integer(_) if ty == "i128" => {
+                    format!("per::integer(w, *v, {})?;", range(node.effective_range))
+                }
+                Kind::Integer(_) => format!(
+                    "per::integer(w, i128::from(*v), {})?;",
+                    range(node.effective_range)
+                ),
+                Kind::Null => "let _ = (v, w);".to_string(),
+                Kind::BitString(named) => {
+                    format!("per::bit_string(w, v, {}, {size})?;", !named.is_empty())
+                }
+                Kind::OctetString => format!("per::octet_string(w, v, {size})?;"),
+                Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
+                    "per::octet_string(w, v, None)?;".to_string()
+                }
+                Kind::ObjectIdentifier => "per::oid(w, v);".to_string(),
+                Kind::Enumerated { root, additions } => format!(
+                    "per::enumerated(w, {}, {}, v.uper_index());",
+                    root.len(),
+                    additions.is_some()
+                ),
+                Kind::Str(string) if is_known(*string) => {
+                    let known = self.known(id, *string);
 
-        // UPER, writing.
-        let size = range(node.effective_size);
-        let write = match kind {
-            Kind::Boolean => "w.bit(*v);".to_string(),
-            Kind::Integer(_) if self.is_big(id) => {
-                format!("per::big_integer(w, v, {})?;", range(node.effective_range))
-            }
-            Kind::Integer(_) if ty == "i128" => {
-                format!("per::integer(w, *v, {})?;", range(node.effective_range))
-            }
-            Kind::Integer(_) => format!(
-                "per::integer(w, i128::from(*v), {})?;",
-                range(node.effective_range)
-            ),
-            Kind::Null => "let _ = (v, w);".to_string(),
-            Kind::BitString(named) => {
-                format!("per::bit_string(w, v, {}, {size})?;", !named.is_empty())
-            }
-            Kind::OctetString => format!("per::octet_string(w, v, {size})?;"),
-            Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
-                "per::octet_string(w, v, None)?;".to_string()
-            }
-            Kind::ObjectIdentifier => "per::oid(w, v);".to_string(),
-            Kind::Enumerated { root, additions } => format!(
-                "per::enumerated(w, {}, {}, v.uper_index());",
-                root.len(),
-                additions.is_some()
-            ),
-            Kind::Str(string) if is_known(*string) => {
-                let known = self.known(id, *string);
+                    format!("per::known_string(w, v, {size}, &{known})?;")
+                }
+                Kind::Str(string) => {
+                    format!("per::other_string(w, v, wire::StrKind::{string:?})?;")
+                }
+                Kind::Utc => "per::utc_time(w, v)?;".to_string(),
+                Kind::Generalized => "per::generalized_time(w, v)?;".to_string(),
+                Kind::Sequence(_) | Kind::Set(_) | Kind::Choice(_) => {
+                    format!(
+                        "uper_write_contents_{}(v, w)?;",
+                        self.need_content(concrete)
+                    )
+                }
+                Kind::SequenceOf(element) | Kind::SetOf(element) => {
+                    format!(
+                        "v.write_uper(w, {size}, uper_write_{})?;",
+                        self.need(*element)
+                    )
+                }
+                _ => unreachable!("not supported"),
+            };
 
-                format!("per::known_string(w, v, {size}, &{known})?;")
-            }
-            Kind::Str(string) => format!("per::other_string(w, v, wire::StrKind::{string:?})?;"),
-            Kind::Utc => "per::utc_time(w, v)?;".to_string(),
-            Kind::Generalized => "per::generalized_time(w, v)?;".to_string(),
-            Kind::Sequence(_) | Kind::Set(_) | Kind::Choice(_) => {
-                format!(
-                    "uper_write_contents_{}(v, w)?;",
-                    self.need_content(concrete)
-                )
-            }
-            Kind::SequenceOf(element) | Kind::SetOf(element) => {
-                format!(
-                    "v.write_uper(w, {size}, uper_write_{})?;",
+            let _ = write!(
+                out,
+                "#[allow(unused_variables)]\nfn uper_write_{id}(v: &{argument}, w: &mut per::Writer<'_>) -> wire::Result<()> {{\n    {write}\n    Ok(())\n}}\n\n"
+            );
+
+            // UPER, reading.
+            let read = match kind {
+                Kind::Boolean => "r.bit()?".to_string(),
+                Kind::Integer(_) if self.is_big(id) => {
+                    format!("per::read_big_integer(r, {})?", range(node.effective_range))
+                }
+                Kind::Integer(_) => format!(
+                    "{{\n        let n = per::read_integer(r, {})?;\n        per::fit(r, n)?\n    }}",
+                    range(node.effective_range)
+                ),
+                Kind::Null => "{\n        let _ = r;\n    }".to_string(),
+                Kind::BitString(_) => format!("per::read_bit_string(r, {size})?"),
+                Kind::OctetString => format!("per::read_octet_string(r, {size})?"),
+                Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
+                    "per::read_unbound_octets(r)?".to_string()
+                }
+                Kind::ObjectIdentifier => "per::read_oid(r)?".to_string(),
+                Kind::Enumerated { root, additions } => format!(
+                    "{}::from_uper_index(per::read_enumerated(r, {}, {})?)\n        .ok_or_else(|| wire::Error::decode(\"Expected an enumeration value.\", r.position()))?",
+                    self.names[&concrete],
+                    root.len(),
+                    additions.is_some()
+                ),
+                Kind::Str(string) if is_known(*string) => {
+                    let known = self.known(id, *string);
+
+                    format!("per::read_known_string(r, {size}, &{known})?")
+                }
+                Kind::Str(string) => {
+                    format!("per::read_other_string(r, wire::StrKind::{string:?})?")
+                }
+                Kind::Utc => "per::read_utc_time(r)?".to_string(),
+                Kind::Generalized => "per::read_generalized_time(r)?".to_string(),
+                Kind::Sequence(_) | Kind::Set(_) | Kind::Choice(_) => {
+                    format!("uper_read_contents_{}(r)?", self.need_content(concrete))
+                }
+                Kind::SequenceOf(element) | Kind::SetOf(element) => format!(
+                    "wire::SequenceOf::read_uper(r, {size}, uper_read_{})?",
                     self.need(*element)
-                )
-            }
-            _ => unreachable!("not supported"),
-        };
+                ),
+                _ => unreachable!("not supported"),
+            };
 
-        let _ = write!(
-            out,
-            "#[allow(unused_variables)]\nfn uper_write_{id}(v: &{argument}, w: &mut per::Writer<'_>) -> wire::Result<()> {{\n    {write}\n    Ok(())\n}}\n\n"
-        );
-
-        // UPER, reading.
-        let read = match kind {
-            Kind::Boolean => "r.bit()?".to_string(),
-            Kind::Integer(_) if self.is_big(id) => {
-                format!("per::read_big_integer(r, {})?", range(node.effective_range))
-            }
-            Kind::Integer(_) => format!(
-                "{{\n        let n = per::read_integer(r, {})?;\n        per::fit(r, n)?\n    }}",
-                range(node.effective_range)
-            ),
-            Kind::Null => "{\n        let _ = r;\n    }".to_string(),
-            Kind::BitString(_) => format!("per::read_bit_string(r, {size})?"),
-            Kind::OctetString => format!("per::read_octet_string(r, {size})?"),
-            Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
-                "per::read_unbound_octets(r)?".to_string()
-            }
-            Kind::ObjectIdentifier => "per::read_oid(r)?".to_string(),
-            Kind::Enumerated { root, additions } => format!(
-                "{}::from_uper_index(per::read_enumerated(r, {}, {})?)\n        .ok_or_else(|| wire::Error::decode(\"Expected an enumeration value.\", r.position()))?",
-                self.names[&concrete],
-                root.len(),
-                additions.is_some()
-            ),
-            Kind::Str(string) if is_known(*string) => {
-                let known = self.known(id, *string);
-
-                format!("per::read_known_string(r, {size}, &{known})?")
-            }
-            Kind::Str(string) => format!("per::read_other_string(r, wire::StrKind::{string:?})?"),
-            Kind::Utc => "per::read_utc_time(r)?".to_string(),
-            Kind::Generalized => "per::read_generalized_time(r)?".to_string(),
-            Kind::Sequence(_) | Kind::Set(_) | Kind::Choice(_) => {
-                format!("uper_read_contents_{}(r)?", self.need_content(concrete))
-            }
-            Kind::SequenceOf(element) | Kind::SetOf(element) => format!(
-                "wire::SequenceOf::read_uper(r, {size}, uper_read_{})?",
-                self.need(*element)
-            ),
-            _ => unreachable!("not supported"),
-        };
-
-        let _ = write!(
-            out,
-            "#[allow(unused_variables, clippy::let_unit_value)]\nfn uper_read_{id}<'a>(r: &mut per::Reader<'a>) -> wire::Result<{ty}> {{\n    let v = {read};\n\n    Ok(v)\n}}\n\n"
-        );
+            let _ = write!(
+                out,
+                "#[allow(unused_variables, clippy::let_unit_value)]\nfn uper_read_{id}<'a>(r: &mut per::Reader<'a>) -> wire::Result<{ty}> {{\n    let v = {read};\n\n    Ok(v)\n}}\n\n"
+            );
+        }
     }
 
     /// A member's value of the type `id`, read by `read`, on the heap if
@@ -1149,486 +1188,497 @@ impl<'a> Generator<'a> {
         // The name of the variable of a field, which is not that of one of
         // the function.
         let local = |field: &str| format!("f_{}", field.trim_start_matches("r#"));
-
-        // BER, writing.
-        let mut body = String::new();
-
-        if is_set {
-            body.push_str("    let start = w.len();\n");
-        }
-
-        for member in ordered
-            .iter()
-            .copied()
-            .chain(additions.iter().map(|field| &field.1))
-        {
-            let (field, member, presence, _) = field_of(member);
-            let function = self.need(member.ty);
-
-            match presence {
-                Presence::Required => {
-                    let _ = writeln!(body, "    ber_write_{function}(&v.{field}, w, der)?;");
-                }
-                Presence::Optional => {
-                    let _ = writeln!(
-                        body,
-                        "    if let Some(x) = &v.{field} {{\n        ber_write_{function}(x, w, der)?;\n    }}"
-                    );
-                }
-                Presence::Default(default) => {
-                    let _ = writeln!(
-                        body,
-                        "    if {} {{\n        ber_write_{function}(&v.{field}, w, der)?;\n    }}",
-                        self.not_default(member, &format!("&v.{field}"), default)
-                    );
-                }
-            }
-        }
-
-        if is_set {
-            body.push_str("    if der {\n        w.sort_members(start);\n    }\n");
-        }
-
-        let _ = write!(
-            out,
-            "#[allow(unused_variables)]\nfn ber_write_contents_{id}(v: &{argument}, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {{\n{body}    Ok(())\n}}\n\n"
-        );
-
-        // BER, reading.
-        let mut body = String::new();
-        let missing =
-            "wire::Error::decode(\"A member is missing and has no default value.\", r.position())";
-        let encoded_default = "wire::Error::decode(\"A member is encoded with its default value, which DER leaves out.\", r.position())";
-
-        if is_set {
-            // In any order, which DER has as that of the tags.
-            for (field, _, _, _) in fields {
-                let field = &local(field);
-                let _ = writeln!(body, "    let mut {field} = None;");
-            }
-
-            if fields.is_empty() {
-                // Nothing, or what a later version adds to it.
-                if members.additions.is_some() {
-                    body.push_str(
-                        "    while r.peek_in(g)?.is_some() {\n        r.any()?;\n    }\n",
-                    );
-                } else {
-                    let _ = writeln!(
-                        body,
-                        "    if r.peek_in(g)?.is_some() {{\n        return Err(wire::Error::decode(\"Expected the tag of a member.\", r.position()));\n    }}"
-                    );
-                }
-            } else {
-                body.push_str("    let mut last = None;\n");
-                body.push_str("    while let Some(tag) = r.peek_in(g)? {\n");
-                body.push_str("        if r.der() {\n            r.check_member_order(&mut last, tag)?;\n        }\n\n");
-                body.push_str("        match tag {\n");
-
-                let mut any = None;
-
-                for (field, member, _, boxed) in fields {
-                    let field = &local(field);
-                    let function = self.need(member.ty);
-                    let pattern = self.first_tags(member.ty);
-                    let read = Generator::boxed(format!("ber_read_{function}(r)?"), *boxed);
-
-                    if pattern == "_" {
-                        any = Some(format!(
-                            "            _ if {field}.is_none() => {field} = Some({read}),\n"
-                        ));
-                    } else {
-                        let _ = writeln!(
-                            body,
-                            "            {pattern} if {field}.is_none() => {field} = Some({read}),"
-                        );
-                    }
-                }
-
-                if let Some(any) = any {
-                    body.push_str(&any);
-                }
-
-                if members.additions.is_some() {
-                    body.push_str("            _ => {\n                r.any()?;\n            }\n");
-                } else {
-                    let _ = writeln!(
-                        body,
-                        "            _ => return Err(wire::Error::decode(\"Expected the tag of a member.\", r.position())),"
-                    );
-                }
-
-                body.push_str("        }\n    }\n\n");
-            }
-
-            for (field, member, presence, _) in fields {
-                let field = &local(field);
-                match presence {
-                    Presence::Required => {
-                        let _ =
-                            writeln!(body, "    let {field} = {field}.ok_or_else(|| {missing})?;");
-                    }
-                    Presence::Optional => {}
-                    Presence::Default(default) => {
-                        let _ = writeln!(
-                            body,
-                            "    let {field} = match {field} {{\n        Some(x) if r.der() && !({}) => return Err({encoded_default}),\n        Some(x) => x,\n        None => {default},\n    }};",
-                            self.not_default(member, "&x", default)
-                        );
-                    }
-                }
-            }
-        } else {
-            for (field, member, presence, boxed) in ordered
-                .iter()
-                .copied()
-                .chain(additions.iter().map(|field| &field.1))
-                .map(field_of)
-            {
-                let field = &local(field);
-                let function = self.need(member.ty);
-                let read = Generator::boxed(format!("ber_read_{function}(r)?"), *boxed);
-                let found = match self.first_tags(member.ty).as_str() {
-                    "_" => "r.peek_in(g)?.is_some()".to_string(),
-                    tags => format!("matches!(r.peek_in(g)?, Some({tags}))"),
-                };
-
-                match presence {
-                    Presence::Required => {
-                        let _ = writeln!(
-                            body,
-                            "    if !r.more(g)? {{\n        return Err({missing});\n    }}\n    let {field} = {read};"
-                        );
-                    }
-                    Presence::Optional => {
-                        let _ = writeln!(
-                            body,
-                            "    let {field} = if {found} {{\n        Some({read})\n    }} else {{\n        None\n    }};"
-                        );
-                    }
-                    Presence::Default(default) => {
-                        let _ = writeln!(
-                            body,
-                            "    let {field} = if {found} {{\n        let x = {read};\n\n        if r.der() && !({}) {{\n            return Err({encoded_default});\n        }}\n\n        x\n    }} else {{\n        {default}\n    }};",
-                            self.not_default(member, "&x", default)
-                        );
-                    }
-                }
-            }
-        }
-
         let names: Vec<String> = fields
             .iter()
             .map(|(field, ..)| format!("{field}: {}", local(field)))
             .collect();
-        let _ = write!(
-            out,
-            "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn ber_read_contents_{id}<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<{ty}> {{\n{body}\n    Ok({name} {{ {} }})\n}}\n\n",
-            names.join(", ")
-        );
 
-        // UPER, writing.
-        let mut body = String::new();
-        let extensible = members.additions.is_some();
-        // What tells if each addition is there.
-        let mut addition_presence = Vec::new();
-        let mut field_index = root;
+        if self.options.codec != Encoding::Uper {
+            // BER, writing.
+            let mut body = String::new();
 
-        for addition in members.additions.iter().flatten() {
-            let count = match addition {
-                Addition::Member(_) => 1,
-                Addition::Group(group) => group.len(),
-            };
-            let present: Vec<String> = fields[field_index..field_index + count]
+            if is_set {
+                body.push_str("    let start = w.len();\n");
+            }
+
+            for member in ordered
                 .iter()
-                .map(|(field, ..)| format!("v.{field}.is_some()"))
-                .collect();
+                .copied()
+                .chain(additions.iter().map(|field| &field.1))
+            {
+                let (field, member, presence, _) = field_of(member);
+                let function = self.need(member.ty);
 
-            addition_presence.push(present.join(" || "));
-            field_index += count;
-        }
-
-        if extensible {
-            for (index, present) in addition_presence.iter().enumerate() {
-                let _ = writeln!(body, "    let e{index} = {present};");
-            }
-
-            let any = if addition_presence.is_empty() {
-                "false".to_string()
-            } else {
-                (0..addition_presence.len())
-                    .map(|index| format!("e{index}"))
-                    .collect::<Vec<_>>()
-                    .join(" || ")
-            };
-
-            let _ = writeln!(body, "    let extended = {any};\n    w.bit(extended);");
-        }
-
-        for member in &ordered {
-            let (field, member, presence, _) = field_of(member);
-
-            match presence {
-                Presence::Required => {}
-                Presence::Optional => {
-                    let _ = writeln!(body, "    w.bit(v.{field}.is_some());");
-                }
-                Presence::Default(default) => {
-                    let _ = writeln!(
-                        body,
-                        "    w.bit({});",
-                        self.not_default(member, &format!("&v.{field}"), default)
-                    );
-                }
-            }
-        }
-
-        for member in &ordered {
-            let (field, member, presence, _) = field_of(member);
-            let function = self.need(member.ty);
-
-            match presence {
-                Presence::Required => {
-                    let _ = writeln!(body, "    uper_write_{function}(&v.{field}, w)?;");
-                }
-                Presence::Optional => {
-                    let _ = writeln!(
-                        body,
-                        "    if let Some(x) = &v.{field} {{\n        uper_write_{function}(x, w)?;\n    }}"
-                    );
-                }
-                Presence::Default(default) => {
-                    let _ = writeln!(
-                        body,
-                        "    if {} {{\n        uper_write_{function}(&v.{field}, w)?;\n    }}",
-                        self.not_default(member, &format!("&v.{field}"), default)
-                    );
-                }
-            }
-        }
-
-        if extensible && !addition_presence.is_empty() {
-            let count = addition_presence.len();
-            let _ = writeln!(
-                body,
-                "    if extended {{\n        w.normally_small_length({count})?;"
-            );
-
-            for index in 0..count {
-                let _ = writeln!(body, "        w.bit(e{index});");
-            }
-
-            body.push_str("        w.align();\n");
-
-            let mut field_index = root;
-
-            for (index, addition) in members.additions.iter().flatten().enumerate() {
-                match addition {
-                    Addition::Member(member) => {
-                        let field = &fields[field_index].0;
-                        let function = self.need(member.ty);
-
-                        let _ = writeln!(
-                            body,
-                            "        if let Some(x) = &v.{field} {{\n            w.open_type(|w| uper_write_{function}(x, w))?;\n        }}"
-                        );
-                        field_index += 1;
+                match presence {
+                    Presence::Required => {
+                        let _ = writeln!(body, "    ber_write_{function}(&v.{field}, w, der)?;");
                     }
-                    Addition::Group(group) => {
-                        let mut inner = String::new();
-
-                        for (offset, member) in group.iter().enumerate() {
-                            if member.optional || member.has_default() {
-                                let field = &fields[field_index + offset].0;
-
-                                let _ =
-                                    writeln!(inner, "                w.bit(v.{field}.is_some());");
-                            }
-                        }
-
-                        for (offset, member) in group.iter().enumerate() {
-                            let field = &fields[field_index + offset].0;
-                            let function = self.need(member.ty);
-
-                            if member.optional || member.has_default() {
-                                let _ = writeln!(
-                                    inner,
-                                    "                if let Some(x) = &v.{field} {{\n                    uper_write_{function}(x, w)?;\n                }}"
-                                );
-                            } else {
-                                let _ = writeln!(
-                                    inner,
-                                    "                match &v.{field} {{\n                    Some(x) => uper_write_{function}(x, w)?,\n                    None => return Err(wire::Error::encode(\"A member is not found in the SEQUENCE or SET.\")),\n                }}"
-                                );
-                            }
-                        }
-
+                    Presence::Optional => {
                         let _ = writeln!(
                             body,
-                            "        if e{index} {{\n            w.open_type(|w| {{\n{inner}                Ok(())\n            }})?;\n        }}"
+                            "    if let Some(x) = &v.{field} {{\n        ber_write_{function}(x, w, der)?;\n    }}"
                         );
-                        field_index += group.len();
+                    }
+                    Presence::Default(default) => {
+                        let _ = writeln!(
+                            body,
+                            "    if {} {{\n        ber_write_{function}(&v.{field}, w, der)?;\n    }}",
+                            self.not_default(member, &format!("&v.{field}"), default)
+                        );
                     }
                 }
             }
 
-            body.push_str("    }\n");
-        }
-
-        let _ = write!(
-            out,
-            "#[allow(unused_variables)]\nfn uper_write_contents_{id}(v: &{argument}, w: &mut per::Writer<'_>) -> wire::Result<()> {{\n{body}    Ok(())\n}}\n\n"
-        );
-
-        // UPER, reading.
-        let mut body = String::from("    r.enter()?;\n");
-
-        if extensible {
-            body.push_str("    let extended = r.bit()?;\n");
-        }
-
-        let mut bit = 0;
-        let mut presence_bits = BTreeMap::new();
-
-        for member in &ordered {
-            let (field, _, presence, _) = field_of(member);
-            let field = &local(field);
-
-            if !matches!(presence, Presence::Required) {
-                let _ = writeln!(body, "    let p{bit} = r.bit()?;");
-                presence_bits.insert(field.clone(), bit);
-                bit += 1;
+            if is_set {
+                body.push_str("    if der {\n        w.sort_members(start);\n    }\n");
             }
-        }
-
-        for member in &ordered {
-            let (field, member, presence, boxed) = field_of(member);
-            let field = &local(field);
-            let function = self.need(member.ty);
-            let read = Generator::boxed(format!("uper_read_{function}(r)?"), *boxed);
-
-            match presence {
-                Presence::Required => {
-                    let _ = writeln!(body, "    let {field} = {read};");
-                }
-                Presence::Optional => {
-                    let _ = writeln!(
-                        body,
-                        "    let {field} = if p{} {{\n        Some({read})\n    }} else {{\n        None\n    }};",
-                        presence_bits[field]
-                    );
-                }
-                Presence::Default(default) => {
-                    let _ = writeln!(
-                        body,
-                        "    let {field} = if p{} {{\n        {read}\n    }} else {{\n        {default}\n    }};",
-                        presence_bits[field]
-                    );
-                }
-            }
-        }
-
-        if extensible {
-            for (field, ..) in additions {
-                let field = local(field);
-                let _ = writeln!(body, "    let mut {field} = None;");
-            }
-
-            // Those of a later version are skipped.
-            let skip = if additions.is_empty() {
-                "            per::read_unbound_octets(r)?;\n"
-            } else {
-                "            match index {\n"
-            };
 
             let _ = write!(
-                body,
-                "\n    if extended {{\n        let count = r.normally_small_length()?;\n        let presence = r.uint(count)?;\n\n        r.align();\n\n        for index in 0..count {{\n            if presence >> (count - index - 1) & 1 == 0 {{\n                continue;\n            }}\n\n{skip}"
+                out,
+                "#[allow(unused_variables)]\nfn ber_write_contents_{id}(v: &{argument}, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {{\n{body}    Ok(())\n}}\n\n"
             );
 
-            let mut field_index = root;
+            // BER, reading.
+            let mut body = String::new();
+            let missing = "wire::Error::decode(\"A member is missing and has no default value.\", r.position())";
+            let encoded_default = "wire::Error::decode(\"A member is encoded with its default value, which DER leaves out.\", r.position())";
 
-            for (index, addition) in members.additions.iter().flatten().enumerate() {
-                match addition {
-                    Addition::Member(member) => {
-                        let (field, _, _, boxed) = &fields[field_index];
-                        let field = &local(field);
-                        let function = self.need(member.ty);
-                        let read = Generator::boxed(
-                            format!("per::read_open_type(r, uper_read_{function})?"),
-                            *boxed,
+            if is_set {
+                // In any order, which DER has as that of the tags.
+                for (field, _, _, _) in fields {
+                    let field = &local(field);
+                    let _ = writeln!(body, "    let mut {field} = None;");
+                }
+
+                if fields.is_empty() {
+                    // Nothing, or what a later version adds to it.
+                    if members.additions.is_some() {
+                        body.push_str(
+                            "    while r.peek_in(g)?.is_some() {\n        r.any()?;\n    }\n",
                         );
-
-                        let _ =
-                            writeln!(body, "                {index} => {field} = Some({read}),");
-                        field_index += 1;
-                    }
-                    Addition::Group(group) => {
-                        let mut inner = String::new();
-                        let mut bit = 0;
-                        let mut bits = Vec::new();
-
-                        for member in group {
-                            if member.optional || member.has_default() {
-                                let _ = writeln!(
-                                    inner,
-                                    "                        let q{bit} = r.bit()?;"
-                                );
-                                bits.push(Some(bit));
-                                bit += 1;
-                            } else {
-                                bits.push(None);
-                            }
-                        }
-
-                        for (offset, member) in group.iter().enumerate() {
-                            let (field, _, _, boxed) = &fields[field_index + offset];
-                            let field = &local(field);
-                            let function = self.need(member.ty);
-                            let read =
-                                Generator::boxed(format!("uper_read_{function}(r)?"), *boxed);
-
-                            match bits[offset] {
-                                Some(bit) => {
-                                    let _ = writeln!(
-                                        inner,
-                                        "                        if q{bit} {{\n                            {field} = Some({read});\n                        }}"
-                                    );
-                                }
-                                None => {
-                                    let _ = writeln!(
-                                        inner,
-                                        "                        {field} = Some({read});"
-                                    );
-                                }
-                            }
-                        }
-
+                    } else {
                         let _ = writeln!(
                             body,
-                            "                {index} => per::read_open_type(r, |r| {{\n{inner}                        Ok(())\n                    }})?,"
+                            "    if r.peek_in(g)?.is_some() {{\n        return Err(wire::Error::decode(\"Expected the tag of a member.\", r.position()));\n    }}"
                         );
-                        field_index += group.len();
+                    }
+                } else {
+                    body.push_str("    let mut last = None;\n");
+                    body.push_str("    while let Some(tag) = r.peek_in(g)? {\n");
+                    body.push_str("        if r.der() {\n            r.check_member_order(&mut last, tag)?;\n        }\n\n");
+                    body.push_str("        match tag {\n");
+
+                    let mut any = None;
+
+                    for (field, member, _, boxed) in fields {
+                        let field = &local(field);
+                        let function = self.need(member.ty);
+                        let pattern = self.first_tags(member.ty);
+                        let read = Generator::boxed(format!("ber_read_{function}(r)?"), *boxed);
+
+                        if pattern == "_" {
+                            any = Some(format!(
+                                "            _ if {field}.is_none() => {field} = Some({read}),\n"
+                            ));
+                        } else {
+                            let _ = writeln!(
+                                body,
+                                "            {pattern} if {field}.is_none() => {field} = Some({read}),"
+                            );
+                        }
+                    }
+
+                    if let Some(any) = any {
+                        body.push_str(&any);
+                    }
+
+                    if members.additions.is_some() {
+                        body.push_str(
+                            "            _ => {\n                r.any()?;\n            }\n",
+                        );
+                    } else {
+                        let _ = writeln!(
+                            body,
+                            "            _ => return Err(wire::Error::decode(\"Expected the tag of a member.\", r.position())),"
+                        );
+                    }
+
+                    body.push_str("        }\n    }\n\n");
+                }
+
+                for (field, member, presence, _) in fields {
+                    let field = &local(field);
+                    match presence {
+                        Presence::Required => {
+                            let _ = writeln!(
+                                body,
+                                "    let {field} = {field}.ok_or_else(|| {missing})?;"
+                            );
+                        }
+                        Presence::Optional => {}
+                        Presence::Default(default) => {
+                            let _ = writeln!(
+                                body,
+                                "    let {field} = match {field} {{\n        Some(x) if r.der() && !({}) => return Err({encoded_default}),\n        Some(x) => x,\n        None => {default},\n    }};",
+                                self.not_default(member, "&x", default)
+                            );
+                        }
+                    }
+                }
+            } else {
+                for (field, member, presence, boxed) in ordered
+                    .iter()
+                    .copied()
+                    .chain(additions.iter().map(|field| &field.1))
+                    .map(field_of)
+                {
+                    let field = &local(field);
+                    let function = self.need(member.ty);
+                    let read = Generator::boxed(format!("ber_read_{function}(r)?"), *boxed);
+                    let found = match self.first_tags(member.ty).as_str() {
+                        "_" => "r.peek_in(g)?.is_some()".to_string(),
+                        tags => format!("matches!(r.peek_in(g)?, Some({tags}))"),
+                    };
+
+                    match presence {
+                        Presence::Required => {
+                            let _ = writeln!(
+                                body,
+                                "    if !r.more(g)? {{\n        return Err({missing});\n    }}\n    let {field} = {read};"
+                            );
+                        }
+                        Presence::Optional => {
+                            let _ = writeln!(
+                                body,
+                                "    let {field} = if {found} {{\n        Some({read})\n    }} else {{\n        None\n    }};"
+                            );
+                        }
+                        Presence::Default(default) => {
+                            let _ = writeln!(
+                                body,
+                                "    let {field} = if {found} {{\n        let x = {read};\n\n        if r.der() && !({}) {{\n            return Err({encoded_default});\n        }}\n\n        x\n    }} else {{\n        {default}\n    }};",
+                                self.not_default(member, "&x", default)
+                            );
+                        }
                     }
                 }
             }
 
-            if additions.is_empty() {
-                body.push_str("        }\n    }\n");
-            } else {
-                body.push_str(
-                    "                _ => {\n                    per::read_unbound_octets(r)?;\n                }\n            }\n        }\n    }\n",
-                );
-            }
+            let _ = write!(
+                out,
+                "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn ber_read_contents_{id}<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<{ty}> {{\n{body}\n    Ok({name} {{ {} }})\n}}\n\n",
+                names.join(", ")
+            );
         }
 
-        body.push_str("\n    r.leave();\n");
+        if self.options.codec == Encoding::Uper {
+            // UPER, writing.
+            let mut body = String::new();
+            let extensible = members.additions.is_some();
+            // What tells if each addition is there.
+            let mut addition_presence = Vec::new();
+            let mut field_index = root;
 
-        let _ = write!(
-            out,
-            "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn uper_read_contents_{id}<'a>(r: &mut per::Reader<'a>) -> wire::Result<{ty}> {{\n{body}\n    Ok({name} {{ {} }})\n}}\n\n",
-            names.join(", ")
-        );
+            for addition in members.additions.iter().flatten() {
+                let count = match addition {
+                    Addition::Member(_) => 1,
+                    Addition::Group(group) => group.len(),
+                };
+                let present: Vec<String> = fields[field_index..field_index + count]
+                    .iter()
+                    .map(|(field, ..)| format!("v.{field}.is_some()"))
+                    .collect();
+
+                addition_presence.push(present.join(" || "));
+                field_index += count;
+            }
+
+            if extensible {
+                for (index, present) in addition_presence.iter().enumerate() {
+                    let _ = writeln!(body, "    let e{index} = {present};");
+                }
+
+                let any = if addition_presence.is_empty() {
+                    "false".to_string()
+                } else {
+                    (0..addition_presence.len())
+                        .map(|index| format!("e{index}"))
+                        .collect::<Vec<_>>()
+                        .join(" || ")
+                };
+
+                let _ = writeln!(body, "    let extended = {any};\n    w.bit(extended);");
+            }
+
+            for member in &ordered {
+                let (field, member, presence, _) = field_of(member);
+
+                match presence {
+                    Presence::Required => {}
+                    Presence::Optional => {
+                        let _ = writeln!(body, "    w.bit(v.{field}.is_some());");
+                    }
+                    Presence::Default(default) => {
+                        let _ = writeln!(
+                            body,
+                            "    w.bit({});",
+                            self.not_default(member, &format!("&v.{field}"), default)
+                        );
+                    }
+                }
+            }
+
+            for member in &ordered {
+                let (field, member, presence, _) = field_of(member);
+                let function = self.need(member.ty);
+
+                match presence {
+                    Presence::Required => {
+                        let _ = writeln!(body, "    uper_write_{function}(&v.{field}, w)?;");
+                    }
+                    Presence::Optional => {
+                        let _ = writeln!(
+                            body,
+                            "    if let Some(x) = &v.{field} {{\n        uper_write_{function}(x, w)?;\n    }}"
+                        );
+                    }
+                    Presence::Default(default) => {
+                        let _ = writeln!(
+                            body,
+                            "    if {} {{\n        uper_write_{function}(&v.{field}, w)?;\n    }}",
+                            self.not_default(member, &format!("&v.{field}"), default)
+                        );
+                    }
+                }
+            }
+
+            if extensible && !addition_presence.is_empty() {
+                let count = addition_presence.len();
+                let _ = writeln!(
+                    body,
+                    "    if extended {{\n        w.normally_small_length({count})?;"
+                );
+
+                for index in 0..count {
+                    let _ = writeln!(body, "        w.bit(e{index});");
+                }
+
+                body.push_str("        w.align();\n");
+
+                let mut field_index = root;
+
+                for (index, addition) in members.additions.iter().flatten().enumerate() {
+                    match addition {
+                        Addition::Member(member) => {
+                            let field = &fields[field_index].0;
+                            let function = self.need(member.ty);
+
+                            let _ = writeln!(
+                                body,
+                                "        if let Some(x) = &v.{field} {{\n            w.open_type(|w| uper_write_{function}(x, w))?;\n        }}"
+                            );
+                            field_index += 1;
+                        }
+                        Addition::Group(group) => {
+                            let mut inner = String::new();
+
+                            for (offset, member) in group.iter().enumerate() {
+                                if member.optional || member.has_default() {
+                                    let field = &fields[field_index + offset].0;
+
+                                    let _ = writeln!(
+                                        inner,
+                                        "                w.bit(v.{field}.is_some());"
+                                    );
+                                }
+                            }
+
+                            for (offset, member) in group.iter().enumerate() {
+                                let field = &fields[field_index + offset].0;
+                                let function = self.need(member.ty);
+
+                                if member.optional || member.has_default() {
+                                    let _ = writeln!(
+                                        inner,
+                                        "                if let Some(x) = &v.{field} {{\n                    uper_write_{function}(x, w)?;\n                }}"
+                                    );
+                                } else {
+                                    let _ = writeln!(
+                                        inner,
+                                        "                match &v.{field} {{\n                    Some(x) => uper_write_{function}(x, w)?,\n                    None => return Err(wire::Error::encode(\"A member is not found in the SEQUENCE or SET.\")),\n                }}"
+                                    );
+                                }
+                            }
+
+                            let _ = writeln!(
+                                body,
+                                "        if e{index} {{\n            w.open_type(|w| {{\n{inner}                Ok(())\n            }})?;\n        }}"
+                            );
+                            field_index += group.len();
+                        }
+                    }
+                }
+
+                body.push_str("    }\n");
+            }
+
+            let _ = write!(
+                out,
+                "#[allow(unused_variables)]\nfn uper_write_contents_{id}(v: &{argument}, w: &mut per::Writer<'_>) -> wire::Result<()> {{\n{body}    Ok(())\n}}\n\n"
+            );
+
+            // UPER, reading.
+            let mut body = String::from("    r.enter()?;\n");
+
+            if extensible {
+                body.push_str("    let extended = r.bit()?;\n");
+            }
+
+            let mut bit = 0;
+            let mut presence_bits = BTreeMap::new();
+
+            for member in &ordered {
+                let (field, _, presence, _) = field_of(member);
+                let field = &local(field);
+
+                if !matches!(presence, Presence::Required) {
+                    let _ = writeln!(body, "    let p{bit} = r.bit()?;");
+                    presence_bits.insert(field.clone(), bit);
+                    bit += 1;
+                }
+            }
+
+            for member in &ordered {
+                let (field, member, presence, boxed) = field_of(member);
+                let field = &local(field);
+                let function = self.need(member.ty);
+                let read = Generator::boxed(format!("uper_read_{function}(r)?"), *boxed);
+
+                match presence {
+                    Presence::Required => {
+                        let _ = writeln!(body, "    let {field} = {read};");
+                    }
+                    Presence::Optional => {
+                        let _ = writeln!(
+                            body,
+                            "    let {field} = if p{} {{\n        Some({read})\n    }} else {{\n        None\n    }};",
+                            presence_bits[field]
+                        );
+                    }
+                    Presence::Default(default) => {
+                        let _ = writeln!(
+                            body,
+                            "    let {field} = if p{} {{\n        {read}\n    }} else {{\n        {default}\n    }};",
+                            presence_bits[field]
+                        );
+                    }
+                }
+            }
+
+            if extensible {
+                for (field, ..) in additions {
+                    let field = local(field);
+                    let _ = writeln!(body, "    let mut {field} = None;");
+                }
+
+                // Those of a later version are skipped.
+                let skip = if additions.is_empty() {
+                    "            per::read_unbound_octets(r)?;\n"
+                } else {
+                    "            match index {\n"
+                };
+
+                let _ = write!(
+                    body,
+                    "\n    if extended {{\n        let count = r.normally_small_length()?;\n        let presence = r.uint(count)?;\n\n        r.align();\n\n        for index in 0..count {{\n            if presence >> (count - index - 1) & 1 == 0 {{\n                continue;\n            }}\n\n{skip}"
+                );
+
+                let mut field_index = root;
+
+                for (index, addition) in members.additions.iter().flatten().enumerate() {
+                    match addition {
+                        Addition::Member(member) => {
+                            let (field, _, _, boxed) = &fields[field_index];
+                            let field = &local(field);
+                            let function = self.need(member.ty);
+                            let read = Generator::boxed(
+                                format!("per::read_open_type(r, uper_read_{function})?"),
+                                *boxed,
+                            );
+
+                            let _ = writeln!(
+                                body,
+                                "                {index} => {field} = Some({read}),"
+                            );
+                            field_index += 1;
+                        }
+                        Addition::Group(group) => {
+                            let mut inner = String::new();
+                            let mut bit = 0;
+                            let mut bits = Vec::new();
+
+                            for member in group {
+                                if member.optional || member.has_default() {
+                                    let _ = writeln!(
+                                        inner,
+                                        "                        let q{bit} = r.bit()?;"
+                                    );
+                                    bits.push(Some(bit));
+                                    bit += 1;
+                                } else {
+                                    bits.push(None);
+                                }
+                            }
+
+                            for (offset, member) in group.iter().enumerate() {
+                                let (field, _, _, boxed) = &fields[field_index + offset];
+                                let field = &local(field);
+                                let function = self.need(member.ty);
+                                let read =
+                                    Generator::boxed(format!("uper_read_{function}(r)?"), *boxed);
+
+                                match bits[offset] {
+                                    Some(bit) => {
+                                        let _ = writeln!(
+                                            inner,
+                                            "                        if q{bit} {{\n                            {field} = Some({read});\n                        }}"
+                                        );
+                                    }
+                                    None => {
+                                        let _ = writeln!(
+                                            inner,
+                                            "                        {field} = Some({read});"
+                                        );
+                                    }
+                                }
+                            }
+
+                            let _ = writeln!(
+                                body,
+                                "                {index} => per::read_open_type(r, |r| {{\n{inner}                        Ok(())\n                    }})?,"
+                            );
+                            field_index += group.len();
+                        }
+                    }
+                }
+
+                if additions.is_empty() {
+                    body.push_str("        }\n    }\n");
+                } else {
+                    body.push_str(
+                    "                _ => {\n                    per::read_unbound_octets(r)?;\n                }\n            }\n        }\n    }\n",
+                );
+                }
+            }
+
+            body.push_str("\n    r.leave();\n");
+
+            let _ = write!(
+                out,
+                "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn uper_read_contents_{id}<'a>(r: &mut per::Reader<'a>) -> wire::Result<{ty}> {{\n{body}\n    Ok({name} {{ {} }})\n}}\n\n",
+                names.join(", ")
+            );
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1645,139 +1695,144 @@ impl<'a> Generator<'a> {
         let root = members.root.len();
         let extensible = members.additions.is_some();
 
-        // BER, writing.
-        let mut arms = String::new();
+        if self.options.codec != Encoding::Uper {
+            // BER, writing.
+            let mut arms = String::new();
 
-        for (variant, member, _) in variants {
-            let function = self.need(member.ty);
+            for (variant, member, _) in variants {
+                let function = self.need(member.ty);
 
-            let _ = writeln!(
-                arms,
-                "        {name}::{variant}(x) => ber_write_{function}(x, w, der),"
-            );
-        }
-
-        let _ = write!(
-            out,
-            "fn ber_write_contents_{id}(v: &{argument}, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {{\n    match v {{\n{arms}    }}\n}}\n\n"
-        );
-
-        // BER, reading: the alternative of the tag.
-        let mut arms = String::new();
-        let mut any = None;
-
-        for (variant, member, boxed) in variants {
-            let function = self.need(member.ty);
-            let pattern = self.first_tags(member.ty);
-            let read = Generator::boxed(format!("ber_read_{function}(r)?"), *boxed);
-            let arm = format!("        Some({pattern}) => Ok({name}::{variant}({read})),\n");
-
-            if pattern == "_" {
-                any = Some(arm);
-            } else {
-                arms.push_str(&arm);
+                let _ = writeln!(
+                    arms,
+                    "        {name}::{variant}(x) => ber_write_{function}(x, w, der),"
+                );
             }
-        }
 
-        arms.push_str(&any.unwrap_or_else(|| {
+            let _ = write!(
+                out,
+                "fn ber_write_contents_{id}(v: &{argument}, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {{\n    match v {{\n{arms}    }}\n}}\n\n"
+            );
+
+            // BER, reading: the alternative of the tag.
+            let mut arms = String::new();
+            let mut any = None;
+
+            for (variant, member, boxed) in variants {
+                let function = self.need(member.ty);
+                let pattern = self.first_tags(member.ty);
+                let read = Generator::boxed(format!("ber_read_{function}(r)?"), *boxed);
+                let arm = format!("        Some({pattern}) => Ok({name}::{variant}({read})),\n");
+
+                if pattern == "_" {
+                    any = Some(arm);
+                } else {
+                    arms.push_str(&arm);
+                }
+            }
+
+            arms.push_str(&any.unwrap_or_else(|| {
             "        _ => Err(wire::Error::decode(\"Expected the tag of an alternative of the CHOICE.\", r.position())),\n".to_string()
         }));
 
-        let _ = write!(
-            out,
-            "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn ber_read_contents_{id}<'a>(r: &mut ber::Reader<'a>) -> wire::Result<{ty}> {{\n    match r.peek_tag() {{\n{arms}    }}\n}}\n\n"
-        );
+            let _ = write!(
+                out,
+                "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn ber_read_contents_{id}<'a>(r: &mut ber::Reader<'a>) -> wire::Result<{ty}> {{\n    match r.peek_tag() {{\n{arms}    }}\n}}\n\n"
+            );
+        }
 
-        // UPER: an alternative of the root is its index in the order of
-        // the tags, and an addition is in an open type.
-        let additions: Vec<&MemberInfo> = members.all().skip(root).collect();
-        let mut write_arms = String::new();
-        let mut root_arms = String::new();
-        let mut addition_arms = String::new();
+        if self.options.codec == Encoding::Uper {
+            // UPER: an alternative of the root is its index in the order of
+            // the tags, and an addition is in an open type.
+            let additions: Vec<&MemberInfo> = members.all().skip(root).collect();
+            let mut write_arms = String::new();
+            let mut root_arms = String::new();
+            let mut addition_arms = String::new();
 
-        for (variant, member, boxed) in variants {
-            let function = self.need(member.ty);
-            let read = Generator::boxed(format!("uper_read_{function}(r)?"), *boxed);
-            let root_index = members
-                .root
-                .iter()
-                .position(|candidate| candidate == member);
+            for (variant, member, boxed) in variants {
+                let function = self.need(member.ty);
+                let read = Generator::boxed(format!("uper_read_{function}(r)?"), *boxed);
+                let root_index = members
+                    .root
+                    .iter()
+                    .position(|candidate| candidate == member);
 
-            match root_index {
-                Some(index) => {
-                    let index = members
-                        .order
-                        .iter()
-                        .position(|candidate| *candidate == index)
-                        .unwrap_or(index);
-                    let bit = if extensible {
-                        "w.bit(false);\n            "
-                    } else {
-                        ""
-                    };
+                match root_index {
+                    Some(index) => {
+                        let index = members
+                            .order
+                            .iter()
+                            .position(|candidate| *candidate == index)
+                            .unwrap_or(index);
+                        let bit = if extensible {
+                            "w.bit(false);\n            "
+                        } else {
+                            ""
+                        };
 
-                    let _ = writeln!(
-                        write_arms,
-                        "        {name}::{variant}(x) => {{\n            {bit}per::choice_index(w, {root}, {index});\n            uper_write_{function}(x, w)\n        }}"
-                    );
-                    let _ = writeln!(root_arms, "        {index} => {name}::{variant}({read}),");
-                }
-                None => {
-                    let position = additions
-                        .iter()
-                        .position(|candidate| *candidate == member)
-                        .unwrap_or_default();
-                    let index = members
-                        .addition_order
-                        .iter()
-                        .position(|candidate| *candidate == position)
-                        .unwrap_or(position);
-                    let read = Generator::boxed(
-                        format!("per::read_open_type(r, uper_read_{function})?"),
-                        *boxed,
-                    );
+                        let _ = writeln!(
+                            write_arms,
+                            "        {name}::{variant}(x) => {{\n            {bit}per::choice_index(w, {root}, {index});\n            uper_write_{function}(x, w)\n        }}"
+                        );
+                        let _ =
+                            writeln!(root_arms, "        {index} => {name}::{variant}({read}),");
+                    }
+                    None => {
+                        let position = additions
+                            .iter()
+                            .position(|candidate| *candidate == member)
+                            .unwrap_or_default();
+                        let index = members
+                            .addition_order
+                            .iter()
+                            .position(|candidate| *candidate == position)
+                            .unwrap_or(position);
+                        let read = Generator::boxed(
+                            format!("per::read_open_type(r, uper_read_{function})?"),
+                            *boxed,
+                        );
 
-                    let _ = writeln!(
-                        write_arms,
-                        "        {name}::{variant}(x) => {{\n            w.bit(true);\n            w.normally_small_whole_number({index});\n            w.open_type(|w| uper_write_{function}(x, w))\n        }}"
-                    );
-                    let _ = writeln!(
-                        addition_arms,
-                        "            {index} => {name}::{variant}({read}),"
-                    );
+                        let _ = writeln!(
+                            write_arms,
+                            "        {name}::{variant}(x) => {{\n            w.bit(true);\n            w.normally_small_whole_number({index});\n            w.open_type(|w| uper_write_{function}(x, w))\n        }}"
+                        );
+                        let _ = writeln!(
+                            addition_arms,
+                            "            {index} => {name}::{variant}({read}),"
+                        );
+                    }
                 }
             }
-        }
 
-        let _ = write!(
-            out,
-            "fn uper_write_contents_{id}(v: &{argument}, w: &mut per::Writer<'_>) -> wire::Result<()> {{\n    match v {{\n{write_arms}    }}\n}}\n\n"
-        );
+            let _ = write!(
+                out,
+                "fn uper_write_contents_{id}(v: &{argument}, w: &mut per::Writer<'_>) -> wire::Result<()> {{\n    match v {{\n{write_arms}    }}\n}}\n\n"
+            );
 
-        let unknown = "wire::Error::decode(\"Expected the index of an alternative of the CHOICE.\", r.position())";
-        let mut body = String::from("    r.enter()?;\n\n");
+            let unknown = "wire::Error::decode(\"Expected the index of an alternative of the CHOICE.\", r.position())";
+            let mut body = String::from("    r.enter()?;\n\n");
 
-        if extensible && addition_arms.is_empty() {
+            if extensible && addition_arms.is_empty() {
+                let _ = write!(
+                    body,
+                    "    if r.bit()? {{\n        r.normally_small_whole_number()?;\n\n        return Err({unknown});\n    }}\n\n"
+                );
+            } else if extensible {
+                let _ = write!(
+                    body,
+                    "    if r.bit()? {{\n        let v = match r.normally_small_whole_number()? {{\n{addition_arms}            _ => return Err({unknown}),\n        }};\n\n        r.leave();\n\n        return Ok(v);\n    }}\n\n"
+                );
+            }
+
             let _ = write!(
                 body,
-                "    if r.bit()? {{\n        r.normally_small_whole_number()?;\n\n        return Err({unknown});\n    }}\n\n"
+                "    let v = match per::read_choice_index(r, {root})? {{\n{root_arms}        _ => return Err({unknown}),\n    }};\n\n    r.leave();\n\n    Ok(v)\n"
             );
-        } else if extensible {
+
             let _ = write!(
-                body,
-                "    if r.bit()? {{\n        let v = match r.normally_small_whole_number()? {{\n{addition_arms}            _ => return Err({unknown}),\n        }};\n\n        r.leave();\n\n        return Ok(v);\n    }}\n\n"
+                out,
+                "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn uper_read_contents_{id}<'a>(r: &mut per::Reader<'a>) -> wire::Result<{ty}> {{\n{body}}}\n\n"
             );
         }
-
-        let _ = write!(
-            body,
-            "    let v = match per::read_choice_index(r, {root})? {{\n{root_arms}        _ => return Err({unknown}),\n    }};\n\n    r.leave();\n\n    Ok(v)\n"
-        );
-
-        let _ = write!(
-            out,
-            "#[allow(unused_variables, unreachable_code, clippy::let_unit_value)]\nfn uper_read_contents_{id}<'a>(r: &mut per::Reader<'a>) -> wire::Result<{ty}> {{\n{body}}}\n\n"
-        );
     }
 
     // The text.
@@ -1881,6 +1936,11 @@ impl<'a> Generator<'a> {
                     let _ = writeln!(text, "            {number} => Some({name}::{variant}),");
                 }
 
+                if self.options.codec != Encoding::Uper {
+                    text.push_str("            _ => None,\n        }\n    }\n}");
+                    return text;
+                }
+
                 let _ = writeln!(
                     text,
                     "            _ => None,\n        }}\n    }}\n\n    /// The index of PER: of the root in the order of the numbers, or of\n    /// the additions.\n    fn uper_index(self) -> Result<usize, usize> {{\n        match self {{"
@@ -1930,29 +1990,46 @@ impl<'a> Generator<'a> {
         text
     }
 
-    /// The trait for a named struct or enum, or the functions of another
-    /// named type.
+    /// Inherent methods for a named struct or enum, or functions for an alias.
     fn api_text(&self, named: &Named) -> String {
         let id = named.id;
         let ty = self.rust_type(id);
-        let lifetime = if ty.contains("'a") { "<'a>" } else { "" };
-
+        let codec = self.options.codec.name();
+        let der = self.options.codec == Encoding::Der;
+        let (encode, decode) = if self.options.codec == Encoding::Uper {
+            (
+                format!("wire::encode_uper_with(value, out, uper_write_{id})"),
+                format!("wire::decode_uper_with(data, uper_read_{id})"),
+            )
+        } else {
+            (
+                format!("wire::encode_ber_with(value, out, {der}, ber_write_{id})"),
+                format!("wire::decode_ber_with(data, {der}, ber_read_{id})"),
+            )
+        };
         match &named.functions {
-            None => format!(
-                "impl<'a> Asn1<'a> for {ty} {{\n    fn write_ber(&self, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {{\n        ber_write_{id}(self, w, der)\n    }}\n\n    fn read_ber(r: &mut ber::Reader<'a>) -> wire::Result<Self> {{\n        ber_read_{id}(r)\n    }}\n\n    fn write_uper(&self, w: &mut per::Writer<'_>) -> wire::Result<()> {{\n        uper_write_{id}(self, w)\n    }}\n\n    fn read_uper(r: &mut per::Reader<'a>) -> wire::Result<Self> {{\n        uper_read_{id}(r)\n    }}\n}}"
-            ),
+            None => {
+                let generic = if ty.contains("'a") { "<'a>" } else { "" };
+                let data = if generic.is_empty() {
+                    "&[u8]"
+                } else {
+                    "&'a [u8]"
+                };
+                let encode = encode.replace("value,", "self,");
+                format!(
+                    "impl{generic} {ty} {{\n    pub fn encode_{codec}(&self, out: &mut [u8]) -> wire::Result<usize> {{\n        {encode}\n    }}\n\n    pub fn decode_{codec}(data: {data}) -> wire::Result<Self> {{\n        {decode}\n    }}\n\n    pub fn {codec}_len(&self) -> wire::Result<usize> {{\n        wire::encoded_len(self.encode_{codec}(&mut []))\n    }}\n\n    #[allow(clippy::wrong_self_convention)]\n    pub fn to_{codec}(&self) -> wire::Result<alloc::vec::Vec<u8>> {{\n        let mut out = alloc::vec![0; self.{codec}_len()?];\n        self.encode_{codec}(&mut out)?;\n        Ok(out)\n    }}\n}}"
+                )
+            }
             Some(module) => {
                 let name = &named.name;
                 let argument = self.argument_type(id);
-                // The lifetime of what is decoded, if it borrows.
-                let (generic, data) = if lifetime.is_empty() {
-                    ("", "&[u8]")
-                } else {
+                let (generic, data) = if ty.contains("'a") {
                     ("<'a>", "&'a [u8]")
+                } else {
+                    ("", "&[u8]")
                 };
-
                 format!(
-                    "pub type {name}{lifetime} = {ty};\n\n/// The functions of [`{name}`], as the trait `Asn1` has them for the\n/// others.\npub mod {module} {{\n    use super::*;\n\n    pub fn encode_ber(value: &{argument}, out: &mut [u8]) -> wire::Result<usize> {{\n        wire::encode_ber_with(value, out, false, ber_write_{id})\n    }}\n\n    pub fn encode_der(value: &{argument}, out: &mut [u8]) -> wire::Result<usize> {{\n        wire::encode_ber_with(value, out, true, ber_write_{id})\n    }}\n\n    pub fn encode_uper(value: &{argument}, out: &mut [u8]) -> wire::Result<usize> {{\n        wire::encode_uper_with(value, out, uper_write_{id})\n    }}\n\n    pub fn decode_ber{generic}(data: {data}) -> wire::Result<{ty}> {{\n        wire::decode_ber_with(data, false, ber_read_{id})\n    }}\n\n    pub fn decode_der{generic}(data: {data}) -> wire::Result<{ty}> {{\n        wire::decode_ber_with(data, true, ber_read_{id})\n    }}\n\n    pub fn decode_uper{generic}(data: {data}) -> wire::Result<{ty}> {{\n        wire::decode_uper_with(data, uper_read_{id})\n    }}\n}}"
+                    "pub type {name}{generic} = {ty};\n\n/// The {codec} functions of [`{name}`].\npub mod {module} {{\n    use super::*;\n\n    pub fn encode_{codec}(value: &{argument}, out: &mut [u8]) -> wire::Result<usize> {{\n        {encode}\n    }}\n\n    pub fn decode_{codec}{generic}(data: {data}) -> wire::Result<{ty}> {{\n        {decode}\n    }}\n}}"
                 )
             }
         }
@@ -2063,6 +2140,12 @@ impl<'a> Generator<'a> {
         let mut parts = vec![
             HEADER
                 .replace("{version}", VERSION)
+                .replace("{codec}", self.options.codec.name())
+                .replace("{imports}", if self.options.codec == Encoding::Uper {
+                    "use asnkitrt::wire::per::BitSink;\n#[allow(unused_imports)]\nuse asnkitrt::wire::{self, per};"
+                } else {
+                    "use asnkitrt::wire::{self, ber};"
+                })
                 .replace(
                     "{sources}",
                     &if sources.is_empty() {
@@ -2149,17 +2232,16 @@ impl<'a> Generator<'a> {
     }
 }
 
-const HEADER: &str = r#"// Generated by asnkit-gen-rust-codec {version} from {sources}. Do not edit.
+const HEADER: &str = r#"// Generated by asnkit-gen-rust-codec {version} from {sources} for {codec}. Do not edit.
 //
 // This file is made from the specification it names, and needs the asnkitrt
 // crate (MIT) to run. It may be used under terms of your choice: the code that
 // asnkit-gen-rust-codec copies into it is not under the Apache License of the
 // plugin.
+extern crate alloc;
 {alloc}
 #[allow(unused_imports)]
-use asnkitrt::wire::per::BitSink;
-#[allow(unused_imports)]
-use asnkitrt::wire::{self, Asn1, ber, per};"#;
+{imports}"#;
 
 /// The Rust module for the contents of an `.asni` file, which must not
 /// be signed, encrypted, bound to something or have a nonce to check.
