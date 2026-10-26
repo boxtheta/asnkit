@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "asnkit-compiler"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "aes-gcm",
  "asnkitrt",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "asnkit-compiler-wasm"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "asnkit-compiler",
  "js-sys",
@@ -72,7 +72,7 @@ dependencies = [
 
 [[package]]
 name = "asnkit-gen-rust"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "asnkitrt",
  "serde",
@@ -80,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "asnkit-gen-rust-codec"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "asnkit-gen-rust",
  "asnkitrt",
@@ -90,7 +90,7 @@ dependencies = [
 
 [[package]]
 name = "asnkitcc"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "asnkit-compiler",
  "asnkitrt",
@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "asnkitrt"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "aes-gcm",
  "ed25519-dalek",
@@ -113,14 +113,14 @@ dependencies = [
 
 [[package]]
 name = "asnkitrt-c"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "asnkitrt",
 ]
 
 [[package]]
 name = "asnkitrt-wasm"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 dependencies = [
  "asnkitrt",
  "js-sys",

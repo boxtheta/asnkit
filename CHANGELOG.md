@@ -10,6 +10,8 @@ security fixes.
 
 ## [Unreleased]
 
+## [2.0.0-rc2] - 2026-10-26
+
 ### Fixed
 
 - `GeneralizedTime`, in every runtime: a time read from the form DER,
@@ -254,6 +256,7 @@ WebAssembly runtime on npm.
   `application/vnd.asnkit.asnst+cbor`, guidelines for third-party
   runtimes, a corpus of `.asni` files and more than 5,300 test vectors.
 
+[2.0.0-rc2]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc2
 [2.0.0-rc1]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc1
 [1.2.0]: https://github.com/boxtheta/asnkit/releases/tag/v1.2.0
 [1.1.0]: https://github.com/boxtheta/asnkit/releases/tag/v1.1.0

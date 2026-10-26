@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "asnkitrt"
-version = "2.0.0-rc1"
+version = "2.0.0-rc2"
 
 [[package]]
 name = "codec-no-std-check"
