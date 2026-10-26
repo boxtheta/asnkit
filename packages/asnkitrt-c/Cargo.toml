@@ -4,7 +4,7 @@
 
 [package]
 name = "asnkitrt-c"
-version = "2.0.0-rc2"
+version = "2.0.0-rc3"
 edition = "2024"
 rust-version = "1.88"
 description = "The runtime of asnkit for C, as a shared and a static library with a header"

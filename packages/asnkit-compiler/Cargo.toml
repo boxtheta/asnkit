@@ -4,7 +4,7 @@
 
 [package]
 name = "asnkit-compiler"
-version = "2.0.0-rc2"
+version = "2.0.0-rc3"
 edition = "2024"
 description = "ASN.1 parser and compiler making the files asnkit loads, as a library"
 rust-version = "1.88"

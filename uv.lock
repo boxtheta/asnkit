@@ -24,7 +24,7 @@ wheels = [
 
 [[package]]
 name = "asnkit-gen-python"
-version = "2.0.0rc2"
+version = "2.0.0rc3"
 source = { editable = "packages/asnkit-gen-python" }
 dependencies = [
     { name = "asnkitrt" },
@@ -84,7 +84,7 @@ interop = [
 
 [[package]]
 name = "asnkitrt"
-version = "2.0.0rc2"
+version = "2.0.0rc3"
 source = { editable = "packages/asnkitrt" }
 
 [package.optional-dependencies]

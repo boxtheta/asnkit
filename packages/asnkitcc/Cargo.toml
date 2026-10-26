@@ -4,7 +4,7 @@
 
 [package]
 name = "asnkitcc"
-version = "2.0.0-rc2"
+version = "2.0.0-rc3"
 edition = "2024"
 description = "The command that compiles ASN.1 to the files asnkit loads, and runs its plugins"
 rust-version = "1.88"
@@ -19,8 +19,8 @@ name = "asnkitcc"
 path = "src/main.rs"
 
 [dependencies]
-asnkit-compiler = { version = "2.0.0-rc2", path = "../asnkit-compiler" }
-asnkitrt = { version = "2.0.0-rc2", path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "gser", "bigint"] }
+asnkit-compiler = { version = "2.0.0-rc3", path = "../asnkit-compiler" }
+asnkitrt = { version = "2.0.0-rc3", path = "../asnkitrt-rs", default-features = false, features = ["std", "signing", "encryption", "jer", "xer", "gser", "bigint"] }
 
 [dev-dependencies]
 tempfile = "3"

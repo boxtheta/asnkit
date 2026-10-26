@@ -1,6 +1,6 @@
 {
   "name": "asnkit-compiler",
-  "version": "2.0.0-rc2",
+  "version": "2.0.0-rc3",
   "description": "Compile ASN.1 to the .asni files asnkit loads, in the browser and Node.js",
   "license": "Apache-2.0",
   "type": "module",
