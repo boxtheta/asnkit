@@ -18,6 +18,11 @@ security fixes.
   in GSER, JER or XER, and a time in UTC that is encoded and decoded is
   equal to what it was. A lenient DER reader gives an offset of zero too
   to a time in another form, which it reads as the same time in UTC (#2).
+- `asnkitcc`: `-h`, `--help` and `help`, also after a command, write the
+  usage to standard output and succeed, where they were an unknown
+  command or option. `-V`, `--version` and `version` tell the version
+  of `asnkitcc` and those of the plugins found where programs are. The
+  usage tells `convert` apart from `compile` and `parse` (#3).
 
 ## [2.0.0-rc1] - 2026-10-24
 

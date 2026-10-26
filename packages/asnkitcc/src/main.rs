@@ -20,14 +20,24 @@ use asnkit_compiler::{
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: asnkitcc {compile,parse,generate} [-v] [-o OUTPUT] [-e ENCODING] [--nonce N] [--bound-to STRING]\n       [--signing-key-file FILE [--signing-key-id ID]] [--encryption-key-file FILE [--encryption-key-id ID]] FILE [FILE ...]\n       asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] [-v] [-o FOLDER] [-e ENCODING] FILE [FILE ...]
+const USAGE: &str = "usage: asnkitcc {compile,parse} [-v] [-o OUTPUT] [-e ENCODING] [--nonce N] [--bound-to STRING]\n       [--signing-key-file FILE [--signing-key-id ID]] [--encryption-key-file FILE [--encryption-key-id ID]] FILE [FILE ...]\n       asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] [-v] [-o FOLDER] [-e ENCODING] FILE [FILE ...]
        asnkitcc convert -t [MODULE.]TYPE [--from CODEC] [--to CODEC] [-i INPUT] [-o OUTPUT] [--input-hex] [--output-hex]
        [--indent N] [--lenient] [--encryption-key-file FILE] [-v] [-e ENCODING] {FILE.asni | FILE.asn [FILE.asn ...]}
+       asnkitcc {-h,--help,help}
+       asnkitcc {-V,--version,version}
 
 --any-defined-by FILE adds TOML choice mappings to compile or generate; it can be repeated.
 The codecs are ber, der, oer, per, uper, jer, xer and gser. Without --from or
 --to, the codec is told by the extension of the input or the output (.json is jer, .xml is xer). The
-input is read from standard input and the output written to standard output when not given.";
+input is read from standard input and the output written to standard output when not given.
+--version tells the versions of asnkitcc and of the plugins found where programs are.";
+
+/// What the command line asks for.
+enum Request {
+    Run(Box<Arguments>),
+    Help,
+    Version,
+}
 
 struct Arguments {
     command: String,
@@ -54,9 +64,15 @@ struct Arguments {
     any_defined_by: Vec<PathBuf>,
 }
 
-fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
+fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
     let mut iterator = arguments.iter();
     let command = iterator.next().ok_or(USAGE)?.clone();
+
+    match command.as_str() {
+        "-h" | "--help" | "help" => return Ok(Request::Help),
+        "-V" | "--version" | "version" => return Ok(Request::Version),
+        _ => {}
+    }
 
     if !["compile", "parse", "generate", "convert"].contains(&command.as_str()) {
         return Err(format!("error: unknown command '{command}'.\n{USAGE}"));
@@ -96,6 +112,8 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
         };
 
         match argument.as_str() {
+            "-h" | "--help" => return Ok(Request::Help),
+            "-V" | "--version" => return Ok(Request::Version),
             "-v" | "--verbose" => parsed.verbose = true,
             "--any-defined-by" => parsed
                 .any_defined_by
@@ -211,7 +229,54 @@ fn parse_arguments(arguments: &[String]) -> Result<Arguments, String> {
         return Err(format!("error: no files given.\n{USAGE}"));
     }
 
-    Ok(parsed)
+    Ok(Request::Run(Box::new(parsed)))
+}
+
+/// The version of asnkitcc, then that of each plugin found where programs
+/// are, as the plugin tells it, by the name it is run with.
+fn version() -> String {
+    let mut text = format!("asnkitcc {}", env!("CARGO_PKG_VERSION"));
+    let mut plugins = std::collections::BTreeMap::new();
+
+    for folder in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_stem().and_then(|name| name.to_str()) else {
+                continue;
+            };
+
+            // The first found is the one a name runs.
+            if name.starts_with("asnkit-gen-") && path.is_file() {
+                plugins.entry(name.to_string()).or_insert(path);
+            }
+        }
+    }
+
+    for (name, path) in plugins {
+        let told = std::process::Command::new(&path)
+            .arg("--version")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| {
+                let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+
+                stdout.split_whitespace().last().map(str::to_string)
+            });
+
+        match told {
+            Some(version) => text.push_str(&format!("\n{name} {version}")),
+            None => text.push_str(&format!("\n{name} (no version, at {})", path.display())),
+        }
+    }
+
+    text
 }
 
 fn decode_hex(text: &str) -> Option<Vec<u8>> {
@@ -358,7 +423,21 @@ fn convert(arguments: &Arguments) -> Result<(), String> {
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
 
-    let result = parse_arguments(&arguments).and_then(|arguments| {
+    let result = parse_arguments(&arguments).and_then(|request| {
+        let arguments = match request {
+            Request::Run(arguments) => arguments,
+            Request::Help => {
+                println!("{USAGE}");
+
+                return Ok(());
+            }
+            Request::Version => {
+                println!("{}", version());
+
+                return Ok(());
+            }
+        };
+
         match arguments.command.as_str() {
             "generate" => return generate(&arguments),
             "convert" => return convert(&arguments),
