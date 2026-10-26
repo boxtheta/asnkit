@@ -297,7 +297,14 @@ fn built_in_types_come_back() {
         text: "Grüße".into(),
         printable: "ABC 123".into(),
         utc: DateTime { date, time },
-        general: DateTime { date, time },
+        // In UTC, the one time DER and PER have.
+        general: DateTime {
+            date,
+            time: Time {
+                offset: Some(0),
+                ..time
+            },
+        },
         day: date,
         clock: Time {
             offset: None,

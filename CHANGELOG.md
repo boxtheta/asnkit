@@ -10,6 +10,15 @@ security fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `GeneralizedTime`, in every runtime: a time read from the form DER,
+  CER, PER and UPER have is in UTC, with an offset of zero, where it was
+  read as a local time, with none. Its `Z` is so kept when it is written
+  in GSER, JER or XER, and a time in UTC that is encoded and decoded is
+  equal to what it was. A lenient DER reader gives an offset of zero too
+  to a time in another form, which it reads as the same time in UTC (#2).
+
 ## [2.0.0-rc1] - 2026-10-24
 
 ### Added

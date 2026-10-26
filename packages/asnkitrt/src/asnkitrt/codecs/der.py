@@ -5,6 +5,8 @@
 
 """Distinguished Encoding Rules (DER) codec."""
 
+from datetime import timezone
+
 from .duration import canonical_duration, validate_duration
 from asnkitrt.codecs.codec import Codec
 
@@ -663,7 +665,11 @@ class GeneralizedTime(StandardEncodeMixin, Type):
                 raise self.decode_error(str(error), offset) from None
 
         try:
-            return in_utc(generalized_time_to_datetime(decoded)), end_offset
+            utc = in_utc(generalized_time_to_datetime(decoded))
+
+            # A GeneralizedTime with no offset is a local time, so the one in
+            # UTC has one of zero.
+            return utc.replace(tzinfo=timezone.utc), end_offset
         except Error as error:
             raise self.decode_error(str(error), offset) from None
 

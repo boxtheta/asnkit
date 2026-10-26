@@ -1515,8 +1515,14 @@ impl<'a> Coder<'a> {
 
                 match value {
                     Err(_) if self.der && !self.strict => {
-                        time::generalized_time_from_string(text, false)
-                            .map(|value| time::to_utc(&value))
+                        time::generalized_time_from_string(text, false).map(|value| {
+                            let mut utc = time::to_utc(&value);
+
+                            // A GeneralizedTime with no offset is a local
+                            // time, so the one in UTC has one of zero.
+                            utc.time.offset = Some(0);
+                            utc
+                        })
                     }
                     _ => value,
                 }

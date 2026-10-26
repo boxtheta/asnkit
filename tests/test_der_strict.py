@@ -211,28 +211,32 @@ class DerStrictTest(unittest.TestCase):
         self.check(
             "Generalized",
             "1812" + b"19920722132100.30Z".hex(),
-            datetime.datetime(1992, 7, 22, 13, 21, 0, 300000),
+            datetime.datetime(
+                1992, 7, 22, 13, 21, 0, 300000, tzinfo=datetime.timezone.utc
+            ),
         )
 
     def test_generalized_time_with_a_comma(self) -> None:
         self.check(
             "Generalized",
             "1811" + b"19920722132100,3Z".hex(),
-            datetime.datetime(1992, 7, 22, 13, 21, 0, 300000),
+            datetime.datetime(
+                1992, 7, 22, 13, 21, 0, 300000, tzinfo=datetime.timezone.utc
+            ),
         )
 
     def test_generalized_time_without_seconds(self) -> None:
         self.check(
             "Generalized",
             "180d" + b"199207221321Z".hex(),
-            datetime.datetime(1992, 7, 22, 13, 21),
+            datetime.datetime(1992, 7, 22, 13, 21, tzinfo=datetime.timezone.utc),
         )
 
     def test_generalized_time_with_an_offset(self) -> None:
         self.check(
             "Generalized",
             "1813" + b"19920722132100-0130".hex(),
-            datetime.datetime(1992, 7, 22, 14, 51),
+            datetime.datetime(1992, 7, 22, 14, 51, tzinfo=datetime.timezone.utc),
         )
 
     def test_duration_with_a_comma(self) -> None:
@@ -279,7 +283,9 @@ class DerStrictTest(unittest.TestCase):
             )
             self.assertEqual(
                 codec.decode("Generalized", b"\x18\x1119920722132100.3Z"),
-                datetime.datetime(1992, 7, 22, 13, 21, 0, 300000),
+                datetime.datetime(
+                    1992, 7, 22, 13, 21, 0, 300000, tzinfo=datetime.timezone.utc
+                ),
             )
             self.assertEqual(
                 codec.decode("Duration", bytes.fromhex("1f2204" + b"1.5Y".hex())),

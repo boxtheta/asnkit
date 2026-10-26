@@ -415,8 +415,8 @@ def restricted_generalized_time_to_datetime(string: str) -> datetime:
         elif len(string) != 15:
             raise ValueError
 
-        # Read as a time with no offset.
-        return _parse_generalized_time(string[:-1])
+        # The `Z` is read as UTC, as in any other GeneralizedTime.
+        return _parse_generalized_time(string)
     except (ValueError, IndexError):
         raise Error(
             "Expected a restricted generalized time string, but got '{}'.".format(

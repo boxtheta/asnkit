@@ -180,7 +180,7 @@ class UtilsTest(unittest.TestCase):
             actual = restricted_generalized_time_from_datetime(date_in)
             self.assertEqual(actual, generalized_time)
             actual = restricted_generalized_time_to_datetime(generalized_time)
-            self.assertEqual(actual, date_out)
+            self.assertEqual(actual, date_out.replace(tzinfo=timezone.utc))
 
     def test_utc_time_to_datetime_errors(self):
         datas = [

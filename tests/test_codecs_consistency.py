@@ -9,6 +9,7 @@ import unittest
 from datetime import date
 from datetime import time
 from datetime import datetime
+from datetime import timezone
 from .utils import BaseTest
 from tests import compiled as fixtures
 
@@ -268,7 +269,10 @@ class CodecsConsistencyTest(BaseTest):
         self.encode_decode_all_codecs("UTCTime", [datetime(2020, 3, 12)])
 
     def test_generalized_time(self):
-        self.encode_decode_all_codecs("GeneralizedTime", [datetime(2021, 3, 12)])
+        # In UTC, the one time DER, PER and UPER have.
+        self.encode_decode_all_codecs(
+            "GeneralizedTime", [datetime(2021, 3, 12, tzinfo=timezone.utc)]
+        )
 
     def test_duration(self):
         self.encode_decode_all_codecs(

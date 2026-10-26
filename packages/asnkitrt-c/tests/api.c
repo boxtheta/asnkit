@@ -272,8 +272,8 @@ static void test_values(const char *types)
     decoded = round_trip(der, "When", asnkit_value_new_date_time(date, time), NULL);
     OK(asnkit_value_date_time(decoded, &date_out, &time_out));
     CHECK(date_out.day == 29 && time_out.hour == 12 && time_out.minute == 30);
-    /* DER has times in UTC, which are read as naive, as in Python. */
-    CHECK(time_out.second == 15 && !time_out.has_offset);
+    /* DER has times in UTC, which are read as such, as in Python. */
+    CHECK(time_out.second == 15 && time_out.has_offset && time_out.offset == 0);
     CHECK(asnkit_value_time(decoded, &time_out) == ASNKIT_ERROR_KIND);
     asnkit_value_free(decoded);
 

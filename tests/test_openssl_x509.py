@@ -377,11 +377,18 @@ class OpenSslX509Test(unittest.TestCase):
 
         if isinstance(der, bytes):
             tbs = self.rfc5280.decode("Certificate", der)["tbsCertificate"]
+            utc = datetime.timezone.utc
             self.assertEqual(
                 tbs["validity"],
                 {
-                    "notBefore": ("generalTime", datetime.datetime(2050, 1, 1)),
-                    "notAfter": ("generalTime", datetime.datetime(2060, 1, 1)),
+                    "notBefore": (
+                        "generalTime",
+                        datetime.datetime(2050, 1, 1, tzinfo=utc),
+                    ),
+                    "notAfter": (
+                        "generalTime",
+                        datetime.datetime(2060, 1, 1, tzinfo=utc),
+                    ),
                 },
             )
 

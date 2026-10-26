@@ -9,6 +9,7 @@
 import sys
 import unittest
 from datetime import datetime
+from datetime import timezone
 from .utils import BaseTest
 
 from tests import compiled as fixtures
@@ -292,17 +293,17 @@ class DerTest(BaseTest):
         datas = [
             (
                 "A",
-                datetime(2018, 1, 22, 13, 29),
+                datetime(2018, 1, 22, 13, 29, tzinfo=timezone.utc),
                 b"\x18\x0f\x32\x30\x31\x38\x30\x31\x32\x32\x31\x33\x32\x39\x30\x30\x5a",
             ),
             (
                 "A",
-                datetime(2018, 1, 22, 13, 0),
+                datetime(2018, 1, 22, 13, 0, tzinfo=timezone.utc),
                 b"\x18\x0f\x32\x30\x31\x38\x30\x31\x32\x32\x31\x33\x30\x30\x30\x30\x5a",
             ),
             (
                 "A",
-                datetime(2000, 12, 31, 23, 59, 59),
+                datetime(2000, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
                 b"\x18\x0f\x32\x30\x30\x30\x31\x32\x33\x31\x32\x33\x35\x39\x35\x39\x5a",
             ),
         ]

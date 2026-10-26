@@ -506,13 +506,14 @@ pub fn generalized_time_from_string(string: &str, restricted: bool) -> Result<Da
 
         Ok(DateTime {
             date: checked_date(year, month, day)?,
-            // The restricted form is read as a naive time.
+            // The restricted form ends in `Z`, so it is read as a time in
+            // UTC, as the others with a `Z` are.
             time: checked_time(
                 hour,
                 u8::try_from(minute).map_err(|_| bad())?,
                 u8::try_from(second).map_err(|_| bad())?,
                 (fraction % 1_000_000) as u32,
-                if restricted { None } else { offset },
+                offset,
             )?,
         })
     };
@@ -1258,6 +1259,11 @@ mod tests {
         let fraction = generalized_time_from_string("20180131050047.5Z", false).unwrap();
 
         assert_eq!(fraction.time.microsecond, 500_000);
+        // The restricted form is in UTC too.
+        assert_eq!(
+            generalized_time_from_string("20180131050047.5Z", true),
+            Ok(fraction)
+        );
         assert_eq!(
             generalized_time_to_string(&fraction, true),
             "20180131050047.5Z"
