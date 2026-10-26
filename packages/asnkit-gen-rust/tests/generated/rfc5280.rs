@@ -1127,6 +1127,13 @@ impl Asn1Type for TBSCertificate {
 
 pub type Version = asnkitrt::serde_value::BigInt;
 
+/// The named numbers of [`Version`].
+pub mod version {
+    pub const V1: i128 = 0;
+    pub const V2: i128 = 1;
+    pub const V3: i128 = 2;
+}
+
 pub type CertificateSerialNumber = asnkitrt::serde_value::BigInt;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1530,6 +1537,16 @@ impl Asn1Type for PresentationAddress {
 
 pub type TerminalType = u16;
 
+/// The named numbers of [`TerminalType`].
+pub mod terminal_type {
+    pub const TELEX: u16 = 3;
+    pub const TELETEX: u16 = 4;
+    pub const G3_FACSIMILE: u16 = 5;
+    pub const G4_FACSIMILE: u16 = 6;
+    pub const IA5_TERMINAL: u16 = 7;
+    pub const VIDEOTEX: u16 = 8;
+}
+
 pub type TeletexDomainDefinedAttributes = Vec<TeletexDomainDefinedAttribute>;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1562,7 +1579,124 @@ pub type KeyIdentifier = asnkitrt::serde_value::OctetString;
 
 pub type SubjectKeyIdentifier = KeyIdentifier;
 
-pub type KeyUsage = asnkitrt::serde_value::BitString;
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct KeyUsage(pub asnkitrt::serde_value::BitString);
+
+impl KeyUsage {
+    pub const DIGITAL_SIGNATURE: usize = 0;
+    pub const NON_REPUDIATION: usize = 1;
+    pub const KEY_ENCIPHERMENT: usize = 2;
+    pub const DATA_ENCIPHERMENT: usize = 3;
+    pub const KEY_AGREEMENT: usize = 4;
+    pub const KEY_CERT_SIGN: usize = 5;
+    pub const C_RL_SIGN: usize = 6;
+    pub const ENCIPHER_ONLY: usize = 7;
+    pub const DECIPHER_ONLY: usize = 8;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+    /// No bit set.
+    pub fn empty() -> Self {
+        KeyUsage(asnkitrt::serde_value::BitString {
+            data: Vec::new(),
+            bits: 0,
+        })
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// Sets the bit `bit` to `value`, without the zero bits at the end.
+    pub fn set(&mut self, bit: usize, value: bool) {
+        self.0.set_bit(bit, value);
+        self.0.trim();
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn digital_signature(&self) -> bool {
+        self.get(Self::DIGITAL_SIGNATURE)
+    }
+
+    pub fn non_repudiation(&self) -> bool {
+        self.get(Self::NON_REPUDIATION)
+    }
+
+    pub fn key_encipherment(&self) -> bool {
+        self.get(Self::KEY_ENCIPHERMENT)
+    }
+
+    pub fn data_encipherment(&self) -> bool {
+        self.get(Self::DATA_ENCIPHERMENT)
+    }
+
+    pub fn key_agreement(&self) -> bool {
+        self.get(Self::KEY_AGREEMENT)
+    }
+
+    pub fn key_cert_sign(&self) -> bool {
+        self.get(Self::KEY_CERT_SIGN)
+    }
+
+    pub fn c_rl_sign(&self) -> bool {
+        self.get(Self::C_RL_SIGN)
+    }
+
+    pub fn encipher_only(&self) -> bool {
+        self.get(Self::ENCIPHER_ONLY)
+    }
+
+    pub fn decipher_only(&self) -> bool {
+        self.get(Self::DECIPHER_ONLY)
+    }
+
+    pub fn set_digital_signature(&mut self, value: bool) {
+        self.set(Self::DIGITAL_SIGNATURE, value);
+    }
+
+    pub fn set_non_repudiation(&mut self, value: bool) {
+        self.set(Self::NON_REPUDIATION, value);
+    }
+
+    pub fn set_key_encipherment(&mut self, value: bool) {
+        self.set(Self::KEY_ENCIPHERMENT, value);
+    }
+
+    pub fn set_data_encipherment(&mut self, value: bool) {
+        self.set(Self::DATA_ENCIPHERMENT, value);
+    }
+
+    pub fn set_key_agreement(&mut self, value: bool) {
+        self.set(Self::KEY_AGREEMENT, value);
+    }
+
+    pub fn set_key_cert_sign(&mut self, value: bool) {
+        self.set(Self::KEY_CERT_SIGN, value);
+    }
+
+    pub fn set_c_rl_sign(&mut self, value: bool) {
+        self.set(Self::C_RL_SIGN, value);
+    }
+
+    pub fn set_encipher_only(&mut self, value: bool) {
+        self.set(Self::ENCIPHER_ONLY, value);
+    }
+
+    pub fn set_decipher_only(&mut self, value: bool) {
+        self.set(Self::DECIPHER_ONLY, value);
+    }
+}
+
+impl Asn1Type for KeyUsage {
+    const MODULE: &'static str = "PKIX1Implicit88";
+    const NAME: &'static str = "KeyUsage";
+}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PrivateKeyUsagePeriod {
@@ -1814,7 +1948,124 @@ impl Asn1Type for DistributionPointName {
     const NAME: &'static str = "DistributionPointName";
 }
 
-pub type ReasonFlags = asnkitrt::serde_value::BitString;
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct ReasonFlags(pub asnkitrt::serde_value::BitString);
+
+impl ReasonFlags {
+    pub const UNUSED: usize = 0;
+    pub const KEY_COMPROMISE: usize = 1;
+    pub const C_A_COMPROMISE: usize = 2;
+    pub const AFFILIATION_CHANGED: usize = 3;
+    pub const SUPERSEDED: usize = 4;
+    pub const CESSATION_OF_OPERATION: usize = 5;
+    pub const CERTIFICATE_HOLD: usize = 6;
+    pub const PRIVILEGE_WITHDRAWN: usize = 7;
+    pub const A_A_COMPROMISE: usize = 8;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+    /// No bit set.
+    pub fn empty() -> Self {
+        ReasonFlags(asnkitrt::serde_value::BitString {
+            data: Vec::new(),
+            bits: 0,
+        })
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// Sets the bit `bit` to `value`, without the zero bits at the end.
+    pub fn set(&mut self, bit: usize, value: bool) {
+        self.0.set_bit(bit, value);
+        self.0.trim();
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn unused(&self) -> bool {
+        self.get(Self::UNUSED)
+    }
+
+    pub fn key_compromise(&self) -> bool {
+        self.get(Self::KEY_COMPROMISE)
+    }
+
+    pub fn c_a_compromise(&self) -> bool {
+        self.get(Self::C_A_COMPROMISE)
+    }
+
+    pub fn affiliation_changed(&self) -> bool {
+        self.get(Self::AFFILIATION_CHANGED)
+    }
+
+    pub fn superseded(&self) -> bool {
+        self.get(Self::SUPERSEDED)
+    }
+
+    pub fn cessation_of_operation(&self) -> bool {
+        self.get(Self::CESSATION_OF_OPERATION)
+    }
+
+    pub fn certificate_hold(&self) -> bool {
+        self.get(Self::CERTIFICATE_HOLD)
+    }
+
+    pub fn privilege_withdrawn(&self) -> bool {
+        self.get(Self::PRIVILEGE_WITHDRAWN)
+    }
+
+    pub fn a_a_compromise(&self) -> bool {
+        self.get(Self::A_A_COMPROMISE)
+    }
+
+    pub fn set_unused(&mut self, value: bool) {
+        self.set(Self::UNUSED, value);
+    }
+
+    pub fn set_key_compromise(&mut self, value: bool) {
+        self.set(Self::KEY_COMPROMISE, value);
+    }
+
+    pub fn set_c_a_compromise(&mut self, value: bool) {
+        self.set(Self::C_A_COMPROMISE, value);
+    }
+
+    pub fn set_affiliation_changed(&mut self, value: bool) {
+        self.set(Self::AFFILIATION_CHANGED, value);
+    }
+
+    pub fn set_superseded(&mut self, value: bool) {
+        self.set(Self::SUPERSEDED, value);
+    }
+
+    pub fn set_cessation_of_operation(&mut self, value: bool) {
+        self.set(Self::CESSATION_OF_OPERATION, value);
+    }
+
+    pub fn set_certificate_hold(&mut self, value: bool) {
+        self.set(Self::CERTIFICATE_HOLD, value);
+    }
+
+    pub fn set_privilege_withdrawn(&mut self, value: bool) {
+        self.set(Self::PRIVILEGE_WITHDRAWN, value);
+    }
+
+    pub fn set_a_a_compromise(&mut self, value: bool) {
+        self.set(Self::A_A_COMPROMISE, value);
+    }
+}
+
+impl Asn1Type for ReasonFlags {
+    const MODULE: &'static str = "PKIX1Implicit88";
+    const NAME: &'static str = "ReasonFlags";
+}
 
 pub type ExtKeyUsageSyntax = Vec<KeyPurposeId>;
 
@@ -2517,20 +2768,6 @@ pub fn decode_subject_key_identifier(
     asnkitrt::serde_value::from_value(&specification.decode_in("PKIX1Implicit88", "SubjectKeyIdentifier", data)?)
 }
 
-pub fn encode_key_usage(
-    value: &KeyUsage,
-    specification: &asnkitrt::runtime::Specification,
-) -> asnkitrt::Result<Vec<u8>> {
-    specification.encode_in("PKIX1Implicit88", "KeyUsage", &asnkitrt::serde_value::to_value(value)?)
-}
-
-pub fn decode_key_usage(
-    specification: &asnkitrt::runtime::Specification,
-    data: &[u8],
-) -> asnkitrt::Result<KeyUsage> {
-    asnkitrt::serde_value::from_value(&specification.decode_in("PKIX1Implicit88", "KeyUsage", data)?)
-}
-
 pub fn encode_certificate_policies(
     value: &CertificatePolicies,
     specification: &asnkitrt::runtime::Specification,
@@ -2711,20 +2948,6 @@ pub fn decode_crl_distribution_points(
     data: &[u8],
 ) -> asnkitrt::Result<CRLDistributionPoints> {
     asnkitrt::serde_value::from_value(&specification.decode_in("PKIX1Implicit88", "CRLDistributionPoints", data)?)
-}
-
-pub fn encode_reason_flags(
-    value: &ReasonFlags,
-    specification: &asnkitrt::runtime::Specification,
-) -> asnkitrt::Result<Vec<u8>> {
-    specification.encode_in("PKIX1Implicit88", "ReasonFlags", &asnkitrt::serde_value::to_value(value)?)
-}
-
-pub fn decode_reason_flags(
-    specification: &asnkitrt::runtime::Specification,
-    data: &[u8],
-) -> asnkitrt::Result<ReasonFlags> {
-    asnkitrt::serde_value::from_value(&specification.decode_in("PKIX1Implicit88", "ReasonFlags", data)?)
 }
 
 pub fn encode_ext_key_usage_syntax(

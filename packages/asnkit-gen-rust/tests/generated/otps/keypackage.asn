@@ -1,0 +1,51 @@
+-- Copied from OTPS (spec/keypackage.asn at ee6f07d), under the Apache License 2.0,
+-- as a specification in use with named bits and named numbers.
+
+-- OTPS key package, version 1: the payload of a capsule with the keySet flag.
+--
+-- A key package is the DER encoding of KeyPackage. The rules that go with
+-- this module are in spec/capsule.md, "Key packages".
+
+OTPS-KeyPackage-V1 DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+IMPORTS
+    KeyId FROM OTPS-Capsule-V1
+    SubjectPublicKeyInfo, OneAsymmetricKey FROM OTPS-PKIX;
+
+-- Replaces every key the device uses for capsules, all at once.
+KeyPackage ::= SEQUENCE {
+    version     INTEGER (1..255),     -- 1 for this module
+    keys        SEQUENCE (SIZE (1..64)) OF KeyEntry,
+    ...
+}
+
+KeyEntry ::= SEQUENCE {
+    -- The KeyId that capsule headers use to name this key.
+    keyId       KeyId,
+    usage       KeyUsage,
+    material    KeyMaterial,
+    ...
+}
+
+KeyUsage ::= ENUMERATED {
+    -- Verifies Capsule.signature; named by SignerInfo.keyId.
+    capsuleSigning      (0),
+    -- Decrypts capsules; named by KeyAgreement.preShared.keyId or
+    -- KeyAgreement.x25519.recipientKeyId.
+    capsuleDecryption   (1),
+    ...
+}
+
+KeyMaterial ::= CHOICE {
+    -- An Ed25519 public key (RFC 8410); for capsuleSigning.
+    publicKey       SubjectPublicKeyInfo,
+    -- An X25519 private key in PKCS #8 (RFC 5958, RFC 8410); for
+    -- capsuleDecryption with KeyAgreement.x25519.
+    privateKey      OneAsymmetricKey,
+    -- A pre-shared key; for capsuleDecryption with KeyAgreement.preShared.
+    symmetricKey    OCTET STRING (SIZE (32)),
+    ...
+}
+
+END

@@ -149,6 +149,78 @@ pub struct OuterInner {
     pub clash: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Permissions<'a>(pub wire::BitString<'a>);
+
+impl<'a> Permissions<'a> {
+    pub const READ: usize = 0;
+    pub const WRITE: usize = 1;
+    pub const SET: usize = 2;
+    pub const NAMED_2: usize = 3;
+    pub const EXECUTE: usize = 9;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1, 2, 3, 9];
+    /// The number of bytes that hold the bits that have names.
+    pub const BYTES: usize = 2;
+
+    /// The bytes with the bits `bits` set, for [`Self::from_bytes`].
+    pub const fn bytes(bits: &[usize]) -> [u8; 2] {
+        wire::named_bits(bits)
+    }
+
+    /// The bits of `bytes` up to the last that is set.
+    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
+        Permissions(wire::BitString::named(bytes))
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn read(&self) -> bool {
+        self.get(Self::READ)
+    }
+
+    pub fn write(&self) -> bool {
+        self.get(Self::WRITE)
+    }
+
+    pub fn set_2(&self) -> bool {
+        self.get(Self::SET)
+    }
+
+    pub fn named(&self) -> bool {
+        self.get(Self::NAMED_2)
+    }
+
+    pub fn execute(&self) -> bool {
+        self.get(Self::EXECUTE)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Named<'a> {
+    pub permissions: Permissions<'a>,
+    pub flags: NamedFlags<'a>,
+    pub level: u8,
+    pub version: u8,
+    pub big: i64,
+    pub mode: NamedMode,
+}
+
+impl Named<'_> {
+    pub const VERSION_V1: u8 = 0;
+    pub const VERSION_V2: u8 = 1;
+    pub const BIG_MINUS: i64 = -1;
+    pub const BIG_LOTS: i64 = 5000000000;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeSquare {
     pub side: u8,
@@ -181,6 +253,57 @@ pub struct OuterChoiceB {
 pub enum OuterChoice {
     A(()),
     B(OuterChoiceB),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NamedFlags<'a>(pub wire::BitString<'a>);
+
+impl<'a> NamedFlags<'a> {
+    pub const ON: usize = 0;
+    pub const OFF: usize = 1;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1];
+    /// The number of bytes that hold the bits that have names.
+    pub const BYTES: usize = 1;
+
+    /// The bytes with the bits `bits` set, for [`Self::from_bytes`].
+    pub const fn bytes(bits: &[usize]) -> [u8; 1] {
+        wire::named_bits(bits)
+    }
+
+    /// The bits of `bytes` up to the last that is set.
+    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
+        NamedFlags(wire::BitString::named(bytes))
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn on(&self) -> bool {
+        self.get(Self::ON)
+    }
+
+    pub fn off(&self) -> bool {
+        self.get(Self::OFF)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
+pub enum NamedMode {
+    Fast(u8),
+    Off(()),
+}
+
+impl NamedMode {
+    pub const FAST_SLOW: u8 = 0;
 }
 
 impl<'a> Keywords<'a> {
@@ -489,6 +612,109 @@ impl OuterInner {
     }
 }
 
+impl<'a> Permissions<'a> {
+    pub fn encode_uper(&self, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_uper_with(self, out, uper_write_17)
+    }
+
+    pub fn decode_uper(data: &'a [u8]) -> wire::Result<Self> {
+        wire::decode_uper_with(data, uper_read_17)
+    }
+
+    pub fn uper_len(&self) -> wire::Result<usize> {
+        wire::encoded_len(self.encode_uper(&mut []))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_uper(&self) -> wire::Result<alloc::vec::Vec<u8>> {
+        let mut out = alloc::vec![0; self.uper_len()?];
+        self.encode_uper(&mut out)?;
+        Ok(out)
+    }
+}
+
+pub type Level = u8;
+
+/// The uper functions and the named numbers of [`Level`].
+pub mod level {
+    use super::*;
+
+    pub const LOW: i128 = 0;
+    pub const HIGH: i128 = 10;
+    pub const HUGE: i128 = 1000;
+
+    pub fn encode_uper(value: &u8, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_uper_with(value, out, uper_write_18)
+    }
+
+    pub fn decode_uper(data: &[u8]) -> wire::Result<u8> {
+        wire::decode_uper_with(data, uper_read_18)
+    }
+}
+
+impl<'a> Named<'a> {
+    pub fn encode_uper(&self, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_uper_with(self, out, uper_write_19)
+    }
+
+    pub fn decode_uper(data: &'a [u8]) -> wire::Result<Self> {
+        wire::decode_uper_with(data, uper_read_19)
+    }
+
+    pub fn uper_len(&self) -> wire::Result<usize> {
+        wire::encoded_len(self.encode_uper(&mut []))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_uper(&self) -> wire::Result<alloc::vec::Vec<u8>> {
+        let mut out = alloc::vec![0; self.uper_len()?];
+        self.encode_uper(&mut out)?;
+        Ok(out)
+    }
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_19(v: &Named<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_19(v, w)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_19<'a>(r: &mut per::Reader<'a>) -> wire::Result<Named<'a>> {
+    let v = uper_read_contents_19(r)?;
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_18(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(20), extensible: false }))?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_18<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(20), extensible: false }))?;
+        per::fit(r, n)?
+    };
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_17(v: &Permissions<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::bit_string(w, &v.0, true, None)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_17<'a>(r: &mut per::Reader<'a>) -> wire::Result<Permissions<'a>> {
+    let v = Permissions(per::read_bit_string(r, None)?);
+
+    Ok(v)
+}
+
 #[allow(dead_code, unused_variables)]
 fn uper_write_16(v: &OuterInner, w: &mut per::Writer<'_>) -> wire::Result<()> {
     uper_write_contents_16(v, w)?;
@@ -546,64 +772,64 @@ fn uper_read_13<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Text<'a>> {
 
 #[allow(dead_code, unused_variables)]
 fn uper_write_12(v: &wire::SequenceOf<'_, PairsItem>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    v.write_uper(w, None, uper_write_72)?;
+    v.write_uper(w, None, uper_write_75)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
 fn uper_read_12<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, PairsItem>> {
-    let v = wire::SequenceOf::read_uper(r, None, uper_read_72)?;
+    let v = wire::SequenceOf::read_uper(r, None, uper_read_75)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_72(v: &PairsItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_contents_72(v, w)?;
+fn uper_write_75(v: &PairsItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_75(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_72<'a>(r: &mut per::Reader<'a>) -> wire::Result<PairsItem> {
-    let v = uper_read_contents_72(r)?;
+fn uper_read_75<'a>(r: &mut per::Reader<'a>) -> wire::Result<PairsItem> {
+    let v = uper_read_contents_75(r)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
 fn uper_write_11(v: &wire::SequenceOf<'_, wire::SequenceOf<'_, u8>>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    v.write_uper(w, None, uper_write_69)?;
+    v.write_uper(w, None, uper_write_72)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
 fn uper_read_11<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, wire::SequenceOf<'a, u8>>> {
-    let v = wire::SequenceOf::read_uper(r, None, uper_read_69)?;
+    let v = wire::SequenceOf::read_uper(r, None, uper_read_72)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_69(v: &wire::SequenceOf<'_, u8>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    v.write_uper(w, None, uper_write_68)?;
+fn uper_write_72(v: &wire::SequenceOf<'_, u8>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    v.write_uper(w, None, uper_write_71)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_69<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
-    let v = wire::SequenceOf::read_uper(r, None, uper_read_68)?;
+fn uper_read_72<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
+    let v = wire::SequenceOf::read_uper(r, None, uper_read_71)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_68(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_71(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_68<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_71<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
         per::fit(r, n)?
@@ -746,14 +972,14 @@ fn uper_read_0<'a>(r: &mut per::Reader<'a>) -> wire::Result<Keywords<'a>> {
 #[allow(dead_code, unused_variables)]
 fn uper_write_contents_0(v: &Keywords<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(v.r#match.is_some());
-    uper_write_17(&v.r#type, w)?;
-    uper_write_18(&v.self_, w)?;
+    uper_write_20(&v.r#type, w)?;
+    uper_write_21(&v.self_, w)?;
     if let Some(x) = &v.r#match {
-        uper_write_19(x, w)?;
+        uper_write_22(x, w)?;
     }
-    uper_write_20(&v.foo_bar, w)?;
-    uper_write_21(&v.foo_bar_2, w)?;
-    uper_write_22(&v.crate_, w)?;
+    uper_write_23(&v.foo_bar, w)?;
+    uper_write_24(&v.foo_bar_2, w)?;
+    uper_write_25(&v.crate_, w)?;
     Ok(())
 }
 
@@ -761,16 +987,16 @@ fn uper_write_contents_0(v: &Keywords<'_>, w: &mut per::Writer<'_>) -> wire::Res
 fn uper_read_contents_0<'a>(r: &mut per::Reader<'a>) -> wire::Result<Keywords<'a>> {
     r.enter()?;
     let p0 = r.bit()?;
-    let f_type = uper_read_17(r)?;
-    let f_self_ = uper_read_18(r)?;
+    let f_type = uper_read_20(r)?;
+    let f_self_ = uper_read_21(r)?;
     let f_match = if p0 {
-        Some(uper_read_19(r)?)
+        Some(uper_read_22(r)?)
     } else {
         None
     };
-    let f_foo_bar = uper_read_20(r)?;
-    let f_foo_bar_2 = uper_read_21(r)?;
-    let f_crate_ = uper_read_22(r)?;
+    let f_foo_bar = uper_read_23(r)?;
+    let f_foo_bar_2 = uper_read_24(r)?;
+    let f_crate_ = uper_read_25(r)?;
 
     r.leave();
 
@@ -778,13 +1004,13 @@ fn uper_read_contents_0<'a>(r: &mut per::Reader<'a>) -> wire::Result<Keywords<'a
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_22(v: &(), w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_25(v: &(), w: &mut per::Writer<'_>) -> wire::Result<()> {
     let _ = (v, w);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_22<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
+fn uper_read_25<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
     let v = {
         let _ = r;
     };
@@ -793,13 +1019,13 @@ fn uper_read_22<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_21(v: &u16, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_24(v: &u16, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(65535), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_21<'a>(r: &mut per::Reader<'a>) -> wire::Result<u16> {
+fn uper_read_24<'a>(r: &mut per::Reader<'a>) -> wire::Result<u16> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(65535), extensible: false }))?;
         per::fit(r, n)?
@@ -809,13 +1035,13 @@ fn uper_read_21<'a>(r: &mut per::Reader<'a>) -> wire::Result<u16> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_20(v: &i8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_23(v: &i8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(-100), max: Some(100), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_20<'a>(r: &mut per::Reader<'a>) -> wire::Result<i8> {
+fn uper_read_23<'a>(r: &mut per::Reader<'a>) -> wire::Result<i8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(-100), max: Some(100), extensible: false }))?;
         per::fit(r, n)?
@@ -825,39 +1051,39 @@ fn uper_read_20<'a>(r: &mut per::Reader<'a>) -> wire::Result<i8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_19(v: &wire::Text<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_22(v: &wire::Text<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::other_string(w, v, wire::StrKind::Utf8)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_19<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Text<'a>> {
+fn uper_read_22<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Text<'a>> {
     let v = per::read_other_string(r, wire::StrKind::Utf8)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_18(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_21(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(*v);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_18<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
+fn uper_read_21<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
     let v = r.bit()?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_17(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_20(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_17<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_20<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
         per::fit(r, n)?
@@ -868,28 +1094,28 @@ fn uper_read_17<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn uper_write_contents_1(v: &Sizes, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_23(&v.a, w)?;
-    uper_write_24(&v.b, w)?;
-    uper_write_25(&v.c, w)?;
-    uper_write_26(&v.d, w)?;
-    uper_write_27(&v.e, w)?;
-    uper_write_28(&v.f, w)?;
-    uper_write_29(&v.g, w)?;
-    uper_write_30(&v.h, w)?;
+    uper_write_26(&v.a, w)?;
+    uper_write_27(&v.b, w)?;
+    uper_write_28(&v.c, w)?;
+    uper_write_29(&v.d, w)?;
+    uper_write_30(&v.e, w)?;
+    uper_write_31(&v.f, w)?;
+    uper_write_32(&v.g, w)?;
+    uper_write_33(&v.h, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
 fn uper_read_contents_1<'a>(r: &mut per::Reader<'a>) -> wire::Result<Sizes> {
     r.enter()?;
-    let f_a = uper_read_23(r)?;
-    let f_b = uper_read_24(r)?;
-    let f_c = uper_read_25(r)?;
-    let f_d = uper_read_26(r)?;
-    let f_e = uper_read_27(r)?;
-    let f_f = uper_read_28(r)?;
-    let f_g = uper_read_29(r)?;
-    let f_h = uper_read_30(r)?;
+    let f_a = uper_read_26(r)?;
+    let f_b = uper_read_27(r)?;
+    let f_c = uper_read_28(r)?;
+    let f_d = uper_read_29(r)?;
+    let f_e = uper_read_30(r)?;
+    let f_f = uper_read_31(r)?;
+    let f_g = uper_read_32(r)?;
+    let f_h = uper_read_33(r)?;
 
     r.leave();
 
@@ -897,13 +1123,13 @@ fn uper_read_contents_1<'a>(r: &mut per::Reader<'a>) -> wire::Result<Sizes> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_30(v: &i64, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_33(v: &i64, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: None, extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_30<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
+fn uper_read_33<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: None, extensible: false }))?;
         per::fit(r, n)?
@@ -913,13 +1139,13 @@ fn uper_read_30<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_29(v: &i64, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_32(v: &i64, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), None)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_29<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
+fn uper_read_32<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
     let v = {
         let n = per::read_integer(r, None)?;
         per::fit(r, n)?
@@ -929,13 +1155,13 @@ fn uper_read_29<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_28(v: &i64, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_31(v: &i64, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(-3000000000), max: Some(3000000000), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_28<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
+fn uper_read_31<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(-3000000000), max: Some(3000000000), extensible: false }))?;
         per::fit(r, n)?
@@ -945,13 +1171,13 @@ fn uper_read_28<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_27(v: &i16, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_30(v: &i16, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(-30000), max: Some(30000), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_27<'a>(r: &mut per::Reader<'a>) -> wire::Result<i16> {
+fn uper_read_30<'a>(r: &mut per::Reader<'a>) -> wire::Result<i16> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(-30000), max: Some(30000), extensible: false }))?;
         per::fit(r, n)?
@@ -961,13 +1187,13 @@ fn uper_read_27<'a>(r: &mut per::Reader<'a>) -> wire::Result<i16> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_26(v: &i8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_29(v: &i8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(-1), max: Some(1), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_26<'a>(r: &mut per::Reader<'a>) -> wire::Result<i8> {
+fn uper_read_29<'a>(r: &mut per::Reader<'a>) -> wire::Result<i8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(-1), max: Some(1), extensible: false }))?;
         per::fit(r, n)?
@@ -977,13 +1203,13 @@ fn uper_read_26<'a>(r: &mut per::Reader<'a>) -> wire::Result<i8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_25(v: &u64, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_28(v: &u64, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(5000000000), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_25<'a>(r: &mut per::Reader<'a>) -> wire::Result<u64> {
+fn uper_read_28<'a>(r: &mut per::Reader<'a>) -> wire::Result<u64> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(5000000000), extensible: false }))?;
         per::fit(r, n)?
@@ -993,13 +1219,13 @@ fn uper_read_25<'a>(r: &mut per::Reader<'a>) -> wire::Result<u64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_24(v: &u32, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_27(v: &u32, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(70000), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_24<'a>(r: &mut per::Reader<'a>) -> wire::Result<u32> {
+fn uper_read_27<'a>(r: &mut per::Reader<'a>) -> wire::Result<u32> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(70000), extensible: false }))?;
         per::fit(r, n)?
@@ -1009,13 +1235,13 @@ fn uper_read_24<'a>(r: &mut per::Reader<'a>) -> wire::Result<u32> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_23(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_26(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_23<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_26<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
         per::fit(r, n)?
@@ -1029,27 +1255,27 @@ fn uper_write_contents_4(v: &Shape<'_>, w: &mut per::Writer<'_>) -> wire::Result
     match v {
         Shape::Circle(x) => {
             per::choice_index(w, 6, 0);
-            uper_write_44(x, w)
+            uper_write_47(x, w)
         }
         Shape::Square(x) => {
             per::choice_index(w, 6, 1);
-            uper_write_47(x, w)
+            uper_write_50(x, w)
         }
         Shape::Nothing(x) => {
             per::choice_index(w, 6, 2);
-            uper_write_48(x, w)
+            uper_write_51(x, w)
         }
         Shape::Many(x) => {
             per::choice_index(w, 6, 3);
-            uper_write_49(x, w)
+            uper_write_52(x, w)
         }
         Shape::Octets(x) => {
             per::choice_index(w, 6, 4);
-            uper_write_50(x, w)
+            uper_write_53(x, w)
         }
         Shape::Named(x) => {
             per::choice_index(w, 6, 5);
-            uper_write_51(x, w)
+            uper_write_54(x, w)
         }
     }
 }
@@ -1059,12 +1285,12 @@ fn uper_read_contents_4<'a>(r: &mut per::Reader<'a>) -> wire::Result<Shape<'a>> 
     r.enter()?;
 
     let v = match per::read_choice_index(r, 6)? {
-        0 => Shape::Circle(uper_read_44(r)?),
-        1 => Shape::Square(uper_read_47(r)?),
-        2 => Shape::Nothing(uper_read_48(r)?),
-        3 => Shape::Many(uper_read_49(r)?),
-        4 => Shape::Octets(uper_read_50(r)?),
-        5 => Shape::Named(uper_read_51(r)?),
+        0 => Shape::Circle(uper_read_47(r)?),
+        1 => Shape::Square(uper_read_50(r)?),
+        2 => Shape::Nothing(uper_read_51(r)?),
+        3 => Shape::Many(uper_read_52(r)?),
+        4 => Shape::Octets(uper_read_53(r)?),
+        5 => Shape::Named(uper_read_54(r)?),
         _ => return Err(wire::Error::decode("Expected the index of an alternative of the CHOICE.", r.position())),
     };
 
@@ -1074,52 +1300,52 @@ fn uper_read_contents_4<'a>(r: &mut per::Reader<'a>) -> wire::Result<Shape<'a>> 
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_51(v: &wire::Text<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_54(v: &wire::Text<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::other_string(w, v, wire::StrKind::Utf8)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_51<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Text<'a>> {
+fn uper_read_54<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Text<'a>> {
     let v = per::read_other_string(r, wire::StrKind::Utf8)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_50(v: &wire::Octets<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_53(v: &wire::Octets<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::octet_string(w, v, None)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_50<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Octets<'a>> {
+fn uper_read_53<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Octets<'a>> {
     let v = per::read_octet_string(r, None)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_49(v: &wire::SequenceOf<'_, Shape<'_>>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_52(v: &wire::SequenceOf<'_, Shape<'_>>, w: &mut per::Writer<'_>) -> wire::Result<()> {
     v.write_uper(w, None, uper_write_4)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_49<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, Shape<'a>>> {
+fn uper_read_52<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, Shape<'a>>> {
     let v = wire::SequenceOf::read_uper(r, None, uper_read_4)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_48(v: &(), w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_51(v: &(), w: &mut per::Writer<'_>) -> wire::Result<()> {
     let _ = (v, w);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_48<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
+fn uper_read_51<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
     let v = {
         let _ = r;
     };
@@ -1128,26 +1354,26 @@ fn uper_read_48<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_47(v: &ShapeSquare, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_contents_47(v, w)?;
+fn uper_write_50(v: &ShapeSquare, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_50(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_47<'a>(r: &mut per::Reader<'a>) -> wire::Result<ShapeSquare> {
-    let v = uper_read_contents_47(r)?;
+fn uper_read_50<'a>(r: &mut per::Reader<'a>) -> wire::Result<ShapeSquare> {
+    let v = uper_read_contents_50(r)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_44(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_47(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(1), max: Some(100), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_44<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_47<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(1), max: Some(100), extensible: false }))?;
         per::fit(r, n)?
@@ -1157,22 +1383,22 @@ fn uper_read_44<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_contents_47(v: &ShapeSquare, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_contents_50(v: &ShapeSquare, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(v.color.is_some());
-    uper_write_45(&v.side, w)?;
+    uper_write_48(&v.side, w)?;
     if let Some(x) = &v.color {
-        uper_write_46(x, w)?;
+        uper_write_49(x, w)?;
     }
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn uper_read_contents_47<'a>(r: &mut per::Reader<'a>) -> wire::Result<ShapeSquare> {
+fn uper_read_contents_50<'a>(r: &mut per::Reader<'a>) -> wire::Result<ShapeSquare> {
     r.enter()?;
     let p0 = r.bit()?;
-    let f_side = uper_read_45(r)?;
+    let f_side = uper_read_48(r)?;
     let f_color = if p0 {
-        Some(uper_read_46(r)?)
+        Some(uper_read_49(r)?)
     } else {
         None
     };
@@ -1183,13 +1409,13 @@ fn uper_read_contents_47<'a>(r: &mut per::Reader<'a>) -> wire::Result<ShapeSquar
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_46(v: &Color, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_49(v: &Color, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::enumerated(w, 3, true, v.uper_index());
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_46<'a>(r: &mut per::Reader<'a>) -> wire::Result<Color> {
+fn uper_read_49<'a>(r: &mut per::Reader<'a>) -> wire::Result<Color> {
     let v = Color::from_uper_index(per::read_enumerated(r, 3, true)?)
         .ok_or_else(|| wire::Error::decode("Expected an enumeration value.", r.position()))?;
 
@@ -1197,13 +1423,13 @@ fn uper_read_46<'a>(r: &mut per::Reader<'a>) -> wire::Result<Color> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_45(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_48(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(1), max: Some(100), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_45<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_48<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(1), max: Some(100), extensible: false }))?;
         per::fit(r, n)?
@@ -1216,12 +1442,12 @@ fn uper_read_45<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 fn uper_write_contents_6(v: &Tree, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(v.left.is_some());
     w.bit(v.right.is_some());
-    uper_write_52(&v.value, w)?;
+    uper_write_55(&v.value, w)?;
     if let Some(x) = &v.left {
-        uper_write_53(x, w)?;
+        uper_write_56(x, w)?;
     }
     if let Some(x) = &v.right {
-        uper_write_54(x, w)?;
+        uper_write_57(x, w)?;
     }
     Ok(())
 }
@@ -1231,14 +1457,14 @@ fn uper_read_contents_6<'a>(r: &mut per::Reader<'a>) -> wire::Result<Tree> {
     r.enter()?;
     let p0 = r.bit()?;
     let p1 = r.bit()?;
-    let f_value = uper_read_52(r)?;
+    let f_value = uper_read_55(r)?;
     let f_left = if p0 {
-        Some(Box::new(uper_read_53(r)?))
+        Some(Box::new(uper_read_56(r)?))
     } else {
         None
     };
     let f_right = if p1 {
-        Some(Box::new(uper_read_54(r)?))
+        Some(Box::new(uper_read_57(r)?))
     } else {
         None
     };
@@ -1249,72 +1475,14 @@ fn uper_read_contents_6<'a>(r: &mut per::Reader<'a>) -> wire::Result<Tree> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_54(v: &Node, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_57(v: &Node, w: &mut per::Writer<'_>) -> wire::Result<()> {
     uper_write_contents_7(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_54<'a>(r: &mut per::Reader<'a>) -> wire::Result<Node> {
+fn uper_read_57<'a>(r: &mut per::Reader<'a>) -> wire::Result<Node> {
     let v = uper_read_contents_7(r)?;
-
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn uper_write_53(v: &Tree, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_contents_6(v, w)?;
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_53<'a>(r: &mut per::Reader<'a>) -> wire::Result<Tree> {
-    let v = uper_read_contents_6(r)?;
-
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn uper_write_52(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_52<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
-    let v = {
-        let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
-        per::fit(r, n)?
-    };
-
-    Ok(v)
-}
-
-#[allow(dead_code)]
-fn uper_write_contents_7(v: &Node, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    match v {
-        Node::Leaf(x) => {
-            per::choice_index(w, 2, 0);
-            uper_write_55(x, w)
-        }
-        Node::Tree(x) => {
-            per::choice_index(w, 2, 1);
-            uper_write_56(x, w)
-        }
-    }
-}
-
-#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn uper_read_contents_7<'a>(r: &mut per::Reader<'a>) -> wire::Result<Node> {
-    r.enter()?;
-
-    let v = match per::read_choice_index(r, 2)? {
-        0 => Node::Leaf(uper_read_55(r)?),
-        1 => Node::Tree(Box::new(uper_read_56(r)?)),
-        _ => return Err(wire::Error::decode("Expected the index of an alternative of the CHOICE.", r.position())),
-    };
-
-    r.leave();
 
     Ok(v)
 }
@@ -1348,6 +1516,64 @@ fn uper_read_55<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     Ok(v)
 }
 
+#[allow(dead_code)]
+fn uper_write_contents_7(v: &Node, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    match v {
+        Node::Leaf(x) => {
+            per::choice_index(w, 2, 0);
+            uper_write_58(x, w)
+        }
+        Node::Tree(x) => {
+            per::choice_index(w, 2, 1);
+            uper_write_59(x, w)
+        }
+    }
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn uper_read_contents_7<'a>(r: &mut per::Reader<'a>) -> wire::Result<Node> {
+    r.enter()?;
+
+    let v = match per::read_choice_index(r, 2)? {
+        0 => Node::Leaf(uper_read_58(r)?),
+        1 => Node::Tree(Box::new(uper_read_59(r)?)),
+        _ => return Err(wire::Error::decode("Expected the index of an alternative of the CHOICE.", r.position())),
+    };
+
+    r.leave();
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_59(v: &Tree, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_6(v, w)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_59<'a>(r: &mut per::Reader<'a>) -> wire::Result<Tree> {
+    let v = uper_read_contents_6(r)?;
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_58(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_58<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
+        per::fit(r, n)?
+    };
+
+    Ok(v)
+}
+
 #[allow(dead_code, unused_variables)]
 fn uper_write_contents_8(v: &Defaults<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(v.count != 3);
@@ -1356,19 +1582,19 @@ fn uper_write_contents_8(v: &Defaults<'_>, w: &mut per::Writer<'_>) -> wire::Res
     w.bit(v.list.is_some());
     w.bit(v.anything.is_some());
     if v.count != 3 {
-        uper_write_57(&v.count, w)?;
+        uper_write_60(&v.count, w)?;
     }
     if !v.enabled {
-        uper_write_58(&v.enabled, w)?;
+        uper_write_61(&v.enabled, w)?;
     }
     if v.color != Color::Green {
-        uper_write_59(&v.color, w)?;
+        uper_write_62(&v.color, w)?;
     }
     if let Some(x) = &v.list {
-        uper_write_61(x, w)?;
+        uper_write_64(x, w)?;
     }
     if let Some(x) = &v.anything {
-        uper_write_62(x, w)?;
+        uper_write_65(x, w)?;
     }
     Ok(())
 }
@@ -1382,27 +1608,27 @@ fn uper_read_contents_8<'a>(r: &mut per::Reader<'a>) -> wire::Result<Defaults<'a
     let p3 = r.bit()?;
     let p4 = r.bit()?;
     let f_count = if p0 {
-        uper_read_57(r)?
+        uper_read_60(r)?
     } else {
         3
     };
     let f_enabled = if p1 {
-        uper_read_58(r)?
+        uper_read_61(r)?
     } else {
         true
     };
     let f_color = if p2 {
-        uper_read_59(r)?
+        uper_read_62(r)?
     } else {
         Color::Green
     };
     let f_list = if p3 {
-        Some(uper_read_61(r)?)
+        Some(uper_read_64(r)?)
     } else {
         None
     };
     let f_anything = if p4 {
-        Some(uper_read_62(r)?)
+        Some(uper_read_65(r)?)
     } else {
         None
     };
@@ -1413,39 +1639,39 @@ fn uper_read_contents_8<'a>(r: &mut per::Reader<'a>) -> wire::Result<Defaults<'a
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_62(v: &Any, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_65(v: &Any, w: &mut per::Writer<'_>) -> wire::Result<()> {
     uper_write_contents_9(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_62<'a>(r: &mut per::Reader<'a>) -> wire::Result<Any> {
+fn uper_read_65<'a>(r: &mut per::Reader<'a>) -> wire::Result<Any> {
     let v = uper_read_contents_9(r)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_61(v: &wire::SequenceOf<'_, u8>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    v.write_uper(w, None, uper_write_60)?;
+fn uper_write_64(v: &wire::SequenceOf<'_, u8>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    v.write_uper(w, None, uper_write_63)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_61<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
-    let v = wire::SequenceOf::read_uper(r, None, uper_read_60)?;
+fn uper_read_64<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
+    let v = wire::SequenceOf::read_uper(r, None, uper_read_63)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_60(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_63(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(9), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_60<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_63<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(9), extensible: false }))?;
         per::fit(r, n)?
@@ -1455,13 +1681,13 @@ fn uper_read_60<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_59(v: &Color, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_62(v: &Color, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::enumerated(w, 3, true, v.uper_index());
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_59<'a>(r: &mut per::Reader<'a>) -> wire::Result<Color> {
+fn uper_read_62<'a>(r: &mut per::Reader<'a>) -> wire::Result<Color> {
     let v = Color::from_uper_index(per::read_enumerated(r, 3, true)?)
         .ok_or_else(|| wire::Error::decode("Expected an enumeration value.", r.position()))?;
 
@@ -1469,26 +1695,26 @@ fn uper_read_59<'a>(r: &mut per::Reader<'a>) -> wire::Result<Color> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_58(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_61(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(*v);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_58<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
+fn uper_read_61<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
     let v = r.bit()?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_57(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_60(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(10), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_57<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_60<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(10), extensible: false }))?;
         per::fit(r, n)?
@@ -1499,14 +1725,14 @@ fn uper_read_57<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn uper_write_contents_9(v: &Any, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_63(&v.x, w)?;
+    uper_write_66(&v.x, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
 fn uper_read_contents_9<'a>(r: &mut per::Reader<'a>) -> wire::Result<Any> {
     r.enter()?;
-    let f_x = uper_read_63(r)?;
+    let f_x = uper_read_66(r)?;
 
     r.leave();
 
@@ -1514,13 +1740,13 @@ fn uper_read_contents_9<'a>(r: &mut per::Reader<'a>) -> wire::Result<Any> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_63(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_66(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_63<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_66<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
         per::fit(r, n)?
@@ -1535,23 +1761,23 @@ fn uper_write_contents_10(v: &Extensible<'_>, w: &mut per::Writer<'_>) -> wire::
     let e1 = v.third.is_some() || v.fourth.is_some();
     let extended = e0 || e1;
     w.bit(extended);
-    uper_write_64(&v.first, w)?;
+    uper_write_67(&v.first, w)?;
     if extended {
         w.normally_small_length(2)?;
         w.bit(e0);
         w.bit(e1);
         w.align();
         if let Some(x) = &v.second {
-            w.open_type(|w| uper_write_65(x, w))?;
+            w.open_type(|w| uper_write_68(x, w))?;
         }
         if e1 {
             w.open_type(|w| {
                 match &v.third {
-                    Some(x) => uper_write_66(x, w)?,
+                    Some(x) => uper_write_69(x, w)?,
                     None => return Err(wire::Error::encode("A member is not found in the SEQUENCE or SET.")),
                 }
                 match &v.fourth {
-                    Some(x) => uper_write_67(x, w)?,
+                    Some(x) => uper_write_70(x, w)?,
                     None => return Err(wire::Error::encode("A member is not found in the SEQUENCE or SET.")),
                 }
                 Ok(())
@@ -1565,7 +1791,7 @@ fn uper_write_contents_10(v: &Extensible<'_>, w: &mut per::Writer<'_>) -> wire::
 fn uper_read_contents_10<'a>(r: &mut per::Reader<'a>) -> wire::Result<Extensible<'a>> {
     r.enter()?;
     let extended = r.bit()?;
-    let f_first = uper_read_64(r)?;
+    let f_first = uper_read_67(r)?;
     let mut f_second = None;
     let mut f_third = None;
     let mut f_fourth = None;
@@ -1582,10 +1808,10 @@ fn uper_read_contents_10<'a>(r: &mut per::Reader<'a>) -> wire::Result<Extensible
             }
 
             match index {
-                0 => f_second = Some(per::read_open_type(r, uper_read_65)?),
+                0 => f_second = Some(per::read_open_type(r, uper_read_68)?),
                 1 => per::read_open_type(r, |r| {
-                        f_third = Some(uper_read_66(r)?);
-                        f_fourth = Some(uper_read_67(r)?);
+                        f_third = Some(uper_read_69(r)?);
+                        f_fourth = Some(uper_read_70(r)?);
                         Ok(())
                     })?,
                 _ => {
@@ -1601,26 +1827,26 @@ fn uper_read_contents_10<'a>(r: &mut per::Reader<'a>) -> wire::Result<Extensible
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_67(v: &wire::Text<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_70(v: &wire::Text<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::other_string(w, v, wire::StrKind::Utf8)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_67<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Text<'a>> {
+fn uper_read_70<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::Text<'a>> {
     let v = per::read_other_string(r, wire::StrKind::Utf8)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_66(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_69(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_66<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_69<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
         per::fit(r, n)?
@@ -1630,13 +1856,13 @@ fn uper_read_66<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_65(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_68(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_65<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_68<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
         per::fit(r, n)?
@@ -1646,13 +1872,13 @@ fn uper_read_65<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_64(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_67(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_64<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_67<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
         per::fit(r, n)?
@@ -1662,17 +1888,17 @@ fn uper_read_64<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_contents_72(v: &PairsItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_70(&v.a, w)?;
-    uper_write_71(&v.b, w)?;
+fn uper_write_contents_75(v: &PairsItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_73(&v.a, w)?;
+    uper_write_74(&v.b, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn uper_read_contents_72<'a>(r: &mut per::Reader<'a>) -> wire::Result<PairsItem> {
+fn uper_read_contents_75<'a>(r: &mut per::Reader<'a>) -> wire::Result<PairsItem> {
     r.enter()?;
-    let f_a = uper_read_70(r)?;
-    let f_b = uper_read_71(r)?;
+    let f_a = uper_read_73(r)?;
+    let f_b = uper_read_74(r)?;
 
     r.leave();
 
@@ -1680,26 +1906,26 @@ fn uper_read_contents_72<'a>(r: &mut per::Reader<'a>) -> wire::Result<PairsItem>
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_71(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_74(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(*v);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_71<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
+fn uper_read_74<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
     let v = r.bit()?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_70(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_73(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_70<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_73<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(255), extensible: false }))?;
         per::fit(r, n)?
@@ -1710,18 +1936,18 @@ fn uper_read_70<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn uper_write_contents_15(v: &Outer<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_74(&v.inner, w)?;
-    uper_write_77(&v.list, w)?;
-    uper_write_81(&v.choice, w)?;
+    uper_write_77(&v.inner, w)?;
+    uper_write_80(&v.list, w)?;
+    uper_write_84(&v.choice, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
 fn uper_read_contents_15<'a>(r: &mut per::Reader<'a>) -> wire::Result<Outer<'a>> {
     r.enter()?;
-    let f_inner = uper_read_74(r)?;
-    let f_list = uper_read_77(r)?;
-    let f_choice = uper_read_81(r)?;
+    let f_inner = uper_read_77(r)?;
+    let f_list = uper_read_80(r)?;
+    let f_choice = uper_read_84(r)?;
 
     r.leave();
 
@@ -1729,67 +1955,67 @@ fn uper_read_contents_15<'a>(r: &mut per::Reader<'a>) -> wire::Result<Outer<'a>>
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_81(v: &OuterChoice, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_contents_81(v, w)?;
+fn uper_write_84(v: &OuterChoice, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_84(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_81<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoice> {
-    let v = uper_read_contents_81(r)?;
+fn uper_read_84<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoice> {
+    let v = uper_read_contents_84(r)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_77(v: &wire::SequenceOf<'_, OuterListItem>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    v.write_uper(w, None, uper_write_76)?;
+fn uper_write_80(v: &wire::SequenceOf<'_, OuterListItem>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    v.write_uper(w, None, uper_write_79)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_77<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, OuterListItem>> {
-    let v = wire::SequenceOf::read_uper(r, None, uper_read_76)?;
+fn uper_read_80<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, OuterListItem>> {
+    let v = wire::SequenceOf::read_uper(r, None, uper_read_79)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_76(v: &OuterListItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_contents_76(v, w)?;
+fn uper_write_79(v: &OuterListItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_79(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_76<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterListItem> {
-    let v = uper_read_contents_76(r)?;
+fn uper_read_79<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterListItem> {
+    let v = uper_read_contents_79(r)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_74(v: &OuterInner2, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_contents_74(v, w)?;
+fn uper_write_77(v: &OuterInner2, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_77(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_74<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterInner2> {
-    let v = uper_read_contents_74(r)?;
+fn uper_read_77<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterInner2> {
+    let v = uper_read_contents_77(r)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_contents_74(v: &OuterInner2, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_73(&v.value, w)?;
+fn uper_write_contents_77(v: &OuterInner2, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_76(&v.value, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn uper_read_contents_74<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterInner2> {
+fn uper_read_contents_77<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterInner2> {
     r.enter()?;
-    let f_value = uper_read_73(r)?;
+    let f_value = uper_read_76(r)?;
 
     r.leave();
 
@@ -1797,13 +2023,13 @@ fn uper_read_contents_74<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterInner
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_73(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_76(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_73<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_76<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
         per::fit(r, n)?
@@ -1813,15 +2039,15 @@ fn uper_read_73<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_contents_76(v: &OuterListItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_75(&v.value, w)?;
+fn uper_write_contents_79(v: &OuterListItem, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_78(&v.value, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn uper_read_contents_76<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterListItem> {
+fn uper_read_contents_79<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterListItem> {
     r.enter()?;
-    let f_value = uper_read_75(r)?;
+    let f_value = uper_read_78(r)?;
 
     r.leave();
 
@@ -1829,13 +2055,13 @@ fn uper_read_contents_76<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterListI
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_75(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_78(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(2), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_75<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_78<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(2), extensible: false }))?;
         per::fit(r, n)?
@@ -1845,26 +2071,26 @@ fn uper_read_75<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code)]
-fn uper_write_contents_81(v: &OuterChoice, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_contents_84(v: &OuterChoice, w: &mut per::Writer<'_>) -> wire::Result<()> {
     match v {
         OuterChoice::A(x) => {
             per::choice_index(w, 2, 0);
-            uper_write_78(x, w)
+            uper_write_81(x, w)
         }
         OuterChoice::B(x) => {
             per::choice_index(w, 2, 1);
-            uper_write_80(x, w)
+            uper_write_83(x, w)
         }
     }
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn uper_read_contents_81<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoice> {
+fn uper_read_contents_84<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoice> {
     r.enter()?;
 
     let v = match per::read_choice_index(r, 2)? {
-        0 => OuterChoice::A(uper_read_78(r)?),
-        1 => OuterChoice::B(uper_read_80(r)?),
+        0 => OuterChoice::A(uper_read_81(r)?),
+        1 => OuterChoice::B(uper_read_83(r)?),
         _ => return Err(wire::Error::decode("Expected the index of an alternative of the CHOICE.", r.position())),
     };
 
@@ -1874,26 +2100,26 @@ fn uper_read_contents_81<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoic
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_80(v: &OuterChoiceB, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_contents_80(v, w)?;
+fn uper_write_83(v: &OuterChoiceB, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_83(v, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_80<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoiceB> {
-    let v = uper_read_contents_80(r)?;
+fn uper_read_83<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoiceB> {
+    let v = uper_read_contents_83(r)?;
 
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_78(v: &(), w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_81(v: &(), w: &mut per::Writer<'_>) -> wire::Result<()> {
     let _ = (v, w);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_78<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
+fn uper_read_81<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
     let v = {
         let _ = r;
     };
@@ -1902,15 +2128,15 @@ fn uper_read_78<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_contents_80(v: &OuterChoiceB, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_79(&v.value, w)?;
+fn uper_write_contents_83(v: &OuterChoiceB, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_82(&v.value, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn uper_read_contents_80<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoiceB> {
+fn uper_read_contents_83<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoiceB> {
     r.enter()?;
-    let f_value = uper_read_79(r)?;
+    let f_value = uper_read_82(r)?;
 
     r.leave();
 
@@ -1918,13 +2144,13 @@ fn uper_read_contents_80<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterChoic
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_79(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_82(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
     per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(3), extensible: false }))?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_79<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+fn uper_read_82<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(3), extensible: false }))?;
         per::fit(r, n)?
@@ -1935,14 +2161,14 @@ fn uper_read_79<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn uper_write_contents_16(v: &OuterInner, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    uper_write_82(&v.clash, w)?;
+    uper_write_85(&v.clash, w)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
 fn uper_read_contents_16<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterInner> {
     r.enter()?;
-    let f_clash = uper_read_82(r)?;
+    let f_clash = uper_read_85(r)?;
 
     r.leave();
 
@@ -1950,14 +2176,195 @@ fn uper_read_contents_16<'a>(r: &mut per::Reader<'a>) -> wire::Result<OuterInner
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_82(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
+fn uper_write_85(v: &bool, w: &mut per::Writer<'_>) -> wire::Result<()> {
     w.bit(*v);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_82<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
+fn uper_read_85<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
     let v = r.bit()?;
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_contents_19(v: &Named<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    w.bit(!v.flags.0.same_as(&NamedFlags(wire::BitString::new(&[0x80], 1)).0, true));
+    uper_write_86(&v.permissions, w)?;
+    if !v.flags.0.same_as(&NamedFlags(wire::BitString::new(&[0x80], 1)).0, true) {
+        uper_write_87(&v.flags, w)?;
+    }
+    uper_write_88(&v.level, w)?;
+    uper_write_89(&v.version, w)?;
+    uper_write_90(&v.big, w)?;
+    uper_write_93(&v.mode, w)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn uper_read_contents_19<'a>(r: &mut per::Reader<'a>) -> wire::Result<Named<'a>> {
+    r.enter()?;
+    let p0 = r.bit()?;
+    let f_permissions = uper_read_86(r)?;
+    let f_flags = if p0 {
+        uper_read_87(r)?
+    } else {
+        NamedFlags(wire::BitString::new(&[0x80], 1))
+    };
+    let f_level = uper_read_88(r)?;
+    let f_version = uper_read_89(r)?;
+    let f_big = uper_read_90(r)?;
+    let f_mode = uper_read_93(r)?;
+
+    r.leave();
+
+    Ok(Named { permissions: f_permissions, flags: f_flags, level: f_level, version: f_version, big: f_big, mode: f_mode })
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_93(v: &NamedMode, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    uper_write_contents_93(v, w)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_93<'a>(r: &mut per::Reader<'a>) -> wire::Result<NamedMode> {
+    let v = uper_read_contents_93(r)?;
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_90(v: &i64, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::integer(w, i128::from(*v), None)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_90<'a>(r: &mut per::Reader<'a>) -> wire::Result<i64> {
+    let v = {
+        let n = per::read_integer(r, None)?;
+        per::fit(r, n)?
+    };
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_89(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_89<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(1), extensible: false }))?;
+        per::fit(r, n)?
+    };
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_88(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(20), extensible: false }))?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_88<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(20), extensible: false }))?;
+        per::fit(r, n)?
+    };
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_87(v: &NamedFlags<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::bit_string(w, &v.0, true, Some(wire::Range { min: Some(0), max: Some(8), extensible: false }))?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_87<'a>(r: &mut per::Reader<'a>) -> wire::Result<NamedFlags<'a>> {
+    let v = NamedFlags(per::read_bit_string(r, Some(wire::Range { min: Some(0), max: Some(8), extensible: false }))?);
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_86(v: &Permissions<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::bit_string(w, &v.0, true, None)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_86<'a>(r: &mut per::Reader<'a>) -> wire::Result<Permissions<'a>> {
+    let v = Permissions(per::read_bit_string(r, None)?);
+
+    Ok(v)
+}
+
+#[allow(dead_code)]
+fn uper_write_contents_93(v: &NamedMode, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    match v {
+        NamedMode::Fast(x) => {
+            per::choice_index(w, 2, 0);
+            uper_write_91(x, w)
+        }
+        NamedMode::Off(x) => {
+            per::choice_index(w, 2, 1);
+            uper_write_92(x, w)
+        }
+    }
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn uper_read_contents_93<'a>(r: &mut per::Reader<'a>) -> wire::Result<NamedMode> {
+    r.enter()?;
+
+    let v = match per::read_choice_index(r, 2)? {
+        0 => NamedMode::Fast(uper_read_91(r)?),
+        1 => NamedMode::Off(uper_read_92(r)?),
+        _ => return Err(wire::Error::decode("Expected the index of an alternative of the CHOICE.", r.position())),
+    };
+
+    r.leave();
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_92(v: &(), w: &mut per::Writer<'_>) -> wire::Result<()> {
+    let _ = (v, w);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_92<'a>(r: &mut per::Reader<'a>) -> wire::Result<()> {
+    let v = {
+        let _ = r;
+    };
+
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn uper_write_91(v: &u8, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::integer(w, i128::from(*v), Some(wire::Range { min: Some(0), max: Some(3), extensible: false }))?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn uper_read_91<'a>(r: &mut per::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let n = per::read_integer(r, Some(wire::Range { min: Some(0), max: Some(3), extensible: false }))?;
+        per::fit(r, n)?
+    };
 
     Ok(v)
 }

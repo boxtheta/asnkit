@@ -147,6 +147,7 @@ still require one.
 | `ENUMERATED` | an enum of unit variants, with `number()` and `from_number()` |
 | `OCTET STRING`, `ANY`, open types | `wire::Octets<'a>` |
 | `BIT STRING` | `wire::BitString<'a>` |
+| `BIT STRING` with named bits | a newtype of `wire::BitString<'a>` that knows the names (see below) |
 | `OBJECT IDENTIFIER` | `wire::Oid<'a>` |
 | strings | `wire::Text<'a>`, with `chars()`, `as_str()` and `Display` |
 | `UTCTime`, `GeneralizedTime` | `wire::DateTime` |
@@ -165,6 +166,25 @@ there are.
 Names are made as `asnkit-gen-rust` makes them: `fooBar` is `foo_bar`,
 `Foo-Bar` is `FooBar`, a type with no name is named after the type that
 holds it and the member, and a name that is taken gets a number.
+
+A `BIT STRING` with named bits has the constants of the bits and
+`NAMED`, `get()`, `has_unknown_bits()` and a method that reads each
+bit by name, as with `asnkit-gen-rust`, so that the constants are the
+same in both. As it borrows its bytes, it is made from them:
+`bytes()` gives the `BYTES` bytes with some bits set, without
+allocating and also in a constant, and `from_bytes()` makes the value
+of them, without the zero bits at the end, which DER leaves out:
+
+```rust
+static FLAGS: [u8; CapsuleFlags::BYTES] =
+    CapsuleFlags::bytes(&[CapsuleFlags::KEY_SET, CapsuleFlags::PATCH]);
+
+let flags = CapsuleFlags::from_bytes(&FLAGS);
+```
+
+The named numbers of an `INTEGER` are constants as with
+`asnkit-gen-rust`: of the struct or the enum for a member, and in the
+module of the functions of a type of its own, as `version::V1`.
 
 ## Options
 

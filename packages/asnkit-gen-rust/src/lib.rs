@@ -189,6 +189,196 @@ pub fn identifier(name: String) -> String {
     }
 }
 
+/// `fooBar` and `foo-bar` are `FOO_BAR`, as a constant has it.
+pub fn constant(name: &str) -> String {
+    snake(name).to_uppercase()
+}
+
+/// `name`, or the first of `name_2`, `name_3` and so on that is not in
+/// `used`, which it is added to.
+pub fn unique(name: String, used: &mut BTreeSet<String>) -> String {
+    let mut candidate = name.clone();
+    let mut number = 2;
+
+    while !used.insert(candidate.clone()) {
+        candidate = format!("{name}_{number}");
+        number += 1;
+    }
+
+    candidate
+}
+
+/// The ids of the types that are assigned a name in a module.
+pub fn assigned(types: &Types) -> BTreeSet<TypeId> {
+    types
+        .modules
+        .iter()
+        .flat_map(|(_, assignments)| assignments.iter().map(|(_, id)| *id))
+        .collect()
+}
+
+/// The named numbers of the INTEGER `id` is, if they are its own and not
+/// those of a type with a name it refers to, other than `owner`.
+pub fn own_named_numbers<'t>(
+    types: &'t Types,
+    id: TypeId,
+    owner: Option<TypeId>,
+    assigned: &BTreeSet<TypeId>,
+) -> &'t [(String, i128)] {
+    let mut current = id;
+
+    for _ in 0..=types.nodes.len() {
+        if Some(current) != owner && assigned.contains(&current) {
+            return &[];
+        }
+
+        match &types.nodes[current].kind {
+            Kind::Ref(target) => current = *target,
+            Kind::Integer(named) => return named,
+            _ => return &[],
+        }
+    }
+
+    &[]
+}
+
+/// The type of the constants of named numbers: `ty` if it is an integer
+/// of Rust that holds them all, else `i128`.
+pub fn number_type<'t>(ty: &'t str, numbers: &[(String, i128)]) -> &'t str {
+    let (low, high): (i128, i128) = match ty {
+        "u8" => (0, u8::MAX.into()),
+        "u16" => (0, u16::MAX.into()),
+        "u32" => (0, u32::MAX.into()),
+        "u64" => (0, u64::MAX.into()),
+        "i8" => (i8::MIN.into(), i8::MAX.into()),
+        "i16" => (i16::MIN.into(), i16::MAX.into()),
+        "i32" => (i32::MIN.into(), i32::MAX.into()),
+        "i64" => (i64::MIN.into(), i64::MAX.into()),
+        _ => return "i128",
+    };
+
+    if numbers
+        .iter()
+        .all(|(_, number)| (low..=high).contains(number))
+    {
+        ty
+    } else {
+        "i128"
+    }
+}
+
+/// The constants of named numbers, each `prefix` and its name, as lines
+/// of an `impl` or a module.
+pub fn number_constants(
+    prefix: &str,
+    ty: &str,
+    numbers: &[(String, i128)],
+    used: &mut BTreeSet<String>,
+) -> Vec<String> {
+    let ty = number_type(ty, numbers);
+
+    numbers
+        .iter()
+        .map(|(name, number)| {
+            let name = unique(format!("{prefix}{}", constant(name)), used);
+
+            format!("    pub const {name}: {ty} = {number};")
+        })
+        .collect()
+}
+
+/// What the methods of a type of named bits are called, which a bit does
+/// not take.
+const BIT_METHODS: &[&str] = &[
+    "bytes",
+    "check_constraints",
+    "decode",
+    "decode_ber",
+    "decode_der",
+    "decode_uper",
+    "empty",
+    "encode",
+    "encode_ber",
+    "encode_der",
+    "encode_uper",
+    "from_bytes",
+    "from_value",
+    "get",
+    "has_unknown_bits",
+    "ber_len",
+    "der_len",
+    "uper_len",
+    "set",
+    "to_ber",
+    "to_der",
+    "to_uper",
+    "to_value",
+];
+
+/// The named bits of a type as Rust has them: the constant, the method
+/// that reads the bit and the one that sets it.
+pub struct NamedBit {
+    pub constant: String,
+    pub number: u64,
+    pub getter: String,
+    pub setter: String,
+}
+
+pub fn named_bits(bits: &[(String, u64)]) -> Vec<NamedBit> {
+    let mut constants = BTreeSet::from(["BYTES".to_string(), "NAMED".to_string()]);
+    let mut methods: BTreeSet<String> = BIT_METHODS.iter().map(|name| name.to_string()).collect();
+
+    // The getters first, so that a setter does not take the name of one.
+    let named: Vec<(&str, String, u64, String)> = bits
+        .iter()
+        .map(|(name, number)| {
+            (
+                name.as_str(),
+                unique(constant(name), &mut constants),
+                *number,
+                unique(snake(name), &mut methods),
+            )
+        })
+        .collect();
+
+    named
+        .into_iter()
+        .map(|(name, constant, number, getter)| NamedBit {
+            setter: unique(format!("set_{}", snake(name)), &mut methods),
+            getter: identifier(getter),
+            constant,
+            number,
+        })
+        .collect()
+}
+
+/// The lines of the `impl` of a type of named bits that read them.
+pub fn bit_constants_and_getters(bits: &[NamedBit]) -> (Vec<String>, Vec<String>) {
+    let mut constants: Vec<String> = bits
+        .iter()
+        .map(|bit| format!("    pub const {}: usize = {};", bit.constant, bit.number))
+        .collect();
+    let numbers: Vec<String> = bits.iter().map(|bit| bit.number.to_string()).collect();
+
+    constants.push("    /// The bits that have names.".to_string());
+    constants.push(format!(
+        "    pub const NAMED: &'static [usize] = &[{}];",
+        numbers.join(", ")
+    ));
+
+    let getters = bits
+        .iter()
+        .map(|bit| {
+            format!(
+                "    pub fn {}(&self) -> bool {{\n        self.get(Self::{})\n    }}",
+                bit.getter, bit.constant
+            )
+        })
+        .collect();
+
+    (constants, getters)
+}
+
 /// The components of the graph of what is held in what, in which a
 /// type that is held by itself, directly or not, can not be held by
 /// value. A SEQUENCE OF is not an edge, as a list is on the heap.
@@ -275,6 +465,8 @@ struct Generator<'a> {
     taken: BTreeSet<String>,
     functions_taken: BTreeSet<String>,
     component: Vec<usize>,
+    /// The types that have a name in a module.
+    assigned: BTreeSet<TypeId>,
     blocks: Vec<String>,
     functions: Vec<String>,
 }
@@ -288,6 +480,7 @@ impl<'a> Generator<'a> {
             taken: TAKEN.iter().map(|name| (*name).to_string()).collect(),
             functions_taken: TAKEN.iter().map(|name| (*name).to_string()).collect(),
             component: components(types),
+            assigned: assigned(types),
             blocks: Vec::new(),
             functions: Vec::new(),
         }
@@ -419,6 +612,14 @@ impl<'a> Generator<'a> {
                 _ => "f64".to_string(),
             },
             Kind::Null => "()".to_string(),
+            Kind::BitString(bits) if !bits.is_empty() => {
+                let name = self.claim(context.to_string());
+
+                self.names.insert(id, name.clone());
+                self.bits(&name, &bits, None);
+
+                name
+            }
             Kind::BitString(_) => "asnkitrt::serde_value::BitString".to_string(),
             Kind::OctetString => "asnkitrt::serde_value::OctetString".to_string(),
             Kind::ObjectIdentifier => "asnkitrt::value::ObjectIdentifier<'static>".to_string(),
@@ -500,6 +701,8 @@ impl<'a> Generator<'a> {
     ) -> Result<(), Error> {
         let mut lines = vec![derive(), format!("pub struct {name} {{")];
         let mut used = BTreeSet::new();
+        let mut constants = Vec::new();
+        let mut constants_used = BTreeSet::new();
 
         for (member, optional) in Generator::fields(members) {
             let mut field = identifier(snake(&member.name));
@@ -512,6 +715,13 @@ impl<'a> Generator<'a> {
 
             let context = format!("{name}{}", camel(&member.name));
             let mut ty = self.ty(member.ty, &context, depth + 1)?;
+
+            constants.extend(number_constants(
+                &format!("{}_", constant(&member.name)),
+                &ty,
+                own_named_numbers(self.types, member.ty, None, &self.assigned),
+                &mut constants_used,
+            ));
 
             if self.is_boxed(id, member.ty) {
                 ty = format!("Box<{ty}>");
@@ -537,6 +747,7 @@ impl<'a> Generator<'a> {
         }
 
         lines.push("}".to_string());
+        constants_impl(&mut lines, name, constants);
         self.finish(lines, name, named);
 
         Ok(())
@@ -556,6 +767,8 @@ impl<'a> Generator<'a> {
             format!("pub enum {name} {{"),
         ];
         let mut used = BTreeSet::new();
+        let mut constants = Vec::new();
+        let mut constants_used = BTreeSet::new();
 
         for (member, _) in Generator::fields(members) {
             let mut variant = camel(&member.name);
@@ -569,6 +782,13 @@ impl<'a> Generator<'a> {
             let context = format!("{name}{variant}");
             let mut ty = self.ty(member.ty, &context, depth + 1)?;
 
+            constants.extend(number_constants(
+                &format!("{}_", constant(&member.name)),
+                &ty,
+                own_named_numbers(self.types, member.ty, None, &self.assigned),
+                &mut constants_used,
+            ));
+
             if self.is_boxed(id, member.ty) {
                 ty = format!("Box<{ty}>");
             }
@@ -581,6 +801,7 @@ impl<'a> Generator<'a> {
         }
 
         lines.push("}".to_string());
+        constants_impl(&mut lines, name, constants);
         self.finish(lines, name, named);
 
         Ok(())
@@ -620,6 +841,40 @@ impl<'a> Generator<'a> {
         self.finish(lines, name, named);
     }
 
+    /// A BIT STRING with named bits, as a type that knows them.
+    fn bits(&mut self, name: &str, bits: &[(String, u64)], named: Option<(&str, &str)>) {
+        let bits = named_bits(bits);
+        let (constants, getters) = bit_constants_and_getters(&bits);
+        let mut lines = vec![
+            derive(),
+            "#[serde(transparent)]".to_string(),
+            format!("pub struct {name}(pub asnkitrt::serde_value::BitString);"),
+            String::new(),
+            format!("impl {name} {{"),
+        ];
+        let mut methods = vec![
+            format!(
+                "    /// No bit set.\n    pub fn empty() -> Self {{\n        {name}(asnkitrt::serde_value::BitString {{\n            data: Vec::new(),\n            bits: 0,\n        }})\n    }}"
+            ),
+            "    /// The bit `bit`.\n    pub fn get(&self, bit: usize) -> bool {\n        self.0.bit(bit)\n    }".to_string(),
+            "    /// Sets the bit `bit` to `value`, without the zero bits at the end.\n    pub fn set(&mut self, bit: usize, value: bool) {\n        self.0.set_bit(bit, value);\n        self.0.trim();\n    }".to_string(),
+            "    /// If a bit is set that has no name.\n    pub fn has_unknown_bits(&self) -> bool {\n        self.0.has_bits_other_than(Self::NAMED)\n    }".to_string(),
+        ];
+
+        methods.extend(getters);
+        methods.extend(bits.iter().map(|bit| {
+            format!(
+                "    pub fn {}(&mut self, value: bool) {{\n        self.set(Self::{}, value);\n    }}",
+                bit.setter, bit.constant
+            )
+        }));
+        lines.push(constants.join("\n"));
+        lines.push(String::new());
+        lines.push(methods.join("\n\n"));
+        lines.push("}".to_string());
+        self.finish(lines, name, named);
+    }
+
     /// Adds the type to the code, with what it needs to be encoded if
     /// it has a name in a module.
     fn finish(&mut self, mut lines: Vec<String>, name: &str, named: Option<(&str, &str)>) {
@@ -649,11 +904,27 @@ impl<'a> Generator<'a> {
 
                 Ok(())
             }
+            Kind::BitString(bits) if !bits.is_empty() => {
+                self.bits(&name, &bits, named);
+
+                Ok(())
+            }
             _ => {
                 let target = self.ty_from(id, id, &name, true, 0)?;
                 let function = self.claim_function(snake(&name));
+                let numbers = own_named_numbers(self.types, id, Some(id), &self.assigned);
 
                 self.blocks.push(format!("pub type {name} = {target};"));
+
+                if !numbers.is_empty() {
+                    let constants = number_constants("", &target, numbers, &mut BTreeSet::new());
+
+                    self.blocks.push(format!(
+                        "/// The named numbers of [`{name}`].\npub mod {function} {{\n{}\n}}",
+                        constants.join("\n")
+                    ));
+                }
+
                 self.functions.push(format!(
                     "pub fn encode_{function}(\n    value: &{name},\n    specification: &asnkitrt::runtime::Specification,\n) -> asnkitrt::Result<Vec<u8>> {{\n    specification.encode_in({module:?}, {type_name:?}, &asnkitrt::serde_value::to_value(value)?)\n}}\n\npub fn decode_{function}(\n    specification: &asnkitrt::runtime::Specification,\n    data: &[u8],\n) -> asnkitrt::Result<{name}> {{\n    asnkitrt::serde_value::from_value(&specification.decode_in({module:?}, {type_name:?}, data)?)\n}}"
                 ));
@@ -759,6 +1030,16 @@ const NOT_EMBEDDED: &str = r#"// The compiled specification is not in this modul
 // it was made from with asnkitrt::runtime::Specification::from_asni(), with
 // the checks the file needs, and give it to the functions below.
 "#;
+
+/// The `impl` of the constants of a struct or an enum, if it has any.
+fn constants_impl(lines: &mut Vec<String>, name: &str, constants: Vec<String>) {
+    if !constants.is_empty() {
+        lines.push(String::new());
+        lines.push(format!("impl {name} {{"));
+        lines.extend(constants);
+        lines.push("}".to_string());
+    }
+}
 
 fn derive() -> String {
     "#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]".to_string()

@@ -316,6 +316,80 @@ pub struct BitString {
     pub bits: usize,
 }
 
+impl BitString {
+    /// The bit `index`, the first the most significant bit of the first
+    /// byte.
+    pub fn bit(&self, index: usize) -> bool {
+        index < self.bits
+            && self
+                .data
+                .get(index / 8)
+                .is_some_and(|byte| byte & (0x80 >> (index % 8)) != 0)
+    }
+
+    /// Sets the bit `index` to `value`, with as many zero bits before it
+    /// as the string needs to hold it.
+    pub fn set_bit(&mut self, index: usize, value: bool) {
+        if index >= self.bits {
+            if !value {
+                return;
+            }
+
+            // The bits after the last are zero before it holds more.
+            self.data.truncate(self.bits.div_ceil(8));
+
+            if let Some(last) = self.data.last_mut()
+                && !self.bits.is_multiple_of(8)
+            {
+                *last &= !(0xff >> (self.bits % 8));
+            }
+
+            self.data.resize((index + 1).div_ceil(8), 0);
+            self.bits = index + 1;
+        }
+
+        let mask = 0x80 >> (index % 8);
+
+        if value {
+            self.data[index / 8] |= mask;
+        } else {
+            self.data[index / 8] &= !mask;
+        }
+    }
+
+    /// The number of bits without those that are zero at the end, as
+    /// DER and PER leave out of a BIT STRING with named bits.
+    pub fn trimmed_len(&self) -> usize {
+        (0..self.bits)
+            .rev()
+            .find(|&index| self.bit(index))
+            .map_or(0, |index| index + 1)
+    }
+
+    /// Leaves out the zero bits at the end.
+    pub fn trim(&mut self) {
+        self.bits = self.trimmed_len();
+        self.data.truncate(self.bits.div_ceil(8));
+
+        if let Some(last) = self.data.last_mut()
+            && !self.bits.is_multiple_of(8)
+        {
+            *last &= !(0xff >> (self.bits % 8));
+        }
+    }
+
+    /// If a bit is set that is not one of `named`.
+    pub fn has_bits_other_than(&self, named: &[usize]) -> bool {
+        let count = self.bits.div_ceil(8);
+
+        self.data
+            .iter()
+            .take(count)
+            .enumerate()
+            .any(|(index, &byte)| crate::wire::other_bits(index, byte, self.bits, named))
+    }
+}
+
 impl Serialize for BitString {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_newtype_struct(BIT_STRING, &(serde_bytes_ref(&self.data), self.bits))

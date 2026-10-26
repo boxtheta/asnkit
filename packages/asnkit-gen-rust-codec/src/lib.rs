@@ -15,7 +15,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write};
 
-use asnkit_gen_rust::{camel, components, identifier, snake};
+use asnkit_gen_rust::{
+    assigned, bit_constants_and_getters, camel, components, constant, identifier, named_bits,
+    number_constants, own_named_numbers, snake,
+};
 use asnkitrt::container::{self, Checks};
 use asnkitrt::node::TagClass;
 use asnkitrt::per::{Characters, Known};
@@ -155,6 +158,12 @@ enum Definition {
         additions: Option<Vec<(String, i64)>>,
         variants: Vec<String>,
     },
+    /// A BIT STRING with named bits.
+    Bits {
+        id: TypeId,
+        name: String,
+        bits: Vec<(String, u64)>,
+    },
 }
 
 /// A type of a module, as the generated code has it.
@@ -192,6 +201,8 @@ struct Generator<'a> {
     taken: BTreeSet<String>,
     functions_taken: BTreeSet<String>,
     component: Vec<usize>,
+    /// The types that have a name in a module.
+    assigned: BTreeSet<TypeId>,
     definitions: Vec<Definition>,
     /// The structs and enums of CHOICEs that hold a value that borrows.
     lifetime: BTreeSet<TypeId>,
@@ -299,6 +310,7 @@ impl<'a> Generator<'a> {
                 .map(|name| (*name).to_string())
                 .collect(),
             component: components(types),
+            assigned: assigned(types),
             definitions: Vec::new(),
             lifetime: BTreeSet::new(),
             support: BTreeMap::new(),
@@ -397,6 +409,11 @@ impl<'a> Generator<'a> {
 
                 self.define(concrete, name);
             }
+            Kind::BitString(bits) if !bits.is_empty() => {
+                let name = self.claim(context.to_string());
+
+                self.define(concrete, name);
+            }
             Kind::SequenceOf(element) | Kind::SetOf(element) => {
                 self.visit(*element, &format!("{context}Item"));
             }
@@ -404,8 +421,8 @@ impl<'a> Generator<'a> {
         }
     }
 
-    /// Makes the definition of the SEQUENCE, SET, CHOICE or ENUMERATED
-    /// `id`, of the name `name`.
+    /// Makes the definition of the SEQUENCE, SET, CHOICE, ENUMERATED or
+    /// BIT STRING with named bits `id`, of the name `name`.
     fn define(&mut self, id: TypeId, name: String) {
         self.names.insert(id, name.clone());
 
@@ -503,6 +520,11 @@ impl<'a> Generator<'a> {
                     variants,
                 });
             }
+            Kind::BitString(bits) => self.definitions.push(Definition::Bits {
+                id,
+                name,
+                bits: bits.clone(),
+            }),
             _ => unreachable!("only those have definitions"),
         }
     }
@@ -529,7 +551,7 @@ impl<'a> Generator<'a> {
                         *id,
                         variants.iter().map(|variant| variant.member.ty).collect(),
                     ),
-                    Definition::Enum { .. } => continue,
+                    Definition::Enum { .. } | Definition::Bits { .. } => continue,
                 };
 
                 if !self.lifetime.contains(&id)
@@ -614,6 +636,7 @@ impl<'a> Generator<'a> {
             Kind::Boolean => "bool".to_string(),
             Kind::Integer(_) => self.integer_type(node.effective_range),
             Kind::Null => "()".to_string(),
+            Kind::BitString(bits) if !bits.is_empty() => format!("{}<'a>", self.names[&concrete]),
             Kind::BitString(_) => "wire::BitString<'a>".to_string(),
             Kind::OctetString | Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
                 "wire::Octets<'a>".to_string()
@@ -698,6 +721,13 @@ impl<'a> Generator<'a> {
             (Kind::OctetString, Value::Bytes(data)) => {
                 Some(format!("wire::Octets::new({})", bytes(data)))
             }
+            (Kind::BitString(named), Value::Bits(data, bits)) if !named.is_empty() => {
+                Some(format!(
+                    "{}(wire::BitString::new({}, {bits}))",
+                    self.names.get(&concrete)?,
+                    bytes(data)
+                ))
+            }
             (Kind::BitString(_), Value::Bits(data, bits)) => {
                 Some(format!("wire::BitString::new({}, {bits})", bytes(data)))
             }
@@ -746,9 +776,10 @@ impl<'a> Generator<'a> {
         };
 
         match (self.kind(member.ty), default) {
-            (Kind::BitString(named), _) => {
-                format!("!{place}.same_as(&{default}, {})", !named.is_empty())
+            (Kind::BitString(named), _) if !named.is_empty() => {
+                format!("!{place}.0.same_as(&{default}.0, true)")
             }
+            (Kind::BitString(_), _) => format!("!{place}.same_as(&{default}, false)"),
             (Kind::Boolean, "true") => format!("!{value}"),
             (Kind::Boolean, "false") => value,
             _ => format!("{value} != {default}"),
@@ -869,7 +900,10 @@ impl<'a> Generator<'a> {
                 Kind::Integer(_) if ty == "i128" => "w.integer(*v);".to_string(),
                 Kind::Integer(_) => "w.integer(i128::from(*v));".to_string(),
                 Kind::Null => "let _ = v;".to_string(),
-                Kind::BitString(named) => format!("w.bit_string(v, {}, der);", !named.is_empty()),
+                Kind::BitString(named) if !named.is_empty() => {
+                    "w.bit_string(&v.0, true, der);".to_string()
+                }
+                Kind::BitString(_) => "w.bit_string(v, false, der);".to_string(),
                 Kind::OctetString | Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
                     "w.octets(v);".to_string()
                 }
@@ -937,9 +971,10 @@ impl<'a> Generator<'a> {
                         Kind::Integer(_) if self.is_big(id) => primitive("ber::big_integer(r, c)?"),
                         Kind::Integer(_) => primitive("ber::fit(r, ber::integer(r, c)?)?"),
                         Kind::Null => primitive("ber::null(r, c)?"),
-                        Kind::BitString(named) => {
-                            format!("r.bit_string({tag}, {})?", !named.is_empty())
+                        Kind::BitString(named) if !named.is_empty() => {
+                            format!("{}(r.bit_string({tag}, true)?)", self.names[&concrete])
                         }
+                        Kind::BitString(_) => format!("r.bit_string({tag}, false)?"),
                         Kind::OctetString => format!("r.octet_string({tag})?"),
                         Kind::ObjectIdentifier => primitive("ber::oid(r, c)?"),
                         Kind::Enumerated { .. } => primitive(&format!(
@@ -1000,9 +1035,10 @@ impl<'a> Generator<'a> {
                     range(node.effective_range)
                 ),
                 Kind::Null => "let _ = (v, w);".to_string(),
-                Kind::BitString(named) => {
-                    format!("per::bit_string(w, v, {}, {size})?;", !named.is_empty())
+                Kind::BitString(named) if !named.is_empty() => {
+                    format!("per::bit_string(w, &v.0, true, {size})?;")
                 }
+                Kind::BitString(_) => format!("per::bit_string(w, v, false, {size})?;"),
                 Kind::OctetString => format!("per::octet_string(w, v, {size})?;"),
                 Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
                     "per::octet_string(w, v, None)?;".to_string()
@@ -1054,6 +1090,10 @@ impl<'a> Generator<'a> {
                     range(node.effective_range)
                 ),
                 Kind::Null => "{\n        let _ = r;\n    }".to_string(),
+                Kind::BitString(named) if !named.is_empty() => format!(
+                    "{}(per::read_bit_string(r, {size})?)",
+                    self.names[&concrete]
+                ),
                 Kind::BitString(_) => format!("per::read_bit_string(r, {size})?"),
                 Kind::OctetString => format!("per::read_octet_string(r, {size})?"),
                 Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType => {
@@ -1118,7 +1158,7 @@ impl<'a> Generator<'a> {
                 Definition::Struct { id: other, .. } | Definition::Choice { id: other, .. } => {
                     *other == id
                 }
-                Definition::Enum { .. } => false,
+                Definition::Enum { .. } | Definition::Bits { .. } => false,
             });
         let Some(definition) = definition else {
             return;
@@ -1837,6 +1877,37 @@ impl<'a> Generator<'a> {
 
     // The text.
 
+    /// The `impl` of the constants of the named numbers of the members of
+    /// a struct or an enum, if they have any.
+    fn constants_impl<'m>(
+        &self,
+        text: &mut String,
+        name: &str,
+        lifetime: bool,
+        members: impl Iterator<Item = &'m MemberInfo>,
+    ) {
+        let mut used = BTreeSet::new();
+        let mut constants = Vec::new();
+
+        for member in members {
+            constants.extend(number_constants(
+                &format!("{}_", constant(&member.name)),
+                &self.rust_type(member.ty),
+                own_named_numbers(self.types, member.ty, None, &self.assigned),
+                &mut used,
+            ));
+        }
+
+        if !constants.is_empty() {
+            let lifetime = if lifetime { "<'_>" } else { "" };
+            let _ = write!(
+                text,
+                "\n\nimpl {name}{lifetime} {{\n{}\n}}",
+                constants.join("\n")
+            );
+        }
+    }
+
     fn definition_text(&self, definition: &Definition) -> String {
         let mut text = String::new();
 
@@ -1868,6 +1939,12 @@ impl<'a> Generator<'a> {
                 }
 
                 text.push('}');
+                self.constants_impl(
+                    &mut text,
+                    name,
+                    !lifetime.is_empty(),
+                    fields.iter().map(|field| &field.member),
+                );
             }
             Definition::Choice { id, name, variants } => {
                 let lifetime = if self.lifetime.contains(id) {
@@ -1892,6 +1969,35 @@ impl<'a> Generator<'a> {
                 }
 
                 text.push('}');
+                self.constants_impl(
+                    &mut text,
+                    name,
+                    !lifetime.is_empty(),
+                    variants.iter().map(|variant| &variant.member),
+                );
+            }
+            Definition::Bits { name, bits, .. } => {
+                let bits = named_bits(bits);
+                let (constants, getters) = bit_constants_and_getters(&bits);
+                let size = bits.iter().map(|bit| bit.number / 8 + 1).max().unwrap_or(0);
+                let mut methods = vec![
+                    format!(
+                        "    /// The bytes with the bits `bits` set, for [`Self::from_bytes`].\n    pub const fn bytes(bits: &[usize]) -> [u8; {size}] {{\n        wire::named_bits(bits)\n    }}"
+                    ),
+                    format!(
+                        "    /// The bits of `bytes` up to the last that is set.\n    pub const fn from_bytes(bytes: &'a [u8]) -> Self {{\n        {name}(wire::BitString::named(bytes))\n    }}"
+                    ),
+                    "    /// The bit `bit`.\n    pub fn get(&self, bit: usize) -> bool {\n        self.0.bit(bit)\n    }".to_string(),
+                    "    /// If a bit is set that has no name.\n    pub fn has_unknown_bits(&self) -> bool {\n        self.0.has_bits_other_than(Self::NAMED)\n    }".to_string(),
+                ];
+
+                methods.extend(getters);
+                let _ = write!(
+                    text,
+                    "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\npub struct {name}<'a>(pub wire::BitString<'a>);\n\nimpl<'a> {name}<'a> {{\n{}\n    /// The number of bytes that hold the bits that have names.\n    pub const BYTES: usize = {size};\n\n{}\n}}",
+                    constants.join("\n"),
+                    methods.join("\n\n")
+                );
             }
             Definition::Enum {
                 name,
@@ -2028,8 +2134,21 @@ impl<'a> Generator<'a> {
                 } else {
                     ("", "&[u8]")
                 };
+                let numbers = own_named_numbers(self.types, id, Some(id), &self.assigned);
+                let (what, constants) = if numbers.is_empty() {
+                    ("", String::new())
+                } else {
+                    (
+                        " and the named numbers",
+                        format!(
+                            "\n\n{}",
+                            number_constants("", &ty, numbers, &mut BTreeSet::new()).join("\n")
+                        ),
+                    )
+                };
+
                 format!(
-                    "pub type {name}{generic} = {ty};\n\n/// The {codec} functions of [`{name}`].\npub mod {module} {{\n    use super::*;\n\n    pub fn encode_{codec}(value: &{argument}, out: &mut [u8]) -> wire::Result<usize> {{\n        {encode}\n    }}\n\n    pub fn decode_{codec}{generic}(data: {data}) -> wire::Result<{ty}> {{\n        {decode}\n    }}\n}}"
+                    "pub type {name}{generic} = {ty};\n\n/// The {codec} functions{what} of [`{name}`].\npub mod {module} {{\n    use super::*;{constants}\n\n    pub fn encode_{codec}(value: &{argument}, out: &mut [u8]) -> wire::Result<usize> {{\n        {encode}\n    }}\n\n    pub fn decode_{codec}{generic}(data: {data}) -> wire::Result<{ty}> {{\n        {decode}\n    }}\n}}"
                 )
             }
         }
@@ -2078,10 +2197,14 @@ impl<'a> Generator<'a> {
 
         for (name, id, module, asn1) in &assigned {
             let own = self.types.nodes[*id].concrete == *id
-                && matches!(
-                    self.kind(*id),
-                    Kind::Sequence(_) | Kind::Set(_) | Kind::Choice(_) | Kind::Enumerated { .. }
-                )
+                && match self.kind(*id) {
+                    Kind::Sequence(_)
+                    | Kind::Set(_)
+                    | Kind::Choice(_)
+                    | Kind::Enumerated { .. } => true,
+                    Kind::BitString(bits) => !bits.is_empty(),
+                    _ => false,
+                }
                 && !self.names.contains_key(id);
 
             if own {
@@ -2115,7 +2238,7 @@ impl<'a> Generator<'a> {
         self.boxes = self.definitions.iter().any(|definition| match definition {
             Definition::Struct { fields, .. } => fields.iter().any(|field| field.boxed),
             Definition::Choice { variants, .. } => variants.iter().any(|variant| variant.boxed),
-            Definition::Enum { .. } => false,
+            Definition::Enum { .. } | Definition::Bits { .. } => false,
         });
 
         // The functions of the named types and of all in them.
@@ -2178,7 +2301,9 @@ impl<'a> Generator<'a> {
         let mut definitions = std::mem::take(&mut self.definitions);
 
         definitions.sort_by_key(|definition| match definition {
-            Definition::Struct { id, .. } | Definition::Choice { id, .. } => *id,
+            Definition::Struct { id, .. }
+            | Definition::Choice { id, .. }
+            | Definition::Bits { id, .. } => *id,
             Definition::Enum { name, .. } => self
                 .names
                 .iter()

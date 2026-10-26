@@ -11,6 +11,10 @@ extern crate alloc;
 // hold themselves are on the heap.
 #[rustfmt::skip]
 #[allow(dead_code)]
+#[path = "../../generated/otps.rs"]
+pub mod otps;
+#[rustfmt::skip]
+#[allow(dead_code)]
 #[path = "../../generated/rfc5280.rs"]
 pub mod rfc5280;
 #[rustfmt::skip]

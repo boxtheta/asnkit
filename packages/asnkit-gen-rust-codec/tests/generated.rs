@@ -24,6 +24,10 @@ use asnkitrt::wire;
 
 #[rustfmt::skip]
 #[allow(dead_code)]
+#[path = "generated/otps.rs"]
+mod otps;
+#[rustfmt::skip]
+#[allow(dead_code)]
 #[path = "generated/rfc5280.rs"]
 mod rfc5280;
 #[rustfmt::skip]
@@ -126,6 +130,14 @@ fn the_generated_files_are_current() {
             },
         );
     }
+    is_current(
+        "../asnkit-gen-rust/tests/generated/otps.asni",
+        "tests/generated/otps.rs",
+        Options {
+            codec: Encoding::Der,
+            ..Options::default()
+        },
+    );
     is_current(
         "../asnkit-gen-rust/tests/generated/shapes.asni",
         "tests/generated/shapes_no_std.rs",
@@ -282,7 +294,8 @@ round_trip!(
     shapes_ber::Tree,
     shapes_ber::Defaults<'a>,
     shapes_ber::Extensible<'a>,
-    shapes_ber::Outer<'a>
+    shapes_ber::Outer<'a>,
+    shapes_ber::Named<'a>
 );
 round_trip!(
     Der,
@@ -294,7 +307,8 @@ round_trip!(
     shapes::Tree,
     shapes::Defaults<'a>,
     shapes::Extensible<'a>,
-    shapes::Outer<'a>
+    shapes::Outer<'a>,
+    shapes::Named<'a>
 );
 round_trip!(
     Uper,
@@ -306,7 +320,8 @@ round_trip!(
     shapes_uper::Tree,
     shapes_uper::Defaults<'a>,
     shapes_uper::Extensible<'a>,
-    shapes_uper::Outer<'a>
+    shapes_uper::Outer<'a>,
+    shapes_uper::Named<'a>
 );
 
 fn comes_back<'a, T: RoundTrip<'a> + PartialEq + std::fmt::Debug>(name: &str, value: &T) {
@@ -439,6 +454,24 @@ macro_rules! shape_tests {
                     choice: OuterChoice::B(OuterChoiceB { value: 3 }),
                 },
             );
+
+            // The first flags are the default.
+            const PERMISSIONS: [u8; Permissions::BYTES] =
+                Permissions::bytes(&[Permissions::READ, Permissions::EXECUTE]);
+
+            for flags in [&[0x80], &[0x40]] {
+                comes_back(
+                    "Named",
+                    &Named {
+                        permissions: Permissions::from_bytes(&PERMISSIONS),
+                        flags: NamedFlags::from_bytes(flags),
+                        level: level::HIGH as Level,
+                        version: Named::VERSION_V2,
+                        big: Named::BIG_LOTS,
+                        mode: NamedMode::Fast(NamedMode::FAST_SLOW),
+                    },
+                );
+            }
         }
     };
 }
@@ -636,4 +669,63 @@ fn the_cli_selects_one_codec_and_rejects_unsupported_codecs() {
         }
     }
     fs::remove_dir_all(folder).unwrap();
+}
+
+/// A BIT STRING with named bits is a type that knows them, of which a
+/// device makes a value without allocating, as OTPS has its flags.
+#[test]
+fn named_bits_are_made_and_read_by_their_names_without_allocating() {
+    use otps::CapsuleFlags;
+
+    static FLAGS: [u8; CapsuleFlags::BYTES] =
+        CapsuleFlags::bytes(&[CapsuleFlags::KEY_SET, CapsuleFlags::PATCH]);
+
+    let mut out = [0; 8];
+    let mut length = 0;
+    let mut read = false;
+
+    assert_eq!(
+        allocations(|| {
+            let flags = CapsuleFlags::from_bytes(&FLAGS);
+
+            length = flags.encode_der(&mut out).unwrap();
+            read = flags.key_set() && flags.patch() && !flags.compressed();
+            read &= !flags.has_unknown_bits();
+        }),
+        0
+    );
+    assert!(read);
+    // What asnkit-gen-rust encodes for the same flags.
+    assert_eq!(out[..length], [0x03, 0x02, 0x05, 0x60]);
+    assert_eq!(
+        CapsuleFlags::decode_der(&out[..length]).unwrap(),
+        CapsuleFlags::from_bytes(&FLAGS)
+    );
+    assert_eq!(
+        encode(|out| CapsuleFlags::from_bytes(&CapsuleFlags::bytes(&[])).encode_der(out)),
+        [0x03, 0x01, 0x00]
+    );
+
+    // Bit 5 has no name, nor have the bits between those that have one.
+    let unknown = CapsuleFlags::decode_der(&[0x03, 0x02, 0x02, 0x44]).unwrap();
+
+    assert!(unknown.key_set() && unknown.get(5) && unknown.has_unknown_bits());
+    assert!(!shapes::Permissions::from_bytes(&[0x80, 0x40]).has_unknown_bits());
+    assert!(shapes::Permissions::from_bytes(&[0x88, 0x40]).has_unknown_bits());
+    assert_eq!(shapes::Permissions::BYTES, 2);
+    assert!(shapes::Permissions::from_bytes(&[0x20]).set_2());
+}
+
+#[test]
+fn named_numbers_are_constants() {
+    assert_eq!(
+        (
+            otps::OneAsymmetricKey::VERSION_V1,
+            otps::OneAsymmetricKey::VERSION_V2
+        ),
+        (0u8, 1u8)
+    );
+    // 1000 is not in the range of Level, nor in a u8.
+    assert_eq!(shapes::level::HUGE, 1000i128);
+    assert_eq!(rfc5280::version::V3, 2i128);
 }

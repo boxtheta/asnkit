@@ -313,6 +313,81 @@ pub struct AuthorityKeyIdentifier<'a> {
     pub authority_cert_serial_number: Option<wire::Integer<'a>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyUsage<'a>(pub wire::BitString<'a>);
+
+impl<'a> KeyUsage<'a> {
+    pub const DIGITAL_SIGNATURE: usize = 0;
+    pub const NON_REPUDIATION: usize = 1;
+    pub const KEY_ENCIPHERMENT: usize = 2;
+    pub const DATA_ENCIPHERMENT: usize = 3;
+    pub const KEY_AGREEMENT: usize = 4;
+    pub const KEY_CERT_SIGN: usize = 5;
+    pub const C_RL_SIGN: usize = 6;
+    pub const ENCIPHER_ONLY: usize = 7;
+    pub const DECIPHER_ONLY: usize = 8;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
+    /// The number of bytes that hold the bits that have names.
+    pub const BYTES: usize = 2;
+
+    /// The bytes with the bits `bits` set, for [`Self::from_bytes`].
+    pub const fn bytes(bits: &[usize]) -> [u8; 2] {
+        wire::named_bits(bits)
+    }
+
+    /// The bits of `bytes` up to the last that is set.
+    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
+        KeyUsage(wire::BitString::named(bytes))
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn digital_signature(&self) -> bool {
+        self.get(Self::DIGITAL_SIGNATURE)
+    }
+
+    pub fn non_repudiation(&self) -> bool {
+        self.get(Self::NON_REPUDIATION)
+    }
+
+    pub fn key_encipherment(&self) -> bool {
+        self.get(Self::KEY_ENCIPHERMENT)
+    }
+
+    pub fn data_encipherment(&self) -> bool {
+        self.get(Self::DATA_ENCIPHERMENT)
+    }
+
+    pub fn key_agreement(&self) -> bool {
+        self.get(Self::KEY_AGREEMENT)
+    }
+
+    pub fn key_cert_sign(&self) -> bool {
+        self.get(Self::KEY_CERT_SIGN)
+    }
+
+    pub fn c_rl_sign(&self) -> bool {
+        self.get(Self::C_RL_SIGN)
+    }
+
+    pub fn encipher_only(&self) -> bool {
+        self.get(Self::ENCIPHER_ONLY)
+    }
+
+    pub fn decipher_only(&self) -> bool {
+        self.get(Self::DECIPHER_ONLY)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrivateKeyUsagePeriod {
     pub not_before: Option<wire::DateTime>,
@@ -406,7 +481,7 @@ pub struct PolicyConstraints<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DistributionPoint<'a> {
     pub distribution_point: Option<DistributionPointName<'a>>,
-    pub reasons: Option<wire::BitString<'a>>,
+    pub reasons: Option<ReasonFlags<'a>>,
     pub c_rl_issuer: Option<wire::SequenceOf<'a, GeneralName<'a>>>,
 }
 
@@ -415,6 +490,81 @@ pub struct DistributionPoint<'a> {
 pub enum DistributionPointName<'a> {
     FullName(wire::SequenceOf<'a, GeneralName<'a>>),
     NameRelativeToCRLIssuer(wire::SequenceOf<'a, AttributeTypeAndValue<'a>>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReasonFlags<'a>(pub wire::BitString<'a>);
+
+impl<'a> ReasonFlags<'a> {
+    pub const UNUSED: usize = 0;
+    pub const KEY_COMPROMISE: usize = 1;
+    pub const C_A_COMPROMISE: usize = 2;
+    pub const AFFILIATION_CHANGED: usize = 3;
+    pub const SUPERSEDED: usize = 4;
+    pub const CESSATION_OF_OPERATION: usize = 5;
+    pub const CERTIFICATE_HOLD: usize = 6;
+    pub const PRIVILEGE_WITHDRAWN: usize = 7;
+    pub const A_A_COMPROMISE: usize = 8;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
+    /// The number of bytes that hold the bits that have names.
+    pub const BYTES: usize = 2;
+
+    /// The bytes with the bits `bits` set, for [`Self::from_bytes`].
+    pub const fn bytes(bits: &[usize]) -> [u8; 2] {
+        wire::named_bits(bits)
+    }
+
+    /// The bits of `bytes` up to the last that is set.
+    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
+        ReasonFlags(wire::BitString::named(bytes))
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn unused(&self) -> bool {
+        self.get(Self::UNUSED)
+    }
+
+    pub fn key_compromise(&self) -> bool {
+        self.get(Self::KEY_COMPROMISE)
+    }
+
+    pub fn c_a_compromise(&self) -> bool {
+        self.get(Self::C_A_COMPROMISE)
+    }
+
+    pub fn affiliation_changed(&self) -> bool {
+        self.get(Self::AFFILIATION_CHANGED)
+    }
+
+    pub fn superseded(&self) -> bool {
+        self.get(Self::SUPERSEDED)
+    }
+
+    pub fn cessation_of_operation(&self) -> bool {
+        self.get(Self::CESSATION_OF_OPERATION)
+    }
+
+    pub fn certificate_hold(&self) -> bool {
+        self.get(Self::CERTIFICATE_HOLD)
+    }
+
+    pub fn privilege_withdrawn(&self) -> bool {
+        self.get(Self::PRIVILEGE_WITHDRAWN)
+    }
+
+    pub fn a_a_compromise(&self) -> bool {
+        self.get(Self::A_A_COMPROMISE)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -428,7 +578,7 @@ pub struct IssuingDistributionPoint<'a> {
     pub distribution_point: Option<DistributionPointName<'a>>,
     pub only_contains_user_certs: bool,
     pub only_contains_ca_certs: bool,
-    pub only_some_reasons: Option<wire::BitString<'a>>,
+    pub only_some_reasons: Option<ReasonFlags<'a>>,
     pub indirect_crl: bool,
     pub only_contains_attribute_certs: bool,
 }
@@ -980,9 +1130,13 @@ impl<'a> TBSCertificate<'a> {
 
 pub type Version<'a> = wire::Integer<'a>;
 
-/// The uper functions of [`Version`].
+/// The uper functions and the named numbers of [`Version`].
 pub mod version {
     use super::*;
+
+    pub const V1: i128 = 0;
+    pub const V2: i128 = 1;
+    pub const V3: i128 = 2;
 
     pub fn encode_uper(value: &wire::Integer<'_>, out: &mut [u8]) -> wire::Result<usize> {
         wire::encode_uper_with(value, out, uper_write_24)
@@ -1892,9 +2046,16 @@ impl<'a> PresentationAddress<'a> {
 
 pub type TerminalType = u16;
 
-/// The uper functions of [`TerminalType`].
+/// The uper functions and the named numbers of [`TerminalType`].
 pub mod terminal_type {
     use super::*;
+
+    pub const TELEX: u16 = 3;
+    pub const TELETEX: u16 = 4;
+    pub const G3_FACSIMILE: u16 = 5;
+    pub const G4_FACSIMILE: u16 = 6;
+    pub const IA5_TERMINAL: u16 = 7;
+    pub const VIDEOTEX: u16 = 8;
 
     pub fn encode_uper(value: &u16, out: &mut [u8]) -> wire::Result<usize> {
         wire::encode_uper_with(value, out, uper_write_76)
@@ -1992,18 +2153,24 @@ pub mod subject_key_identifier {
     }
 }
 
-pub type KeyUsage<'a> = wire::BitString<'a>;
-
-/// The uper functions of [`KeyUsage`].
-pub mod key_usage {
-    use super::*;
-
-    pub fn encode_uper(value: &wire::BitString<'_>, out: &mut [u8]) -> wire::Result<usize> {
-        wire::encode_uper_with(value, out, uper_write_82)
+impl<'a> KeyUsage<'a> {
+    pub fn encode_uper(&self, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_uper_with(self, out, uper_write_82)
     }
 
-    pub fn decode_uper<'a>(data: &'a [u8]) -> wire::Result<wire::BitString<'a>> {
+    pub fn decode_uper(data: &'a [u8]) -> wire::Result<Self> {
         wire::decode_uper_with(data, uper_read_82)
+    }
+
+    pub fn uper_len(&self) -> wire::Result<usize> {
+        wire::encoded_len(self.encode_uper(&mut []))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_uper(&self) -> wire::Result<alloc::vec::Vec<u8>> {
+        let mut out = alloc::vec![0; self.uper_len()?];
+        self.encode_uper(&mut out)?;
+        Ok(out)
     }
 }
 
@@ -2517,18 +2684,24 @@ impl<'a> DistributionPointName<'a> {
     }
 }
 
-pub type ReasonFlags<'a> = wire::BitString<'a>;
-
-/// The uper functions of [`ReasonFlags`].
-pub mod reason_flags {
-    use super::*;
-
-    pub fn encode_uper(value: &wire::BitString<'_>, out: &mut [u8]) -> wire::Result<usize> {
-        wire::encode_uper_with(value, out, uper_write_111)
+impl<'a> ReasonFlags<'a> {
+    pub fn encode_uper(&self, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_uper_with(self, out, uper_write_111)
     }
 
-    pub fn decode_uper<'a>(data: &'a [u8]) -> wire::Result<wire::BitString<'a>> {
+    pub fn decode_uper(data: &'a [u8]) -> wire::Result<Self> {
         wire::decode_uper_with(data, uper_read_111)
+    }
+
+    pub fn uper_len(&self) -> wire::Result<usize> {
+        wire::encoded_len(self.encode_uper(&mut []))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_uper(&self) -> wire::Result<alloc::vec::Vec<u8>> {
+        let mut out = alloc::vec![0; self.uper_len()?];
+        self.encode_uper(&mut out)?;
+        Ok(out)
     }
 }
 
@@ -2992,14 +3165,14 @@ fn uper_read_112<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_111(v: &wire::BitString<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    per::bit_string(w, v, true, None)?;
+fn uper_write_111(v: &ReasonFlags<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::bit_string(w, &v.0, true, None)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_111<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::BitString<'a>> {
-    let v = per::read_bit_string(r, None)?;
+fn uper_read_111<'a>(r: &mut per::Reader<'a>) -> wire::Result<ReasonFlags<'a>> {
+    let v = ReasonFlags(per::read_bit_string(r, None)?);
 
     Ok(v)
 }
@@ -3382,14 +3555,14 @@ fn uper_read_83<'a>(r: &mut per::Reader<'a>) -> wire::Result<PrivateKeyUsagePeri
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_82(v: &wire::BitString<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    per::bit_string(w, v, true, None)?;
+fn uper_write_82(v: &KeyUsage<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::bit_string(w, &v.0, true, None)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_82<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::BitString<'a>> {
-    let v = per::read_bit_string(r, None)?;
+fn uper_read_82<'a>(r: &mut per::Reader<'a>) -> wire::Result<KeyUsage<'a>> {
+    let v = KeyUsage(per::read_bit_string(r, None)?);
 
     Ok(v)
 }
@@ -8216,14 +8389,14 @@ fn uper_read_271<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::SequenceOf<'
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_270(v: &wire::BitString<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    per::bit_string(w, v, true, None)?;
+fn uper_write_270(v: &ReasonFlags<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::bit_string(w, &v.0, true, None)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_270<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::BitString<'a>> {
-    let v = per::read_bit_string(r, None)?;
+fn uper_read_270<'a>(r: &mut per::Reader<'a>) -> wire::Result<ReasonFlags<'a>> {
+    let v = ReasonFlags(per::read_bit_string(r, None)?);
 
     Ok(v)
 }
@@ -8428,14 +8601,14 @@ fn uper_read_279<'a>(r: &mut per::Reader<'a>) -> wire::Result<bool> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn uper_write_278(v: &wire::BitString<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
-    per::bit_string(w, v, true, None)?;
+fn uper_write_278(v: &ReasonFlags<'_>, w: &mut per::Writer<'_>) -> wire::Result<()> {
+    per::bit_string(w, &v.0, true, None)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn uper_read_278<'a>(r: &mut per::Reader<'a>) -> wire::Result<wire::BitString<'a>> {
-    let v = per::read_bit_string(r, None)?;
+fn uper_read_278<'a>(r: &mut per::Reader<'a>) -> wire::Result<ReasonFlags<'a>> {
+    let v = ReasonFlags(per::read_bit_string(r, None)?);
 
     Ok(v)
 }

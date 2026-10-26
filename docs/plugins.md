@@ -82,7 +82,9 @@ The second plugin, `asnkit-gen-rust`, makes a Rust module that uses the
 crate `asnkitrt` and `serde`, has the compiled specification in it
 as bytes, and has a struct for each `SEQUENCE` and `SET` and an enum
 for each `ENUMERATED` and `CHOICE`, with `encode()`, `decode()`,
-`to_value()`, `from_value()` and `check_constraints()`. Its
+`to_value()`, `from_value()` and `check_constraints()`. A `BIT STRING`
+with named bits is a type with a constant and methods for each bit,
+and the named numbers of an `INTEGER` are constants. Its
 options are `name`, the name of the module, `no_std`, which is
 `true` for code that needs `alloc` and not `std` (default
 `false`), and `integer`, which is what an `INTEGER` with no bounds
@@ -105,4 +107,5 @@ heap the runtime keeps a specification on is too much. Its options are
 `codec`, `name`, `no_std`, `integer` and
 `unsupported`, which is `skip` to leave out the types it does not
 support yet rather than to fail. Only the selected codec's methods and
-helpers are emitted. See `packages/asnkit-gen-rust-codec/README.md`.
+helpers are emitted. It has the same constants of named bits and named
+numbers as `asnkit-gen-rust`. See `packages/asnkit-gen-rust-codec/README.md`.

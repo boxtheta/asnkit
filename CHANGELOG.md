@@ -10,6 +10,29 @@ security fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `asnkit-gen-rust` and `asnkit-gen-rust-codec`: the named numbers of an
+  `INTEGER` are constants, of the struct or the enum it is a member of
+  (`OneAsymmetricKey::VERSION_V1`) or in the module of a type of its own
+  (`version::V1`), and the same in both plugins (#4).
+- `asnkitrt`: `serde_value::BitString` has `bit()`, `set_bit()`,
+  `trimmed_len()`, `trim()` and `has_bits_other_than()`, and
+  `wire::BitString` has `named()` and `has_bits_other_than()`, with
+  `wire::named_bits()`, which makes the bytes of some bits in a
+  constant.
+
+### Changed
+
+- `asnkit-gen-rust` and `asnkit-gen-rust-codec`: a `BIT STRING` with
+  named bits is a newtype of `BitString` (or of `wire::BitString<'a>`)
+  with a constant for each bit, `NAMED`, `get()`, `has_unknown_bits()`
+  and a method that reads each bit, where it was a `BitString` that
+  knew no names. `asnkit-gen-rust` adds `empty()`, `set()` and a setter
+  for each bit, and `asnkit-gen-rust-codec` `bytes()` and
+  `from_bytes()`, which make a value without allocating. Code that used
+  the `BitString` uses `.0` of the newtype (#4).
+
 ## [2.0.0-rc2] - 2026-10-26
 
 ### Fixed

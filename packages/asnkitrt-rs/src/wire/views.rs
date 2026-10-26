@@ -476,6 +476,43 @@ impl fmt::Debug for Integer<'_> {
     }
 }
 
+/// The bytes of a BIT STRING with the bits `bits` set, the first the
+/// most significant bit of the first byte, for [`BitString::named`]. A
+/// bit that is not in `N` bytes is an error, at compile time if it is
+/// called in a constant.
+pub const fn named_bits<const N: usize>(bits: &[usize]) -> [u8; N] {
+    let mut bytes = [0; N];
+    let mut index = 0;
+
+    while index < bits.len() {
+        let bit = bits[index];
+
+        assert!(bit < 8 * N, "Expected a bit that the bytes hold.");
+        bytes[bit / 8] |= 0x80 >> (bit % 8);
+        index += 1;
+    }
+
+    bytes
+}
+
+/// If the byte `index` of a BIT STRING of `bits` bits has a bit set that
+/// is not one of `named`.
+pub(crate) fn other_bits(index: usize, byte: u8, bits: usize, named: &[usize]) -> bool {
+    let mut byte = byte;
+
+    if index + 1 == bits.div_ceil(8) && !bits.is_multiple_of(8) {
+        byte &= !(0xff >> (bits % 8));
+    }
+
+    for &bit in named {
+        if bit / 8 == index {
+            byte &= !(0x80 >> (bit % 8));
+        }
+    }
+
+    byte != 0
+}
+
 /// A BIT STRING: `bits` bits, the first the most significant bit of
 /// the first byte.
 #[derive(Clone, Copy)]
@@ -496,6 +533,25 @@ impl<'a> BitString<'a> {
                 bits
             },
         }
+    }
+
+    /// The bits of `bytes` up to the last that is set, as a value of a
+    /// type with named bits is, of which the zero bits at the end are
+    /// left out.
+    pub const fn named(bytes: &'a [u8]) -> BitString<'a> {
+        let mut index = bytes.len();
+
+        while index > 0 && bytes[index - 1] == 0 {
+            index -= 1;
+        }
+
+        let bits = if index == 0 {
+            0
+        } else {
+            8 * index - bytes[index - 1].trailing_zeros() as usize
+        };
+
+        BitString::new(bytes, bits)
     }
 
     pub(crate) fn from_octets(bytes: Octets<'a>, bits: usize) -> BitString<'a> {
@@ -561,6 +617,15 @@ impl<'a> BitString<'a> {
 }
 
 impl BitString<'_> {
+    /// If a bit is set that is not one of `named`.
+    pub fn has_bits_other_than(&self, named: &[usize]) -> bool {
+        let bits = self.bits;
+
+        self.bytes()
+            .enumerate()
+            .any(|(index, byte)| other_bits(index, byte, bits, named))
+    }
+
     /// If the bits are those of `other`, as a value of a type with `named`
     /// bits is, of which the trailing zero bits are not looked at.
     pub fn same_as(&self, other: &BitString<'_>, named: bool) -> bool {

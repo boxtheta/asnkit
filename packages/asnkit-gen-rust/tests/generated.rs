@@ -23,6 +23,10 @@ use shapes::Asn1Type;
 mod foo;
 #[rustfmt::skip]
 #[allow(dead_code)]
+#[path = "generated/otps.rs"]
+mod otps;
+#[rustfmt::skip]
+#[allow(dead_code)]
 #[path = "generated/rfc5280.rs"]
 mod rfc5280;
 #[rustfmt::skip]
@@ -67,6 +71,11 @@ fn the_generated_files_are_current() {
             integer: Integer::Big,
             ..Options::default()
         },
+    );
+    is_current(
+        "tests/generated/otps.asni",
+        "tests/generated/otps.rs",
+        Options::default(),
     );
     is_current(
         "tests/generated/shapes.asni",
@@ -471,4 +480,89 @@ fn a_value_the_enumeration_does_not_know_is_an_error() {
         shapes::Color::Green
     );
     assert!(shapes::Color::decode(&ber, &[0x0a, 0x01, 0x09]).is_err());
+}
+
+/// A BIT STRING with named bits is a type that knows them, as OTPS has
+/// its flags, of which DER leaves out the zero bits at the end.
+#[test]
+fn named_bits_are_set_and_read_by_their_names() {
+    use otps::Asn1Type;
+
+    let der = otps::load(Codec::Der).unwrap();
+    let mut flags = otps::CapsuleFlags::empty();
+
+    assert_eq!(flags.encode(&der).unwrap(), [0x03, 0x01, 0x00]);
+
+    flags.set_key_set(true);
+    flags.set(otps::CapsuleFlags::PATCH, true);
+    assert!(flags.key_set() && flags.patch() && !flags.compressed());
+    assert!(!flags.has_unknown_bits());
+    assert_eq!(flags.encode(&der).unwrap(), [0x03, 0x02, 0x05, 0x60]);
+    assert_eq!(
+        otps::CapsuleFlags::decode(&der, &[0x03, 0x02, 0x05, 0x60]).unwrap(),
+        flags
+    );
+
+    // Clearing the last bit set leaves the bits before it.
+    flags.set_patch(false);
+    assert_eq!(flags.0.bits, 2);
+    assert_eq!(flags.encode(&der).unwrap(), [0x03, 0x02, 0x06, 0x40]);
+
+    // Bit 5 has no name.
+    let unknown = otps::CapsuleFlags::decode(&der, &[0x03, 0x02, 0x02, 0x44]).unwrap();
+
+    assert!(unknown.key_set() && unknown.get(5) && unknown.has_unknown_bits());
+
+    // The bits between those with names are not known either.
+    let mut permissions = shapes::Permissions::empty();
+
+    permissions.set_execute(true);
+    assert_eq!(
+        (permissions.0.data.as_slice(), permissions.0.bits),
+        (&[0x00, 0x40][..], 10)
+    );
+    assert!(!permissions.has_unknown_bits());
+    permissions.set(4, true);
+    assert!(permissions.has_unknown_bits());
+
+    // Names the type has itself are not taken by a bit.
+    permissions.set_set(true);
+    permissions.set_named(true);
+    assert!(permissions.set_2() && permissions.named());
+    assert_eq!(
+        (shapes::Permissions::SET, shapes::Permissions::NAMED_2),
+        (2, 3)
+    );
+    assert_eq!(shapes::Permissions::NAMED, [0, 1, 2, 3, 9]);
+}
+
+#[test]
+fn named_numbers_are_constants() {
+    assert_eq!(
+        (
+            otps::OneAsymmetricKey::VERSION_V1,
+            otps::OneAsymmetricKey::VERSION_V2
+        ),
+        (0u8, 1u8)
+    );
+    assert_eq!(shapes::Named::BIG_LOTS, 5_000_000_000i64);
+    assert_eq!(shapes::NamedMode::FAST_SLOW, 0u8);
+    // 1000 is not in the range of Level, nor in a u8.
+    assert_eq!(shapes::level::HUGE, 1000i128);
+
+    // The flags are what their default is, which comes back for none.
+    let mut flags = shapes::NamedFlags::empty();
+
+    flags.set_on(true);
+
+    let value = shapes::Named {
+        permissions: shapes::Permissions::empty(),
+        flags: Some(flags),
+        level: shapes::level::HIGH as shapes::Level,
+        version: shapes::Named::VERSION_V2,
+        big: shapes::Named::BIG_MINUS,
+        mode: shapes::NamedMode::Fast(shapes::NamedMode::FAST_SLOW),
+    };
+
+    comes_back(&value);
 }

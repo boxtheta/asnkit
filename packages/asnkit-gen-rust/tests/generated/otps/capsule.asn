@@ -1,0 +1,262 @@
+-- Copied from OTPS (spec/capsule.asn at ee6f07d), under the Apache License 2.0,
+-- as a specification in use with named bits and named numbers.
+
+-- OTPS update capsule format, version 1.
+--
+-- A capsule is the DER encoding of Capsule. The normative prose that goes
+-- with this module (signing input, key derivation, AEAD framing and the
+-- checks a device performs) is in spec/capsule.md.
+
+OTPS-Capsule-V1 DEFINITIONS AUTOMATIC TAGS ::=
+BEGIN
+
+Capsule ::= SEQUENCE {
+    -- Fields from magic to payloadDigest form the signing input, which is
+    -- at most 16 KiB; see spec/capsule.md, "Signature". The list limits
+    -- below are generous on their own; that cap is what bounds them together.
+    magic           Magic,
+    header          Header,
+    metadata        MetadataField,
+    payloadDigest   Digest,
+    signature       Signature,
+    -- Last, so that a device can verify everything above before it starts
+    -- streaming the payload to storage.
+    payload         OCTET STRING
+}
+
+-- ascii("OTPS")
+Magic ::= OCTET STRING ('4F545053'H)
+
+-- RFC 9562 UUID, 16 bytes in network byte order.
+Uuid ::= OCTET STRING (SIZE (16))
+
+Uint32 ::= INTEGER (0..4294967295)
+Uint64 ::= INTEGER (0..18446744073709551615)
+
+------------------------------------------------------------------------------
+-- Header: never encrypted, always signed, used as AEAD associated data.
+------------------------------------------------------------------------------
+
+Header ::= SEQUENCE {
+    formatVersion   INTEGER (1..255),     -- 1 for this module
+    -- (nonce, timestamp) identifies the capsule; see spec/capsule.md,
+    -- "Freshness".
+    nonce           Uuid,                 -- random, version 4
+    timestamp       GeneralizedTime,      -- UTC, "Z" form, whole seconds
+    binding         Binding,
+    signer          SignerInfo,
+    protection      Protection,
+    ...
+}
+
+-- What a capsule is bound to. A device rejects a capsule whose binding does
+-- not match it, before doing anything else with it.
+--
+-- Everything here is sent in the clear and describes a class of devices.
+-- None of it may hold a value unique to one device, such as a serial number.
+Binding ::= SEQUENCE {
+    productId           OCTET STRING (SIZE (1..64)),
+    -- Absent: every SKU of the product.
+    skus                SEQUENCE (SIZE (1..64)) OF Sku OPTIONAL,
+    -- Absent: every hardware revision.
+    hardwareRevisions   SEQUENCE (SIZE (1..16)) OF OCTET STRING (SIZE (1..32)) OPTIONAL,
+    ...
+}
+
+Sku ::= OCTET STRING (SIZE (1..64))
+
+-- Identifies an Ed25519 key in the device's trust store.
+KeyId ::= OCTET STRING (SIZE (1..32))
+
+SignerInfo ::= SEQUENCE {
+    algorithm   SignatureAlgorithm,
+    keyId       KeyId,
+    ...
+}
+
+SignatureAlgorithm ::= ENUMERATED {
+    ed25519 (0),
+    ...
+}
+
+Signature ::= OCTET STRING (SIZE (64))
+
+Protection ::= CHOICE {
+    -- Metadata and payload are in plaintext. Must be explicitly allowed by
+    -- device policy.
+    none        NULL,
+    encrypted   EncryptionParameters,
+    ...
+}
+
+EncryptionParameters ::= SEQUENCE {
+    aead            AeadAlgorithm,
+    keyAgreement    KeyAgreement,
+    -- HKDF salt; fresh random value per capsule, so that the content key is
+    -- unique per capsule even with a pre-shared key.
+    salt            OCTET STRING (SIZE (32)),
+    -- Plaintext bytes per payload chunk, as a power of two: 2^chunkSizeLog2.
+    -- Every device accepts up to 12 (4 KiB); see spec/capsule.md, "Baseline".
+    chunkSizeLog2   INTEGER (10..24),
+    ...
+}
+
+AeadAlgorithm ::= ENUMERATED {
+    chacha20-poly1305   (0),      -- every device supports it
+    aes-256-gcm         (1),      -- optional
+    ...
+}
+
+KeyAgreement ::= CHOICE {
+    -- A symmetric key provisioned on the device (per device or per group).
+    preShared   SEQUENCE {
+        keyId   KeyId,
+        ...
+    },
+    -- An ephemeral X25519 key against the device's static X25519 key.
+    x25519      SEQUENCE {
+        recipientKeyId      KeyId,
+        ephemeralPublicKey  OCTET STRING (SIZE (32)),
+        ...
+    },
+    ...
+}
+
+------------------------------------------------------------------------------
+-- Metadata: encrypted unless Header.protection is none.
+------------------------------------------------------------------------------
+
+MetadataField ::= CHOICE {
+    -- Only when Header.protection is none.
+    plain       Metadata,
+    -- AEAD(content key, nonce 0, aad = DER(Header), DER(Metadata)), with the
+    -- tag appended. Only when Header.protection is encrypted.
+    encrypted   OCTET STRING (SIZE (17..16384)),
+    ...
+}
+
+Metadata ::= SEQUENCE {
+    componentId     OCTET STRING (SIZE (1..64)),
+    -- Restricts the capsule to the devices listed. Lives here rather than in
+    -- the Binding so that it is encrypted; with Header.protection none it is
+    -- sent in the clear, which packers warn about.
+    targetDeviceIdentifiers SEQUENCE (SIZE (1..128)) OF DeviceIdentifier OPTIONAL,
+    version         Version,
+    -- Anti-rollback counter; a device refuses anything lower than the value
+    -- it has stored for componentId.
+    securityVersion Uint32,
+    flags           CapsuleFlags,
+    payloadInfo     PayloadInfo,
+    -- Free-form, vendor-defined, opaque to OTPS.
+    annotations     SEQUENCE (SIZE (1..16)) OF Annotation OPTIONAL,
+    ...
+}
+
+DeviceIdentifier ::= OCTET STRING (SIZE (1..64))
+
+-- DER drops trailing zero bits, so a capsule with no flags set encodes as an
+-- empty BIT STRING. A device rejects any bit it doesn't know.
+CapsuleFlags ::= BIT STRING {
+    -- After a successful install, record the update in one-time
+    -- programmable storage (fuses, OTP); what is recorded is up to the
+    -- device. Reject up front if it can't be recorded.
+    commitToFuses   (0),
+    -- The payload is a KeyPackage (OTPS-KeyPackage-V1) replacing the
+    -- device's capsule keys, not a blob.
+    keySet          (1),
+    -- The payload blob is a patch described by PayloadInfo.patch, not a full
+    -- image. Not allowed with keySet.
+    patch           (2),
+    -- The payload is compressed with PayloadInfo.compression, which is
+    -- present exactly when this bit is set.
+    compressed      (3)
+} (SIZE (0..32))
+
+Version ::= SEQUENCE {
+    major       Uint32,
+    minor       Uint32,
+    patch       Uint32,
+    label       UTF8String (SIZE (1..64)) OPTIONAL,
+    ...
+}
+
+PayloadInfo ::= SEQUENCE {
+    -- Present exactly when flags has compressed.
+    compression     Compression OPTIONAL,
+    -- Present exactly when flags has patch.
+    patch           PatchInfo OPTIONAL,
+    -- Size and digest of the payload after decryption and decompression,
+    -- i.e. what gets installed (or, for a patch, what gets applied).
+    size            Uint64,
+    digest          Digest,
+    ...
+}
+
+PatchInfo ::= SEQUENCE {
+    format          PatchFormat,
+    -- The image the patch applies to.
+    baseSize        Uint64,
+    baseDigest      Digest,
+    -- The image that applying the patch produces.
+    resultSize      Uint64,
+    resultDigest    Digest,
+    ...
+}
+
+PatchFormat ::= ENUMERATED {
+    -- The control, diff and extra stream of Matthew Endsley's bsdiff
+    -- (github.com/boxtheta/bsdiff), without the "ENDSLEY/BSDIFF43" header
+    -- and bzip2 of its command line tools. Its new size is resultSize.
+    bsdiff-endsley  (0),
+    ...
+}
+
+Compression ::= CHOICE {
+    zstd    SEQUENCE {
+        -- Size of the payload after decryption, before decompression.
+        compressedSize  Uint64,
+        -- Largest zstd window the decoder needs, as log2; lets a device
+        -- refuse before it allocates. Every device accepts up to 16 (64 KiB).
+        windowLog       INTEGER (10..31),
+        ...
+    },
+    ...
+}
+
+Annotation ::= SEQUENCE {
+    key     UTF8String (SIZE (1..64)),
+    value   OCTET STRING (SIZE (0..256))
+}
+
+------------------------------------------------------------------------------
+-- Digests
+------------------------------------------------------------------------------
+
+Digest ::= SEQUENCE {
+    algorithm   DigestAlgorithm,
+    value       OCTET STRING (SIZE (32 | 64))
+}
+
+DigestAlgorithm ::= ENUMERATED {
+    sha-256     (0),              -- every device supports it
+    sha-512     (1),              -- optional
+    ...
+}
+
+------------------------------------------------------------------------------
+-- Signing input
+------------------------------------------------------------------------------
+
+-- The signature is Ed25519, verified strictly, over the DER encoding of this
+-- type, which is at most 16 KiB. Because DER is
+-- canonical, it is byte for byte the tag and length of a SEQUENCE followed by
+-- the encodings of Capsule.magic through Capsule.payloadDigest as they appear
+-- in the capsule, so a verifier never needs to re-encode anything.
+ToBeSigned ::= SEQUENCE {
+    magic           Magic,
+    header          Header,
+    metadata        MetadataField,
+    payloadDigest   Digest
+}
+
+END

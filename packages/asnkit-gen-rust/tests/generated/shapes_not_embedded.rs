@@ -289,6 +289,185 @@ impl Asn1Type for OuterInner {
     const NAME: &'static str = "OuterInner";
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Permissions(pub asnkitrt::serde_value::BitString);
+
+impl Permissions {
+    pub const READ: usize = 0;
+    pub const WRITE: usize = 1;
+    pub const SET: usize = 2;
+    pub const NAMED_2: usize = 3;
+    pub const EXECUTE: usize = 9;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1, 2, 3, 9];
+
+    /// No bit set.
+    pub fn empty() -> Self {
+        Permissions(asnkitrt::serde_value::BitString {
+            data: Vec::new(),
+            bits: 0,
+        })
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// Sets the bit `bit` to `value`, without the zero bits at the end.
+    pub fn set(&mut self, bit: usize, value: bool) {
+        self.0.set_bit(bit, value);
+        self.0.trim();
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn read(&self) -> bool {
+        self.get(Self::READ)
+    }
+
+    pub fn write(&self) -> bool {
+        self.get(Self::WRITE)
+    }
+
+    pub fn set_2(&self) -> bool {
+        self.get(Self::SET)
+    }
+
+    pub fn named(&self) -> bool {
+        self.get(Self::NAMED_2)
+    }
+
+    pub fn execute(&self) -> bool {
+        self.get(Self::EXECUTE)
+    }
+
+    pub fn set_read(&mut self, value: bool) {
+        self.set(Self::READ, value);
+    }
+
+    pub fn set_write(&mut self, value: bool) {
+        self.set(Self::WRITE, value);
+    }
+
+    pub fn set_set(&mut self, value: bool) {
+        self.set(Self::SET, value);
+    }
+
+    pub fn set_named(&mut self, value: bool) {
+        self.set(Self::NAMED_2, value);
+    }
+
+    pub fn set_execute(&mut self, value: bool) {
+        self.set(Self::EXECUTE, value);
+    }
+}
+
+impl Asn1Type for Permissions {
+    const MODULE: &'static str = "Shapes";
+    const NAME: &'static str = "Permissions";
+}
+
+pub type Level = u8;
+
+/// The named numbers of [`Level`].
+pub mod level {
+    pub const LOW: i128 = 0;
+    pub const HIGH: i128 = 10;
+    pub const HUGE: i128 = 1000;
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct NamedFlags(pub asnkitrt::serde_value::BitString);
+
+impl NamedFlags {
+    pub const ON: usize = 0;
+    pub const OFF: usize = 1;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1];
+
+    /// No bit set.
+    pub fn empty() -> Self {
+        NamedFlags(asnkitrt::serde_value::BitString {
+            data: Vec::new(),
+            bits: 0,
+        })
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// Sets the bit `bit` to `value`, without the zero bits at the end.
+    pub fn set(&mut self, bit: usize, value: bool) {
+        self.0.set_bit(bit, value);
+        self.0.trim();
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn on(&self) -> bool {
+        self.get(Self::ON)
+    }
+
+    pub fn off(&self) -> bool {
+        self.get(Self::OFF)
+    }
+
+    pub fn set_on(&mut self, value: bool) {
+        self.set(Self::ON, value);
+    }
+
+    pub fn set_off(&mut self, value: bool) {
+        self.set(Self::OFF, value);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
+pub enum NamedMode {
+    #[serde(rename = "fast")]
+    Fast(u8),
+    #[serde(rename = "off")]
+    Off(()),
+}
+
+impl NamedMode {
+    pub const FAST_SLOW: u8 = 0;
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Named {
+    pub permissions: Permissions,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flags: Option<NamedFlags>,
+    pub level: Level,
+    pub version: u8,
+    pub big: i64,
+    pub mode: NamedMode,
+}
+
+impl Named {
+    pub const VERSION_V1: u8 = 0;
+    pub const VERSION_V2: u8 = 1;
+    pub const BIG_MINUS: i64 = -1;
+    pub const BIG_LOTS: i64 = 5000000000;
+}
+
+impl Asn1Type for Named {
+    const MODULE: &'static str = "Shapes";
+    const NAME: &'static str = "Named";
+}
+
 pub fn encode_name(
     value: &Name,
     specification: &asnkitrt::runtime::Specification,
@@ -357,4 +536,18 @@ pub fn decode_small(
     data: &[u8],
 ) -> asnkitrt::Result<Small> {
     asnkitrt::serde_value::from_value(&specification.decode_in("Shapes", "Small", data)?)
+}
+
+pub fn encode_level(
+    value: &Level,
+    specification: &asnkitrt::runtime::Specification,
+) -> asnkitrt::Result<Vec<u8>> {
+    specification.encode_in("Shapes", "Level", &asnkitrt::serde_value::to_value(value)?)
+}
+
+pub fn decode_level(
+    specification: &asnkitrt::runtime::Specification,
+    data: &[u8],
+) -> asnkitrt::Result<Level> {
+    asnkitrt::serde_value::from_value(&specification.decode_in("Shapes", "Level", data)?)
 }

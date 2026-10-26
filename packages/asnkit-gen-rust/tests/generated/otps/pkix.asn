@@ -1,0 +1,57 @@
+-- Copied from OTPS (spec/pkix.asn at ee6f07d), under the Apache License 2.0,
+-- as a specification in use with named bits and named numbers.
+
+-- The subset of PKIX types that OTPS key packages use, in the 1988 syntax.
+-- The definitions encode exactly as those of the RFCs cited, so DER files
+-- made by standard tools (PKCS #8 / RFC 5958 private keys, RFC 5280 public
+-- keys, RFC 8410 for Ed25519 and X25519) decode with them directly.
+--
+-- Inside KeyPackage.KeyMaterial, a CHOICE with automatic tags, the outer
+-- SEQUENCE tag of these types is replaced by a context tag; the contents
+-- are unchanged.
+
+OTPS-PKIX DEFINITIONS IMPLICIT TAGS ::=
+BEGIN
+
+EXPORTS AlgorithmIdentifier, SubjectPublicKeyInfo, OneAsymmetricKey,
+    CurvePrivateKey, id-Ed25519, id-X25519;
+
+-- RFC 8410, section 3.
+id-X25519   OBJECT IDENTIFIER ::= { 1 3 101 110 }
+id-Ed25519  OBJECT IDENTIFIER ::= { 1 3 101 112 }
+
+-- RFC 5280, section 4.1.1.2.
+AlgorithmIdentifier ::= SEQUENCE {
+    algorithm   OBJECT IDENTIFIER,
+    parameters  ANY DEFINED BY algorithm OPTIONAL
+}
+
+-- RFC 5280, section 4.1.
+SubjectPublicKeyInfo ::= SEQUENCE {
+    algorithm           AlgorithmIdentifier,
+    subjectPublicKey    BIT STRING
+}
+
+-- RFC 5958, section 2 (PKCS #8 version 2), without the extension markers,
+-- which add nothing to the encoding.
+OneAsymmetricKey ::= SEQUENCE {
+    version                     INTEGER { v1(0), v2(1) } (v1 | v2),
+    privateKeyAlgorithm         AlgorithmIdentifier,
+    privateKey                  OCTET STRING,
+    attributes          [0]     Attributes OPTIONAL,
+    publicKey           [1]     BIT STRING OPTIONAL
+}
+
+Attributes ::= SET OF Attribute
+
+-- RFC 5912's Attribute{}, without the information object set.
+Attribute ::= SEQUENCE {
+    type    OBJECT IDENTIFIER,
+    values  SET OF ANY
+}
+
+-- RFC 8410, section 7: the contents of OneAsymmetricKey.privateKey for
+-- X25519 and Ed25519.
+CurvePrivateKey ::= OCTET STRING
+
+END

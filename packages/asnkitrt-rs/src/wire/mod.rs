@@ -22,8 +22,11 @@ pub use crate::node::TagClass;
 pub use crate::types::{Range, StrKind};
 pub use crate::value::{Date, DateTime, Time};
 pub use crate::{Error, Result};
+#[cfg(feature = "serde")]
+pub(crate) use views::other_bits;
 pub use views::{
     BitString, Bytes, Chars, Integer, Iter, Octets, Oid, SequenceOf, Subidentifiers, Text,
+    named_bits,
 };
 
 /// A type of a specification, with the code to encode and decode it.

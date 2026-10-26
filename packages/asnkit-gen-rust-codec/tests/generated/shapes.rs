@@ -125,6 +125,78 @@ pub struct OuterInner {
     pub clash: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Permissions<'a>(pub wire::BitString<'a>);
+
+impl<'a> Permissions<'a> {
+    pub const READ: usize = 0;
+    pub const WRITE: usize = 1;
+    pub const SET: usize = 2;
+    pub const NAMED_2: usize = 3;
+    pub const EXECUTE: usize = 9;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1, 2, 3, 9];
+    /// The number of bytes that hold the bits that have names.
+    pub const BYTES: usize = 2;
+
+    /// The bytes with the bits `bits` set, for [`Self::from_bytes`].
+    pub const fn bytes(bits: &[usize]) -> [u8; 2] {
+        wire::named_bits(bits)
+    }
+
+    /// The bits of `bytes` up to the last that is set.
+    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
+        Permissions(wire::BitString::named(bytes))
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn read(&self) -> bool {
+        self.get(Self::READ)
+    }
+
+    pub fn write(&self) -> bool {
+        self.get(Self::WRITE)
+    }
+
+    pub fn set_2(&self) -> bool {
+        self.get(Self::SET)
+    }
+
+    pub fn named(&self) -> bool {
+        self.get(Self::NAMED_2)
+    }
+
+    pub fn execute(&self) -> bool {
+        self.get(Self::EXECUTE)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Named<'a> {
+    pub permissions: Permissions<'a>,
+    pub flags: NamedFlags<'a>,
+    pub level: u8,
+    pub version: u8,
+    pub big: i64,
+    pub mode: NamedMode,
+}
+
+impl Named<'_> {
+    pub const VERSION_V1: u8 = 0;
+    pub const VERSION_V2: u8 = 1;
+    pub const BIG_MINUS: i64 = -1;
+    pub const BIG_LOTS: i64 = 5000000000;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeSquare {
     pub side: u8,
@@ -157,6 +229,57 @@ pub struct OuterChoiceB {
 pub enum OuterChoice {
     A(()),
     B(OuterChoiceB),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NamedFlags<'a>(pub wire::BitString<'a>);
+
+impl<'a> NamedFlags<'a> {
+    pub const ON: usize = 0;
+    pub const OFF: usize = 1;
+    /// The bits that have names.
+    pub const NAMED: &'static [usize] = &[0, 1];
+    /// The number of bytes that hold the bits that have names.
+    pub const BYTES: usize = 1;
+
+    /// The bytes with the bits `bits` set, for [`Self::from_bytes`].
+    pub const fn bytes(bits: &[usize]) -> [u8; 1] {
+        wire::named_bits(bits)
+    }
+
+    /// The bits of `bytes` up to the last that is set.
+    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
+        NamedFlags(wire::BitString::named(bytes))
+    }
+
+    /// The bit `bit`.
+    pub fn get(&self, bit: usize) -> bool {
+        self.0.bit(bit)
+    }
+
+    /// If a bit is set that has no name.
+    pub fn has_unknown_bits(&self) -> bool {
+        self.0.has_bits_other_than(Self::NAMED)
+    }
+
+    pub fn on(&self) -> bool {
+        self.get(Self::ON)
+    }
+
+    pub fn off(&self) -> bool {
+        self.get(Self::OFF)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
+pub enum NamedMode {
+    Fast(u8),
+    Off(()),
+}
+
+impl NamedMode {
+    pub const FAST_SLOW: u8 = 0;
 }
 
 impl<'a> Keywords<'a> {
@@ -465,6 +588,117 @@ impl OuterInner {
     }
 }
 
+impl<'a> Permissions<'a> {
+    pub fn encode_der(&self, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_ber_with(self, out, true, ber_write_17)
+    }
+
+    pub fn decode_der(data: &'a [u8]) -> wire::Result<Self> {
+        wire::decode_ber_with(data, true, ber_read_17)
+    }
+
+    pub fn der_len(&self) -> wire::Result<usize> {
+        wire::encoded_len(self.encode_der(&mut []))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_der(&self) -> wire::Result<alloc::vec::Vec<u8>> {
+        let mut out = alloc::vec![0; self.der_len()?];
+        self.encode_der(&mut out)?;
+        Ok(out)
+    }
+}
+
+pub type Level = u8;
+
+/// The der functions and the named numbers of [`Level`].
+pub mod level {
+    use super::*;
+
+    pub const LOW: i128 = 0;
+    pub const HIGH: i128 = 10;
+    pub const HUGE: i128 = 1000;
+
+    pub fn encode_der(value: &u8, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_ber_with(value, out, true, ber_write_18)
+    }
+
+    pub fn decode_der(data: &[u8]) -> wire::Result<u8> {
+        wire::decode_ber_with(data, true, ber_read_18)
+    }
+}
+
+impl<'a> Named<'a> {
+    pub fn encode_der(&self, out: &mut [u8]) -> wire::Result<usize> {
+        wire::encode_ber_with(self, out, true, ber_write_19)
+    }
+
+    pub fn decode_der(data: &'a [u8]) -> wire::Result<Self> {
+        wire::decode_ber_with(data, true, ber_read_19)
+    }
+
+    pub fn der_len(&self) -> wire::Result<usize> {
+        wire::encoded_len(self.encode_der(&mut []))
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_der(&self) -> wire::Result<alloc::vec::Vec<u8>> {
+        let mut out = alloc::vec![0; self.der_len()?];
+        self.encode_der(&mut out)?;
+        Ok(out)
+    }
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_19(v: &Named<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::Universal, true, 16);
+    ber_write_contents_19(v, w, der)?;
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_19<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Named<'a>> {
+    let v = {
+        let g = r.constructed(wire::TagClass::Universal, 16)?;
+        let v = ber_read_contents_19(r, &g)?;
+        r.close(g)?;
+        v
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_18(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::Universal, false, 2);
+    w.integer(i128::from(*v));
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_18<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let c = r.primitive(wire::TagClass::Universal, 2)?;
+        ber::fit(r, ber::integer(r, c)?)?
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_17(v: &Permissions<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::Universal, false, 3);
+    w.bit_string(&v.0, true, der);
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_17<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Permissions<'a>> {
+    let v = Permissions(r.bit_string(wire::TagClass::Universal, 3, true)?);
+    Ok(v)
+}
+
 #[allow(dead_code, unused_variables)]
 fn ber_write_16(v: &OuterInner, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::Universal, true, 16);
@@ -537,7 +771,7 @@ fn ber_read_13<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Text<'a>> {
 #[allow(dead_code, unused_variables)]
 fn ber_write_12(v: &wire::SequenceOf<'_, PairsItem>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::Universal, true, 17);
-    v.write_ber(w, der, true, ber_write_72)?;
+    v.write_ber(w, der, true, ber_write_75)?;
     w.close(b);
     Ok(())
 }
@@ -546,7 +780,7 @@ fn ber_write_12(v: &wire::SequenceOf<'_, PairsItem>, w: &mut ber::Writer<'_>, de
 fn ber_read_12<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, PairsItem>> {
     let v = {
         let g = r.constructed(wire::TagClass::Universal, 17)?;
-        let v = wire::SequenceOf::read_ber(r, &g, true, ber_read_72)?;
+        let v = wire::SequenceOf::read_ber(r, &g, true, ber_read_75)?;
         r.close(g)?;
         v
     };
@@ -554,18 +788,18 @@ fn ber_read_12<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a,
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_72(v: &PairsItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_75(v: &PairsItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::Universal, true, 17);
-    ber_write_contents_72(v, w, der)?;
+    ber_write_contents_75(v, w, der)?;
     w.close(b);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_72<'a>(r: &mut ber::Reader<'a>) -> wire::Result<PairsItem> {
+fn ber_read_75<'a>(r: &mut ber::Reader<'a>) -> wire::Result<PairsItem> {
     let v = {
         let g = r.constructed(wire::TagClass::Universal, 17)?;
-        let v = ber_read_contents_72(r, &g)?;
+        let v = ber_read_contents_75(r, &g)?;
         r.close(g)?;
         v
     };
@@ -575,7 +809,7 @@ fn ber_read_72<'a>(r: &mut ber::Reader<'a>) -> wire::Result<PairsItem> {
 #[allow(dead_code, unused_variables)]
 fn ber_write_11(v: &wire::SequenceOf<'_, wire::SequenceOf<'_, u8>>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::Universal, true, 16);
-    v.write_ber(w, der, false, ber_write_69)?;
+    v.write_ber(w, der, false, ber_write_72)?;
     w.close(b);
     Ok(())
 }
@@ -584,7 +818,7 @@ fn ber_write_11(v: &wire::SequenceOf<'_, wire::SequenceOf<'_, u8>>, w: &mut ber:
 fn ber_read_11<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, wire::SequenceOf<'a, u8>>> {
     let v = {
         let g = r.constructed(wire::TagClass::Universal, 16)?;
-        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_69)?;
+        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_72)?;
         r.close(g)?;
         v
     };
@@ -592,18 +826,18 @@ fn ber_read_11<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a,
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_69(v: &wire::SequenceOf<'_, u8>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_72(v: &wire::SequenceOf<'_, u8>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::Universal, true, 16);
-    v.write_ber(w, der, false, ber_write_68)?;
+    v.write_ber(w, der, false, ber_write_71)?;
     w.close(b);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_69<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
+fn ber_read_72<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
     let v = {
         let g = r.constructed(wire::TagClass::Universal, 16)?;
-        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_68)?;
+        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_71)?;
         r.close(g)?;
         v
     };
@@ -611,7 +845,7 @@ fn ber_read_69<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a,
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_68(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_71(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::Universal, false, 2);
     w.integer(i128::from(*v));
     w.close(b);
@@ -619,7 +853,7 @@ fn ber_write_68(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_68<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_71<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::Universal, 2)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -799,14 +1033,14 @@ fn ber_read_0<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Keywords<'a>> {
 
 #[allow(dead_code, unused_variables)]
 fn ber_write_contents_0(v: &Keywords<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_17(&v.r#type, w, der)?;
-    ber_write_18(&v.self_, w, der)?;
+    ber_write_20(&v.r#type, w, der)?;
+    ber_write_21(&v.self_, w, der)?;
     if let Some(x) = &v.r#match {
-        ber_write_19(x, w, der)?;
+        ber_write_22(x, w, der)?;
     }
-    ber_write_20(&v.foo_bar, w, der)?;
-    ber_write_21(&v.foo_bar_2, w, der)?;
-    ber_write_22(&v.crate_, w, der)?;
+    ber_write_23(&v.foo_bar, w, der)?;
+    ber_write_24(&v.foo_bar_2, w, der)?;
+    ber_write_25(&v.crate_, w, der)?;
     Ok(())
 }
 
@@ -815,34 +1049,34 @@ fn ber_read_contents_0<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_type = ber_read_17(r)?;
+    let f_type = ber_read_20(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_self_ = ber_read_18(r)?;
+    let f_self_ = ber_read_21(r)?;
     let f_match = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 2))) {
-        Some(ber_read_19(r)?)
+        Some(ber_read_22(r)?)
     } else {
         None
     };
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_foo_bar = ber_read_20(r)?;
+    let f_foo_bar = ber_read_23(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_foo_bar_2 = ber_read_21(r)?;
+    let f_foo_bar_2 = ber_read_24(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_crate_ = ber_read_22(r)?;
+    let f_crate_ = ber_read_25(r)?;
 
     Ok(Keywords { r#type: f_type, self_: f_self_, r#match: f_match, foo_bar: f_foo_bar, foo_bar_2: f_foo_bar_2, crate_: f_crate_ })
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_22(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_25(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 5);
     let _ = v;
     w.close(b);
@@ -850,7 +1084,7 @@ fn ber_write_22(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_22<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
+fn ber_read_25<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 5)?;
         ber::null(r, c)?
@@ -859,7 +1093,7 @@ fn ber_read_22<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_21(v: &u16, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_24(v: &u16, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 4);
     w.integer(i128::from(*v));
     w.close(b);
@@ -867,7 +1101,7 @@ fn ber_write_21(v: &u16, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_21<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u16> {
+fn ber_read_24<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u16> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 4)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -876,7 +1110,7 @@ fn ber_read_21<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u16> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_20(v: &i8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_23(v: &i8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 3);
     w.integer(i128::from(*v));
     w.close(b);
@@ -884,7 +1118,7 @@ fn ber_write_20(v: &i8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_20<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i8> {
+fn ber_read_23<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 3)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -893,7 +1127,7 @@ fn ber_read_20<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_19(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_22(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 2);
     w.text(v, wire::StrKind::Utf8)?;
     w.close(b);
@@ -901,13 +1135,13 @@ fn ber_write_19(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire:
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_19<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Text<'a>> {
+fn ber_read_22<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Text<'a>> {
     let v = r.text(wire::TagClass::ContextSpecific, 2, wire::StrKind::Utf8)?;
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_18(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_21(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 1);
     w.boolean(*v);
     w.close(b);
@@ -915,7 +1149,7 @@ fn ber_write_18(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_18<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
+fn ber_read_21<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 1)?;
         ber::boolean(r, c)?
@@ -924,7 +1158,7 @@ fn ber_read_18<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_17(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_20(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -932,7 +1166,7 @@ fn ber_write_17(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_17<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_20<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -942,14 +1176,14 @@ fn ber_read_17<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn ber_write_contents_1(v: &Sizes, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_23(&v.a, w, der)?;
-    ber_write_24(&v.b, w, der)?;
-    ber_write_25(&v.c, w, der)?;
-    ber_write_26(&v.d, w, der)?;
-    ber_write_27(&v.e, w, der)?;
-    ber_write_28(&v.f, w, der)?;
-    ber_write_29(&v.g, w, der)?;
-    ber_write_30(&v.h, w, der)?;
+    ber_write_26(&v.a, w, der)?;
+    ber_write_27(&v.b, w, der)?;
+    ber_write_28(&v.c, w, der)?;
+    ber_write_29(&v.d, w, der)?;
+    ber_write_30(&v.e, w, der)?;
+    ber_write_31(&v.f, w, der)?;
+    ber_write_32(&v.g, w, der)?;
+    ber_write_33(&v.h, w, der)?;
     Ok(())
 }
 
@@ -958,41 +1192,41 @@ fn ber_read_contents_1<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_a = ber_read_23(r)?;
+    let f_a = ber_read_26(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_b = ber_read_24(r)?;
+    let f_b = ber_read_27(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_c = ber_read_25(r)?;
+    let f_c = ber_read_28(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_d = ber_read_26(r)?;
+    let f_d = ber_read_29(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_e = ber_read_27(r)?;
+    let f_e = ber_read_30(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_f = ber_read_28(r)?;
+    let f_f = ber_read_31(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_g = ber_read_29(r)?;
+    let f_g = ber_read_32(r)?;
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_h = ber_read_30(r)?;
+    let f_h = ber_read_33(r)?;
 
     Ok(Sizes { a: f_a, b: f_b, c: f_c, d: f_d, e: f_e, f: f_f, g: f_g, h: f_h })
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_30(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_33(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 7);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1000,7 +1234,7 @@ fn ber_write_30(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_30<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
+fn ber_read_33<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 7)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1009,7 +1243,7 @@ fn ber_read_30<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_29(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_32(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 6);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1017,7 +1251,7 @@ fn ber_write_29(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_29<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
+fn ber_read_32<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 6)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1026,7 +1260,7 @@ fn ber_read_29<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_28(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_31(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 5);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1034,7 +1268,7 @@ fn ber_write_28(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_28<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
+fn ber_read_31<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 5)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1043,7 +1277,7 @@ fn ber_read_28<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_27(v: &i16, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_30(v: &i16, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 4);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1051,7 +1285,7 @@ fn ber_write_27(v: &i16, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_27<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i16> {
+fn ber_read_30<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i16> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 4)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1060,7 +1294,7 @@ fn ber_read_27<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i16> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_26(v: &i8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_29(v: &i8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 3);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1068,7 +1302,7 @@ fn ber_write_26(v: &i8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_26<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i8> {
+fn ber_read_29<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 3)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1077,7 +1311,7 @@ fn ber_read_26<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_25(v: &u64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_28(v: &u64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 2);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1085,7 +1319,7 @@ fn ber_write_25(v: &u64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_25<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u64> {
+fn ber_read_28<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u64> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 2)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1094,7 +1328,7 @@ fn ber_read_25<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u64> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_24(v: &u32, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_27(v: &u32, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 1);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1102,7 +1336,7 @@ fn ber_write_24(v: &u32, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_24<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u32> {
+fn ber_read_27<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u32> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 1)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1111,7 +1345,7 @@ fn ber_read_24<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u32> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_23(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_26(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1119,7 +1353,7 @@ fn ber_write_23(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_23<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_26<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1130,30 +1364,30 @@ fn ber_read_23<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 #[allow(dead_code)]
 fn ber_write_contents_4(v: &Shape<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     match v {
-        Shape::Circle(x) => ber_write_44(x, w, der),
-        Shape::Square(x) => ber_write_47(x, w, der),
-        Shape::Nothing(x) => ber_write_48(x, w, der),
-        Shape::Many(x) => ber_write_49(x, w, der),
-        Shape::Octets(x) => ber_write_50(x, w, der),
-        Shape::Named(x) => ber_write_51(x, w, der),
+        Shape::Circle(x) => ber_write_47(x, w, der),
+        Shape::Square(x) => ber_write_50(x, w, der),
+        Shape::Nothing(x) => ber_write_51(x, w, der),
+        Shape::Many(x) => ber_write_52(x, w, der),
+        Shape::Octets(x) => ber_write_53(x, w, der),
+        Shape::Named(x) => ber_write_54(x, w, der),
     }
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
 fn ber_read_contents_4<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Shape<'a>> {
     match r.peek_tag() {
-        Some((wire::TagClass::ContextSpecific, 0)) => Ok(Shape::Circle(ber_read_44(r)?)),
-        Some((wire::TagClass::ContextSpecific, 1)) => Ok(Shape::Square(ber_read_47(r)?)),
-        Some((wire::TagClass::ContextSpecific, 2)) => Ok(Shape::Nothing(ber_read_48(r)?)),
-        Some((wire::TagClass::ContextSpecific, 3)) => Ok(Shape::Many(ber_read_49(r)?)),
-        Some((wire::TagClass::ContextSpecific, 4)) => Ok(Shape::Octets(ber_read_50(r)?)),
-        Some((wire::TagClass::ContextSpecific, 5)) => Ok(Shape::Named(ber_read_51(r)?)),
+        Some((wire::TagClass::ContextSpecific, 0)) => Ok(Shape::Circle(ber_read_47(r)?)),
+        Some((wire::TagClass::ContextSpecific, 1)) => Ok(Shape::Square(ber_read_50(r)?)),
+        Some((wire::TagClass::ContextSpecific, 2)) => Ok(Shape::Nothing(ber_read_51(r)?)),
+        Some((wire::TagClass::ContextSpecific, 3)) => Ok(Shape::Many(ber_read_52(r)?)),
+        Some((wire::TagClass::ContextSpecific, 4)) => Ok(Shape::Octets(ber_read_53(r)?)),
+        Some((wire::TagClass::ContextSpecific, 5)) => Ok(Shape::Named(ber_read_54(r)?)),
         _ => Err(wire::Error::decode("Expected the tag of an alternative of the CHOICE.", r.position())),
     }
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_51(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_54(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 5);
     w.text(v, wire::StrKind::Utf8)?;
     w.close(b);
@@ -1161,13 +1395,13 @@ fn ber_write_51(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire:
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_51<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Text<'a>> {
+fn ber_read_54<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Text<'a>> {
     let v = r.text(wire::TagClass::ContextSpecific, 5, wire::StrKind::Utf8)?;
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_50(v: &wire::Octets<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_53(v: &wire::Octets<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 4);
     w.octets(v);
     w.close(b);
@@ -1175,13 +1409,13 @@ fn ber_write_50(v: &wire::Octets<'_>, w: &mut ber::Writer<'_>, der: bool) -> wir
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_50<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Octets<'a>> {
+fn ber_read_53<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Octets<'a>> {
     let v = r.octet_string(wire::TagClass::ContextSpecific, 4)?;
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_49(v: &wire::SequenceOf<'_, Shape<'_>>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_52(v: &wire::SequenceOf<'_, Shape<'_>>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, true, 3);
     v.write_ber(w, der, false, ber_write_4)?;
     w.close(b);
@@ -1189,7 +1423,7 @@ fn ber_write_49(v: &wire::SequenceOf<'_, Shape<'_>>, w: &mut ber::Writer<'_>, de
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_49<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, Shape<'a>>> {
+fn ber_read_52<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, Shape<'a>>> {
     let v = {
         let g = r.constructed(wire::TagClass::ContextSpecific, 3)?;
         let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_4)?;
@@ -1200,7 +1434,7 @@ fn ber_read_49<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a,
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_48(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_51(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 2);
     let _ = v;
     w.close(b);
@@ -1208,7 +1442,7 @@ fn ber_write_48(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_48<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
+fn ber_read_51<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 2)?;
         ber::null(r, c)?
@@ -1217,18 +1451,18 @@ fn ber_read_48<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_47(v: &ShapeSquare, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_50(v: &ShapeSquare, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, true, 1);
-    ber_write_contents_47(v, w, der)?;
+    ber_write_contents_50(v, w, der)?;
     w.close(b);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_47<'a>(r: &mut ber::Reader<'a>) -> wire::Result<ShapeSquare> {
+fn ber_read_50<'a>(r: &mut ber::Reader<'a>) -> wire::Result<ShapeSquare> {
     let v = {
         let g = r.constructed(wire::TagClass::ContextSpecific, 1)?;
-        let v = ber_read_contents_47(r, &g)?;
+        let v = ber_read_contents_50(r, &g)?;
         r.close(g)?;
         v
     };
@@ -1236,7 +1470,7 @@ fn ber_read_47<'a>(r: &mut ber::Reader<'a>) -> wire::Result<ShapeSquare> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_44(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_47(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1244,7 +1478,7 @@ fn ber_write_44(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_44<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_47<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1253,22 +1487,22 @@ fn ber_read_44<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_contents_47(v: &ShapeSquare, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_45(&v.side, w, der)?;
+fn ber_write_contents_50(v: &ShapeSquare, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    ber_write_48(&v.side, w, der)?;
     if let Some(x) = &v.color {
-        ber_write_46(x, w, der)?;
+        ber_write_49(x, w, der)?;
     }
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_47<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<ShapeSquare> {
+fn ber_read_contents_50<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<ShapeSquare> {
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_side = ber_read_45(r)?;
+    let f_side = ber_read_48(r)?;
     let f_color = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 1))) {
-        Some(ber_read_46(r)?)
+        Some(ber_read_49(r)?)
     } else {
         None
     };
@@ -1277,7 +1511,7 @@ fn ber_read_contents_47<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::R
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_46(v: &Color, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_49(v: &Color, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 1);
     w.integer(i128::from(v.number()));
     w.close(b);
@@ -1285,7 +1519,7 @@ fn ber_write_46(v: &Color, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<(
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_46<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Color> {
+fn ber_read_49<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Color> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 1)?;
         Color::from_number(ber::integer(r, c)?)
@@ -1295,7 +1529,7 @@ fn ber_read_46<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Color> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_45(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_48(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1303,7 +1537,7 @@ fn ber_write_45(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_45<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_48<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1313,12 +1547,12 @@ fn ber_read_45<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn ber_write_contents_6(v: &Tree, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_52(&v.value, w, der)?;
+    ber_write_55(&v.value, w, der)?;
     if let Some(x) = &v.left {
-        ber_write_53(x, w, der)?;
+        ber_write_56(x, w, der)?;
     }
     if let Some(x) = &v.right {
-        ber_write_54(x, w, der)?;
+        ber_write_57(x, w, der)?;
     }
     Ok(())
 }
@@ -1328,14 +1562,14 @@ fn ber_read_contents_6<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_value = ber_read_52(r)?;
+    let f_value = ber_read_55(r)?;
     let f_left = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 1))) {
-        Some(Box::new(ber_read_53(r)?))
+        Some(Box::new(ber_read_56(r)?))
     } else {
         None
     };
     let f_right = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 2))) {
-        Some(Box::new(ber_read_54(r)?))
+        Some(Box::new(ber_read_57(r)?))
     } else {
         None
     };
@@ -1344,7 +1578,7 @@ fn ber_read_contents_6<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_54(v: &Node, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_57(v: &Node, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let t0 = w.open(wire::TagClass::ContextSpecific, true, 2);
     ber_write_contents_7(v, w, der)?;
     w.close(t0);
@@ -1352,64 +1586,11 @@ fn ber_write_54(v: &Node, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_54<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Node> {
+fn ber_read_57<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Node> {
     let t0 = r.constructed(wire::TagClass::ContextSpecific, 2)?;
     let v = ber_read_contents_7(r)?;
     r.close(t0)?;
     Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_53(v: &Tree, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    let b = w.open(wire::TagClass::ContextSpecific, true, 1);
-    ber_write_contents_6(v, w, der)?;
-    w.close(b);
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_53<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Tree> {
-    let v = {
-        let g = r.constructed(wire::TagClass::ContextSpecific, 1)?;
-        let v = ber_read_contents_6(r, &g)?;
-        r.close(g)?;
-        v
-    };
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_52(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    let b = w.open(wire::TagClass::ContextSpecific, false, 0);
-    w.integer(i128::from(*v));
-    w.close(b);
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_52<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
-    let v = {
-        let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
-        ber::fit(r, ber::integer(r, c)?)?
-    };
-    Ok(v)
-}
-
-#[allow(dead_code)]
-fn ber_write_contents_7(v: &Node, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    match v {
-        Node::Leaf(x) => ber_write_55(x, w, der),
-        Node::Tree(x) => ber_write_56(x, w, der),
-    }
-}
-
-#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_7<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Node> {
-    match r.peek_tag() {
-        Some((wire::TagClass::ContextSpecific, 0)) => Ok(Node::Leaf(ber_read_55(r)?)),
-        Some((wire::TagClass::ContextSpecific, 1)) => Ok(Node::Tree(Box::new(ber_read_56(r)?))),
-        _ => Err(wire::Error::decode("Expected the tag of an alternative of the CHOICE.", r.position())),
-    }
 }
 
 #[allow(dead_code, unused_variables)]
@@ -1448,22 +1629,75 @@ fn ber_read_55<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     Ok(v)
 }
 
+#[allow(dead_code)]
+fn ber_write_contents_7(v: &Node, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    match v {
+        Node::Leaf(x) => ber_write_58(x, w, der),
+        Node::Tree(x) => ber_write_59(x, w, der),
+    }
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn ber_read_contents_7<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Node> {
+    match r.peek_tag() {
+        Some((wire::TagClass::ContextSpecific, 0)) => Ok(Node::Leaf(ber_read_58(r)?)),
+        Some((wire::TagClass::ContextSpecific, 1)) => Ok(Node::Tree(Box::new(ber_read_59(r)?))),
+        _ => Err(wire::Error::decode("Expected the tag of an alternative of the CHOICE.", r.position())),
+    }
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_59(v: &Tree, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, true, 1);
+    ber_write_contents_6(v, w, der)?;
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_59<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Tree> {
+    let v = {
+        let g = r.constructed(wire::TagClass::ContextSpecific, 1)?;
+        let v = ber_read_contents_6(r, &g)?;
+        r.close(g)?;
+        v
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_58(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 0);
+    w.integer(i128::from(*v));
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_58<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
+        ber::fit(r, ber::integer(r, c)?)?
+    };
+    Ok(v)
+}
+
 #[allow(dead_code, unused_variables)]
 fn ber_write_contents_8(v: &Defaults<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     if v.count != 3 {
-        ber_write_57(&v.count, w, der)?;
+        ber_write_60(&v.count, w, der)?;
     }
     if !v.enabled {
-        ber_write_58(&v.enabled, w, der)?;
+        ber_write_61(&v.enabled, w, der)?;
     }
     if v.color != Color::Green {
-        ber_write_59(&v.color, w, der)?;
+        ber_write_62(&v.color, w, der)?;
     }
     if let Some(x) = &v.list {
-        ber_write_61(x, w, der)?;
+        ber_write_64(x, w, der)?;
     }
     if let Some(x) = &v.anything {
-        ber_write_62(x, w, der)?;
+        ber_write_65(x, w, der)?;
     }
     Ok(())
 }
@@ -1471,7 +1705,7 @@ fn ber_write_contents_8(v: &Defaults<'_>, w: &mut ber::Writer<'_>, der: bool) ->
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
 fn ber_read_contents_8<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<Defaults<'a>> {
     let f_count = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 0))) {
-        let x = ber_read_57(r)?;
+        let x = ber_read_60(r)?;
 
         if r.der() && !(x != 3) {
             return Err(wire::Error::decode("A member is encoded with its default value, which DER leaves out.", r.position()));
@@ -1482,7 +1716,7 @@ fn ber_read_contents_8<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
         3
     };
     let f_enabled = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 1))) {
-        let x = ber_read_58(r)?;
+        let x = ber_read_61(r)?;
 
         if r.der() && !(!x) {
             return Err(wire::Error::decode("A member is encoded with its default value, which DER leaves out.", r.position()));
@@ -1493,7 +1727,7 @@ fn ber_read_contents_8<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
         true
     };
     let f_color = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 2))) {
-        let x = ber_read_59(r)?;
+        let x = ber_read_62(r)?;
 
         if r.der() && !(x != Color::Green) {
             return Err(wire::Error::decode("A member is encoded with its default value, which DER leaves out.", r.position()));
@@ -1504,12 +1738,12 @@ fn ber_read_contents_8<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
         Color::Green
     };
     let f_list = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 3))) {
-        Some(ber_read_61(r)?)
+        Some(ber_read_64(r)?)
     } else {
         None
     };
     let f_anything = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 4))) {
-        Some(ber_read_62(r)?)
+        Some(ber_read_65(r)?)
     } else {
         None
     };
@@ -1518,7 +1752,7 @@ fn ber_read_contents_8<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_62(v: &Any, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_65(v: &Any, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, true, 4);
     ber_write_contents_9(v, w, der)?;
     w.close(b);
@@ -1526,7 +1760,7 @@ fn ber_write_62(v: &Any, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()>
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_62<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Any> {
+fn ber_read_65<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Any> {
     let v = {
         let g = r.constructed(wire::TagClass::ContextSpecific, 4)?;
         let v = ber_read_contents_9(r, &g)?;
@@ -1537,18 +1771,18 @@ fn ber_read_62<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Any> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_61(v: &wire::SequenceOf<'_, u8>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_64(v: &wire::SequenceOf<'_, u8>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, true, 3);
-    v.write_ber(w, der, false, ber_write_60)?;
+    v.write_ber(w, der, false, ber_write_63)?;
     w.close(b);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_61<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
+fn ber_read_64<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, u8>> {
     let v = {
         let g = r.constructed(wire::TagClass::ContextSpecific, 3)?;
-        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_60)?;
+        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_63)?;
         r.close(g)?;
         v
     };
@@ -1556,7 +1790,7 @@ fn ber_read_61<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a,
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_60(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_63(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::Universal, false, 2);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1564,7 +1798,7 @@ fn ber_write_60(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_60<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_63<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::Universal, 2)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1573,7 +1807,7 @@ fn ber_read_60<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_59(v: &Color, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_62(v: &Color, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 2);
     w.integer(i128::from(v.number()));
     w.close(b);
@@ -1581,7 +1815,7 @@ fn ber_write_59(v: &Color, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<(
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_59<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Color> {
+fn ber_read_62<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Color> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 2)?;
         Color::from_number(ber::integer(r, c)?)
@@ -1591,7 +1825,7 @@ fn ber_read_59<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Color> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_58(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_61(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 1);
     w.boolean(*v);
     w.close(b);
@@ -1599,7 +1833,7 @@ fn ber_write_58(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_58<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
+fn ber_read_61<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 1)?;
         ber::boolean(r, c)?
@@ -1608,7 +1842,7 @@ fn ber_read_58<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_57(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_60(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1616,7 +1850,7 @@ fn ber_write_57(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_57<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_60<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1626,7 +1860,7 @@ fn ber_read_57<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn ber_write_contents_9(v: &Any, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_63(&v.x, w, der)?;
+    ber_write_66(&v.x, w, der)?;
     Ok(())
 }
 
@@ -1635,13 +1869,13 @@ fn ber_read_contents_9<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Re
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_x = ber_read_63(r)?;
+    let f_x = ber_read_66(r)?;
 
     Ok(Any { x: f_x })
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_63(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_66(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1649,7 +1883,7 @@ fn ber_write_63(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_63<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_66<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1659,15 +1893,15 @@ fn ber_read_63<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn ber_write_contents_10(v: &Extensible<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_64(&v.first, w, der)?;
+    ber_write_67(&v.first, w, der)?;
     if let Some(x) = &v.second {
-        ber_write_65(x, w, der)?;
+        ber_write_68(x, w, der)?;
     }
     if let Some(x) = &v.third {
-        ber_write_66(x, w, der)?;
+        ber_write_69(x, w, der)?;
     }
     if let Some(x) = &v.fourth {
-        ber_write_67(x, w, der)?;
+        ber_write_70(x, w, der)?;
     }
     Ok(())
 }
@@ -1677,19 +1911,19 @@ fn ber_read_contents_10<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::R
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_first = ber_read_64(r)?;
+    let f_first = ber_read_67(r)?;
     let f_second = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 1))) {
-        Some(ber_read_65(r)?)
+        Some(ber_read_68(r)?)
     } else {
         None
     };
     let f_third = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 2))) {
-        Some(ber_read_66(r)?)
+        Some(ber_read_69(r)?)
     } else {
         None
     };
     let f_fourth = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 3))) {
-        Some(ber_read_67(r)?)
+        Some(ber_read_70(r)?)
     } else {
         None
     };
@@ -1698,7 +1932,7 @@ fn ber_read_contents_10<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::R
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_67(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_70(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 3);
     w.text(v, wire::StrKind::Utf8)?;
     w.close(b);
@@ -1706,13 +1940,13 @@ fn ber_write_67(v: &wire::Text<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire:
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_67<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Text<'a>> {
+fn ber_read_70<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::Text<'a>> {
     let v = r.text(wire::TagClass::ContextSpecific, 3, wire::StrKind::Utf8)?;
     Ok(v)
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_66(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_69(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 2);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1720,7 +1954,7 @@ fn ber_write_66(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_66<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_69<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 2)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1729,7 +1963,7 @@ fn ber_read_66<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_65(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_68(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 1);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1737,7 +1971,7 @@ fn ber_write_65(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_65<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_68<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 1)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1746,7 +1980,7 @@ fn ber_read_65<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_64(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_67(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1754,7 +1988,7 @@ fn ber_write_64(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_64<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_67<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1763,10 +1997,10 @@ fn ber_read_64<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_contents_72(v: &PairsItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_contents_75(v: &PairsItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let start = w.len();
-    ber_write_70(&v.a, w, der)?;
-    ber_write_71(&v.b, w, der)?;
+    ber_write_73(&v.a, w, der)?;
+    ber_write_74(&v.b, w, der)?;
     if der {
         w.sort_members(start);
     }
@@ -1774,7 +2008,7 @@ fn ber_write_contents_72(v: &PairsItem, w: &mut ber::Writer<'_>, der: bool) -> w
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_72<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<PairsItem> {
+fn ber_read_contents_75<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<PairsItem> {
     let mut f_a = None;
     let mut f_b = None;
     let mut last = None;
@@ -1784,8 +2018,8 @@ fn ber_read_contents_72<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::R
         }
 
         match tag {
-            (wire::TagClass::ContextSpecific, 0) if f_a.is_none() => f_a = Some(ber_read_70(r)?),
-            (wire::TagClass::ContextSpecific, 1) if f_b.is_none() => f_b = Some(ber_read_71(r)?),
+            (wire::TagClass::ContextSpecific, 0) if f_a.is_none() => f_a = Some(ber_read_73(r)?),
+            (wire::TagClass::ContextSpecific, 1) if f_b.is_none() => f_b = Some(ber_read_74(r)?),
             _ => return Err(wire::Error::decode("Expected the tag of a member.", r.position())),
         }
     }
@@ -1797,7 +2031,7 @@ fn ber_read_contents_72<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::R
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_71(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_74(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 1);
     w.boolean(*v);
     w.close(b);
@@ -1805,144 +2039,12 @@ fn ber_write_71(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_71<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
+fn ber_read_74<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 1)?;
         ber::boolean(r, c)?
     };
     Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_70(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    let b = w.open(wire::TagClass::ContextSpecific, false, 0);
-    w.integer(i128::from(*v));
-    w.close(b);
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_70<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
-    let v = {
-        let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
-        ber::fit(r, ber::integer(r, c)?)?
-    };
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_contents_15(v: &Outer<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_74(&v.inner, w, der)?;
-    ber_write_77(&v.list, w, der)?;
-    ber_write_81(&v.choice, w, der)?;
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_15<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<Outer<'a>> {
-    if !r.more(g)? {
-        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
-    }
-    let f_inner = ber_read_74(r)?;
-    if !r.more(g)? {
-        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
-    }
-    let f_list = ber_read_77(r)?;
-    if !r.more(g)? {
-        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
-    }
-    let f_choice = ber_read_81(r)?;
-
-    Ok(Outer { inner: f_inner, list: f_list, choice: f_choice })
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_81(v: &OuterChoice, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    let t0 = w.open(wire::TagClass::ContextSpecific, true, 2);
-    ber_write_contents_81(v, w, der)?;
-    w.close(t0);
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_81<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterChoice> {
-    let t0 = r.constructed(wire::TagClass::ContextSpecific, 2)?;
-    let v = ber_read_contents_81(r)?;
-    r.close(t0)?;
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_77(v: &wire::SequenceOf<'_, OuterListItem>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    let b = w.open(wire::TagClass::ContextSpecific, true, 1);
-    v.write_ber(w, der, false, ber_write_76)?;
-    w.close(b);
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_77<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, OuterListItem>> {
-    let v = {
-        let g = r.constructed(wire::TagClass::ContextSpecific, 1)?;
-        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_76)?;
-        r.close(g)?;
-        v
-    };
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_76(v: &OuterListItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    let b = w.open(wire::TagClass::Universal, true, 16);
-    ber_write_contents_76(v, w, der)?;
-    w.close(b);
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_76<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterListItem> {
-    let v = {
-        let g = r.constructed(wire::TagClass::Universal, 16)?;
-        let v = ber_read_contents_76(r, &g)?;
-        r.close(g)?;
-        v
-    };
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_74(v: &OuterInner2, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    let b = w.open(wire::TagClass::ContextSpecific, true, 0);
-    ber_write_contents_74(v, w, der)?;
-    w.close(b);
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_74<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterInner2> {
-    let v = {
-        let g = r.constructed(wire::TagClass::ContextSpecific, 0)?;
-        let v = ber_read_contents_74(r, &g)?;
-        r.close(g)?;
-        v
-    };
-    Ok(v)
-}
-
-#[allow(dead_code, unused_variables)]
-fn ber_write_contents_74(v: &OuterInner2, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_73(&v.value, w, der)?;
-    Ok(())
-}
-
-#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_74<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<OuterInner2> {
-    if !r.more(g)? {
-        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
-    }
-    let f_value = ber_read_73(r)?;
-
-    Ok(OuterInner2 { value: f_value })
 }
 
 #[allow(dead_code, unused_variables)]
@@ -1963,23 +2065,122 @@ fn ber_read_73<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_contents_76(v: &OuterListItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_75(&v.value, w, der)?;
+fn ber_write_contents_15(v: &Outer<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    ber_write_77(&v.inner, w, der)?;
+    ber_write_80(&v.list, w, der)?;
+    ber_write_84(&v.choice, w, der)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_76<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<OuterListItem> {
+fn ber_read_contents_15<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<Outer<'a>> {
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_value = ber_read_75(r)?;
+    let f_inner = ber_read_77(r)?;
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_list = ber_read_80(r)?;
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_choice = ber_read_84(r)?;
 
-    Ok(OuterListItem { value: f_value })
+    Ok(Outer { inner: f_inner, list: f_list, choice: f_choice })
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_75(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_84(v: &OuterChoice, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let t0 = w.open(wire::TagClass::ContextSpecific, true, 2);
+    ber_write_contents_84(v, w, der)?;
+    w.close(t0);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_84<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterChoice> {
+    let t0 = r.constructed(wire::TagClass::ContextSpecific, 2)?;
+    let v = ber_read_contents_84(r)?;
+    r.close(t0)?;
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_80(v: &wire::SequenceOf<'_, OuterListItem>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, true, 1);
+    v.write_ber(w, der, false, ber_write_79)?;
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_80<'a>(r: &mut ber::Reader<'a>) -> wire::Result<wire::SequenceOf<'a, OuterListItem>> {
+    let v = {
+        let g = r.constructed(wire::TagClass::ContextSpecific, 1)?;
+        let v = wire::SequenceOf::read_ber(r, &g, false, ber_read_79)?;
+        r.close(g)?;
+        v
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_79(v: &OuterListItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::Universal, true, 16);
+    ber_write_contents_79(v, w, der)?;
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_79<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterListItem> {
+    let v = {
+        let g = r.constructed(wire::TagClass::Universal, 16)?;
+        let v = ber_read_contents_79(r, &g)?;
+        r.close(g)?;
+        v
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_77(v: &OuterInner2, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, true, 0);
+    ber_write_contents_77(v, w, der)?;
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_77<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterInner2> {
+    let v = {
+        let g = r.constructed(wire::TagClass::ContextSpecific, 0)?;
+        let v = ber_read_contents_77(r, &g)?;
+        r.close(g)?;
+        v
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_contents_77(v: &OuterInner2, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    ber_write_76(&v.value, w, der)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn ber_read_contents_77<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<OuterInner2> {
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_value = ber_read_76(r)?;
+
+    Ok(OuterInner2 { value: f_value })
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_76(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -1987,7 +2188,40 @@ fn ber_write_75(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_75<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_76<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
+        ber::fit(r, ber::integer(r, c)?)?
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_contents_79(v: &OuterListItem, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    ber_write_78(&v.value, w, der)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn ber_read_contents_79<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<OuterListItem> {
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_value = ber_read_78(r)?;
+
+    Ok(OuterListItem { value: f_value })
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_78(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 0);
+    w.integer(i128::from(*v));
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_78<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -1996,35 +2230,35 @@ fn ber_read_75<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 }
 
 #[allow(dead_code)]
-fn ber_write_contents_81(v: &OuterChoice, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_contents_84(v: &OuterChoice, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     match v {
-        OuterChoice::A(x) => ber_write_78(x, w, der),
-        OuterChoice::B(x) => ber_write_80(x, w, der),
+        OuterChoice::A(x) => ber_write_81(x, w, der),
+        OuterChoice::B(x) => ber_write_83(x, w, der),
     }
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_81<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterChoice> {
+fn ber_read_contents_84<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterChoice> {
     match r.peek_tag() {
-        Some((wire::TagClass::ContextSpecific, 0)) => Ok(OuterChoice::A(ber_read_78(r)?)),
-        Some((wire::TagClass::ContextSpecific, 1)) => Ok(OuterChoice::B(ber_read_80(r)?)),
+        Some((wire::TagClass::ContextSpecific, 0)) => Ok(OuterChoice::A(ber_read_81(r)?)),
+        Some((wire::TagClass::ContextSpecific, 1)) => Ok(OuterChoice::B(ber_read_83(r)?)),
         _ => Err(wire::Error::decode("Expected the tag of an alternative of the CHOICE.", r.position())),
     }
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_80(v: &OuterChoiceB, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_83(v: &OuterChoiceB, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, true, 1);
-    ber_write_contents_80(v, w, der)?;
+    ber_write_contents_83(v, w, der)?;
     w.close(b);
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_80<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterChoiceB> {
+fn ber_read_83<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterChoiceB> {
     let v = {
         let g = r.constructed(wire::TagClass::ContextSpecific, 1)?;
-        let v = ber_read_contents_80(r, &g)?;
+        let v = ber_read_contents_83(r, &g)?;
         r.close(g)?;
         v
     };
@@ -2032,7 +2266,7 @@ fn ber_read_80<'a>(r: &mut ber::Reader<'a>) -> wire::Result<OuterChoiceB> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_78(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_81(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     let _ = v;
     w.close(b);
@@ -2040,7 +2274,7 @@ fn ber_write_78(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_78<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
+fn ber_read_81<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::null(r, c)?
@@ -2049,23 +2283,23 @@ fn ber_read_78<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_contents_80(v: &OuterChoiceB, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_79(&v.value, w, der)?;
+fn ber_write_contents_83(v: &OuterChoiceB, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    ber_write_82(&v.value, w, der)?;
     Ok(())
 }
 
 #[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
-fn ber_read_contents_80<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<OuterChoiceB> {
+fn ber_read_contents_83<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<OuterChoiceB> {
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_value = ber_read_79(r)?;
+    let f_value = ber_read_82(r)?;
 
     Ok(OuterChoiceB { value: f_value })
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_79(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_82(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.integer(i128::from(*v));
     w.close(b);
@@ -2073,7 +2307,7 @@ fn ber_write_79(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> 
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_79<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+fn ber_read_82<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::fit(r, ber::integer(r, c)?)?
@@ -2083,7 +2317,7 @@ fn ber_read_79<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
 
 #[allow(dead_code, unused_variables)]
 fn ber_write_contents_16(v: &OuterInner, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
-    ber_write_82(&v.clash, w, der)?;
+    ber_write_85(&v.clash, w, der)?;
     Ok(())
 }
 
@@ -2092,13 +2326,13 @@ fn ber_read_contents_16<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::R
     if !r.more(g)? {
         return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
     }
-    let f_clash = ber_read_82(r)?;
+    let f_clash = ber_read_85(r)?;
 
     Ok(OuterInner { clash: f_clash })
 }
 
 #[allow(dead_code, unused_variables)]
-fn ber_write_82(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+fn ber_write_85(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
     let b = w.open(wire::TagClass::ContextSpecific, false, 0);
     w.boolean(*v);
     w.close(b);
@@ -2106,10 +2340,206 @@ fn ber_write_82(v: &bool, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()
 }
 
 #[allow(dead_code, unused_variables, clippy::let_unit_value)]
-fn ber_read_82<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
+fn ber_read_85<'a>(r: &mut ber::Reader<'a>) -> wire::Result<bool> {
     let v = {
         let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
         ber::boolean(r, c)?
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_contents_19(v: &Named<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    ber_write_86(&v.permissions, w, der)?;
+    if !v.flags.0.same_as(&NamedFlags(wire::BitString::new(&[0x80], 1)).0, true) {
+        ber_write_87(&v.flags, w, der)?;
+    }
+    ber_write_88(&v.level, w, der)?;
+    ber_write_89(&v.version, w, der)?;
+    ber_write_90(&v.big, w, der)?;
+    ber_write_93(&v.mode, w, der)?;
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn ber_read_contents_19<'a>(r: &mut ber::Reader<'a>, g: &ber::Region) -> wire::Result<Named<'a>> {
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_permissions = ber_read_86(r)?;
+    let f_flags = if matches!(r.peek_in(g)?, Some((wire::TagClass::ContextSpecific, 1))) {
+        let x = ber_read_87(r)?;
+
+        if r.der() && !(!x.0.same_as(&NamedFlags(wire::BitString::new(&[0x80], 1)).0, true)) {
+            return Err(wire::Error::decode("A member is encoded with its default value, which DER leaves out.", r.position()));
+        }
+
+        x
+    } else {
+        NamedFlags(wire::BitString::new(&[0x80], 1))
+    };
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_level = ber_read_88(r)?;
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_version = ber_read_89(r)?;
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_big = ber_read_90(r)?;
+    if !r.more(g)? {
+        return Err(wire::Error::decode("A member is missing and has no default value.", r.position()));
+    }
+    let f_mode = ber_read_93(r)?;
+
+    Ok(Named { permissions: f_permissions, flags: f_flags, level: f_level, version: f_version, big: f_big, mode: f_mode })
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_93(v: &NamedMode, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let t0 = w.open(wire::TagClass::ContextSpecific, true, 5);
+    ber_write_contents_93(v, w, der)?;
+    w.close(t0);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_93<'a>(r: &mut ber::Reader<'a>) -> wire::Result<NamedMode> {
+    let t0 = r.constructed(wire::TagClass::ContextSpecific, 5)?;
+    let v = ber_read_contents_93(r)?;
+    r.close(t0)?;
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_90(v: &i64, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 4);
+    w.integer(i128::from(*v));
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_90<'a>(r: &mut ber::Reader<'a>) -> wire::Result<i64> {
+    let v = {
+        let c = r.primitive(wire::TagClass::ContextSpecific, 4)?;
+        ber::fit(r, ber::integer(r, c)?)?
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_89(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 3);
+    w.integer(i128::from(*v));
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_89<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let c = r.primitive(wire::TagClass::ContextSpecific, 3)?;
+        ber::fit(r, ber::integer(r, c)?)?
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_88(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 2);
+    w.integer(i128::from(*v));
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_88<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let c = r.primitive(wire::TagClass::ContextSpecific, 2)?;
+        ber::fit(r, ber::integer(r, c)?)?
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_87(v: &NamedFlags<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 1);
+    w.bit_string(&v.0, true, der);
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_87<'a>(r: &mut ber::Reader<'a>) -> wire::Result<NamedFlags<'a>> {
+    let v = NamedFlags(r.bit_string(wire::TagClass::ContextSpecific, 1, true)?);
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_86(v: &Permissions<'_>, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 0);
+    w.bit_string(&v.0, true, der);
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_86<'a>(r: &mut ber::Reader<'a>) -> wire::Result<Permissions<'a>> {
+    let v = Permissions(r.bit_string(wire::TagClass::ContextSpecific, 0, true)?);
+    Ok(v)
+}
+
+#[allow(dead_code)]
+fn ber_write_contents_93(v: &NamedMode, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    match v {
+        NamedMode::Fast(x) => ber_write_91(x, w, der),
+        NamedMode::Off(x) => ber_write_92(x, w, der),
+    }
+}
+
+#[allow(dead_code, unused_variables, unreachable_code, clippy::let_unit_value)]
+fn ber_read_contents_93<'a>(r: &mut ber::Reader<'a>) -> wire::Result<NamedMode> {
+    match r.peek_tag() {
+        Some((wire::TagClass::ContextSpecific, 0)) => Ok(NamedMode::Fast(ber_read_91(r)?)),
+        Some((wire::TagClass::ContextSpecific, 1)) => Ok(NamedMode::Off(ber_read_92(r)?)),
+        _ => Err(wire::Error::decode("Expected the tag of an alternative of the CHOICE.", r.position())),
+    }
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_92(v: &(), w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 1);
+    let _ = v;
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_92<'a>(r: &mut ber::Reader<'a>) -> wire::Result<()> {
+    let v = {
+        let c = r.primitive(wire::TagClass::ContextSpecific, 1)?;
+        ber::null(r, c)?
+    };
+    Ok(v)
+}
+
+#[allow(dead_code, unused_variables)]
+fn ber_write_91(v: &u8, w: &mut ber::Writer<'_>, der: bool) -> wire::Result<()> {
+    let b = w.open(wire::TagClass::ContextSpecific, false, 0);
+    w.integer(i128::from(*v));
+    w.close(b);
+    Ok(())
+}
+
+#[allow(dead_code, unused_variables, clippy::let_unit_value)]
+fn ber_read_91<'a>(r: &mut ber::Reader<'a>) -> wire::Result<u8> {
+    let v = {
+        let c = r.primitive(wire::TagClass::ContextSpecific, 0)?;
+        ber::fit(r, ber::integer(r, c)?)?
     };
     Ok(v)
 }

@@ -161,6 +161,47 @@ fn bit_strings_and_optional_members() {
     );
 }
 
+/// The bits of a BIT STRING by their numbers, as the code generated for
+/// named bits has them.
+#[test]
+fn bits_are_set_and_read_by_their_numbers() {
+    let mut bits = BitString {
+        data: Vec::new(),
+        bits: 0,
+    };
+
+    bits.set_bit(3, false);
+    assert_eq!((bits.data.as_slice(), bits.bits), (&[][..], 0));
+
+    bits.set_bit(9, true);
+    assert_eq!((bits.data.as_slice(), bits.bits), (&[0x00, 0x40][..], 10));
+    assert!(bits.bit(9) && !bits.bit(8) && !bits.bit(10));
+
+    bits.set_bit(0, true);
+    bits.set_bit(9, false);
+    assert_eq!(bits.trimmed_len(), 1);
+    bits.trim();
+    assert_eq!((bits.data.as_slice(), bits.bits), (&[0x80][..], 1));
+
+    // The bits after the last are not looked at, and are zero once the
+    // string grows over them.
+    let mut bits = BitString {
+        data: vec![0b1011_1111],
+        bits: 3,
+    };
+
+    assert!(!bits.has_bits_other_than(&[0, 2]));
+    assert!(bits.has_bits_other_than(&[0]));
+    assert_eq!(bits.trimmed_len(), 3);
+    bits.set_bit(11, true);
+    assert_eq!(
+        (bits.data.as_slice(), bits.bits),
+        (&[0b1010_0000, 0x10][..], 12)
+    );
+    assert!(bits.has_bits_other_than(&[0, 2]));
+    assert!(!bits.has_bits_other_than(&[0, 2, 11]));
+}
+
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 enum Pick {
     #[serde(rename = "a")]

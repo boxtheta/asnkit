@@ -100,4 +100,19 @@ Shapes DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 
     OuterInner ::= SEQUENCE { clash BOOLEAN }
 
+    -- Named bits and named numbers, in types of their own and inside
+    -- others, with names the code has itself and a gap among the bits.
+    Permissions ::= BIT STRING { read(0), write(1), set(2), named(3), execute(9) }
+
+    Level ::= INTEGER { low(0), high(10), huge(1000) } (0..20)
+
+    Named ::= SEQUENCE {
+        permissions Permissions,
+        flags       BIT STRING { on(0), off(1) } (SIZE (0..8)) DEFAULT { on },
+        level       Level,
+        version     INTEGER { v1(0), v2(1) } (v1 | v2),
+        big         INTEGER { minus(-1), lots(5000000000) },
+        mode        CHOICE { fast INTEGER { slow(0) } (0..3), off NULL }
+    }
+
 END
