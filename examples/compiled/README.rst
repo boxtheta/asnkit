@@ -44,7 +44,7 @@ come from:
 
    >>> with open('foo.asni', 'rb') as fin:
    ...     asnkitrt.syntax.read_header(fin.read())
-   Header(kind='asni', version=(2, 0), metadata=Metadata(generator='asnkit-compiler 2.0.0-rc3 (Rust)', sources=(Source(name='foo.asn', sha256='c3904ec2...', text=None),), bound_to=None, other={}))
+   Header(kind='asni', version=(2, 0), metadata=Metadata(generator='asnkit-compiler 2.0.0-rc4 (Rust)', sources=(Source(name='foo.asn', sha256='c3904ec2...', text=None),), bound_to=None, other={}))
 
 Look at either as JSON:
 

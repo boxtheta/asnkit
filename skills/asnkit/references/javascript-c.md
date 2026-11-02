@@ -59,10 +59,10 @@ END`);
 const spec = await load(asni, 'uper');
 ```
 
-This compiler package may need building from the checkout; do not assume
-it is published wherever the runtime is. It cannot run executable code
-generation plugins. Use its `compileWithSummary` when the UI needs module
-and type names. See `packages/asnkit-compiler-wasm/README.md` for builds.
+The compiler package is published on npm as `asnkit-compiler`. Install
+matching compiler and runtime versions; release candidates use the `next`
+tag. It cannot run executable code generation plugins. Use its
+`compileWithSummary` when the UI needs module and type names. See `packages/asnkit-compiler-wasm/README.md` for builds.
 The compiler accepts `{ boundTo: 'device-family' }`; load the result with
 `load(asni, 'uper', { boundTo: 'device-family' })`. Runtime loads expect
 unbound files by default; `acceptAnyBinding: true` explicitly bypasses the

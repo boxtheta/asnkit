@@ -13,15 +13,10 @@ PEP 440 spelling `2.0.0rc1`. The version tests compare these spellings.
 The workflow publishes prereleases to npm's `next` tag and marks the
 GitHub release as a prerelease. Stable releases use npm's `latest` tag.
 
-`asnkit-gen-rust-codec` is included after `asnkit-gen-rust` in the publish
-list. Before its first automated release, publish it once and configure
-its crates.io trusted publisher as below. For this new crate, its
-`asnkitrt` and `asnkit-gen-rust` dependency versions must already be
-published. If the first release workflow stops at this crate, publish
-it with `cargo publish --locked -p asnkit-gen-rust-codec` from the tagged
-checkout using your crates.io credentials, configure its trusted
-publisher, then rerun the failed jobs. The workflow skips versions
-already published.
+`asnkit-gen-rust-codec` is published on crates.io and released by this
+workflow after `asnkit-gen-rust`. Its initial publication and trusted
+publisher setup are complete. The workflow skips versions already
+published.
 
 ## Once, before the first release
 

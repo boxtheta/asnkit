@@ -131,8 +131,10 @@ omit the keyword options for an unbound schema. Rust omits `load()`; pass
 a `Specification::from_asni(...)` result with the expected binding to the
 models.
 
-For embedded Rust, the not-yet-published plugin can be installed from
-the repository with `cargo install --path packages/asnkit-gen-rust-codec`;
+For embedded Rust, install the published plugin from crates.io with
+`cargo install asnkit-gen-rust-codec --version "<version>" --locked`,
+replacing `<version>` with the same published release as the compiler
+and runtime, including its `-rcN` suffix for a release candidate;
 use `asnkitcc generate --plugin rust-codec --plugin-opt codec=der` to
 generate DER codecs that do not load the schema. The `codec` option
 selects only `ber` (default), `der` or `uper`; other codecs are not emitted.
@@ -140,8 +142,8 @@ Buffer-based methods avoid allocations
 except for boxed recursive values; decoded values
 borrow the input, and `encode_der(&mut buffer)` writes into a given
 buffer. Only the matching `asnkitrt` is needed, with
-`default-features = false`; use a path dependency on
-`packages/asnkitrt-rs` until this runtime support is released.
+`default-features = false`; use the matching published runtime version
+from crates.io.
 
 For generator options and value mappings consult
 `packages/asnkit-gen-python/README.rst`, `packages/asnkit-gen-rust/README.md`,

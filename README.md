@@ -40,11 +40,11 @@ with an error rather than encoded wrongly.
 | **Compiler** | Parses ASN.1 and writes `.asni` files. | | | |
 | `asnkit-compiler` | The compiler as a Rust library, which also runs the plugins, for an application to compile ASN.1 itself. | [`packages/asnkit-compiler`](packages/asnkit-compiler) | [crates.io](https://crates.io/crates/asnkit-compiler) | Apache-2.0 |
 | `asnkitcc` | The command, made with the library. | [`packages/asnkitcc`](packages/asnkitcc) | [crates.io](https://crates.io/crates/asnkitcc) | Apache-2.0 |
-| `asnkit-compiler` | The compiler for browsers and Node.js, as WebAssembly. | [`packages/asnkit-compiler-wasm`](packages/asnkit-compiler-wasm) | not yet | Apache-2.0 |
+| `asnkit-compiler` | The compiler for browsers and Node.js, as WebAssembly. | [`packages/asnkit-compiler-wasm`](packages/asnkit-compiler-wasm) | [npm](https://www.npmjs.com/package/asnkit-compiler) | Apache-2.0 |
 | **Plugins** | Generate code from a compiled specification. | | | |
 | `asnkit-gen-python` | Python data classes. | [`packages/asnkit-gen-python`](packages/asnkit-gen-python) | [PyPI](https://pypi.org/project/asnkit-gen-python/) | Apache-2.0 |
 | `asnkit-gen-rust` | Rust structs and enums with `serde`. | [`packages/asnkit-gen-rust`](packages/asnkit-gen-rust) | [crates.io](https://crates.io/crates/asnkit-gen-rust) | Apache-2.0 |
-| `asnkit-gen-rust-codec` | Rust codecs for one selected encoding: BER, DER or UPER, with borrowed values and caller-provided buffers. | [`packages/asnkit-gen-rust-codec`](packages/asnkit-gen-rust-codec) | not yet | Apache-2.0 |
+| `asnkit-gen-rust-codec` | Rust codecs for one selected encoding: BER, DER or UPER, with borrowed values and caller-provided buffers. | [`packages/asnkit-gen-rust-codec`](packages/asnkit-gen-rust-codec) | [crates.io](https://crates.io/crates/asnkit-gen-rust-codec) | Apache-2.0 |
 
 All the packages are released together, with one version; see
 [CHANGELOG.md](CHANGELOG.md). Within a major version, the `.asni` and
@@ -271,12 +271,14 @@ caller-provided buffer, avoiding heap allocations except for boxed
 recursive values. Allocating `to_ber()`, `to_der()` or `to_uper()` helpers
 are also available.
 
-The plugin is not yet published. Install it and the matching compiler
-from this checkout, then generate UPER code for the example above:
+The plugin is published on [crates.io](https://crates.io/crates/asnkit-gen-rust-codec).
+Install it and the matching compiler, replacing `<version>` with the same
+published release for both (including the `-rcN` suffix for a release
+candidate), then generate UPER code for the example above:
 
 ```sh
-cargo install --path packages/asnkitcc
-cargo install --path packages/asnkit-gen-rust-codec
+cargo install asnkitcc --version "<version>" --locked
+cargo install asnkit-gen-rust-codec --version "<version>" --locked
 asnkitcc generate --plugin rust-codec --plugin-opt codec=uper -o src tests/files/foo.asn
 ```
 
