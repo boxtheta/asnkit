@@ -23,7 +23,7 @@ use crate::{Error, Result};
 /// The root of a constraint of which a bound does not fit in an `i128`:
 /// its values and ranges, the least and the greatest of them, and if
 /// there is an extension marker. A bound that is `None` is MIN or MAX.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BigRange {
     pub min: Option<BigInt>,
     pub max: Option<BigInt>,

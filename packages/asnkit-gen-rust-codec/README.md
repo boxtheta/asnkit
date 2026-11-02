@@ -35,11 +35,11 @@ runtime version; `asnkitrt::wire` may change between minor versions.
 
 ## Why
 
-The runtime loads a specification and keeps it on the heap: RFC 5280,
-the types of X.509, uses 398.5 KiB in a 32-bit WebAssembly heap probe, and
-loading it takes 737 KiB at its peak. The code this plugin makes for
-RFC 5280 keeps nothing on the heap, and a certificate decoded with it is
-a value of 432 bytes in that probe that borrows the rest from the data.
+The runtime loads a specification and keeps it on the heap, as
+[its sizes](../asnkitrt-rs/README.md#sizes) tell for RFC 5280, the
+types of X.509. The code this plugin makes for RFC 5280 keeps nothing on
+the heap, and a certificate decoded with it is a value of 432 bytes in a
+32-bit WebAssembly probe that borrows the rest from the data.
 
 Built for a Cortex-M4 (`thumbv7em-none-eabi`, `opt-level = "z"`, LTO),
 the earlier generator that emitted all three codecs produced the
@@ -47,13 +47,11 @@ comparison below for a program using DER and UPER. These are baseline
 measurements, not measurements of the current single-codec output. Both
 flash probes use `default-features = false`,
 `codegen-units = 1`, `panic = "abort"` and `strip = true`; flash counts
-`.text`, `.rodata`, `.data` and `.ARM.exidx`. Heap figures are from the
-WebAssembly probe, not a Cortex-M4 execution, and exclude application
-buffers and stack usage.
+`.text`, `.rodata`, `.data` and `.ARM.exidx`.
 
 | | Flash | Heap |
 |---|---:|---:|
-| The runtime, with `rfc5280.asni` in it | 210.7 KiB | 737 KiB at its peak, 398.5 KiB kept |
+| The runtime, with `rfc5280.asni` in it | 210.7 KiB | see [its sizes](../asnkitrt-rs/README.md#sizes) |
 | The code of this plugin for RFC 5280 | 50.8 KiB | none |
 
 The runtime does more: it encodes and decodes any specification it is

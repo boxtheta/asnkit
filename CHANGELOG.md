@@ -10,6 +10,27 @@ security fixes.
 
 ## [Unreleased]
 
+### Changed
+
+- `asnkitrt`: a loaded specification keeps about a fifth of the heap it
+  did, and loading takes about a third at its peak: RFC 5280 keeps
+  132.5 KiB where it kept 615.4 KiB, and takes 337.3 KiB at its peak
+  where it took 936.9 KiB, as `examples/load_memory.rs` measures.
+  `Specification::from_asni` lets go of the file as CBOR before it
+  lowers the types, and the types are counted before they are lowered,
+  so that their vector is made once. The constraints of
+  the types are kept once in `Types`, and a `TypeNode` holds no more of
+  them: `Types::constraints(id)` gives the `Constraints` of a type,
+  which are its `size`, `range`, `big_range`, `alphabet`, `size_parts`
+  and `range_parts`, in place of the `effective_*` fields of its node.
+  The fields of the constraints of the type itself, `size`, `range`,
+  `big_range`, `alphabet`, `size_parts` and `range_parts`, are no more,
+  as nothing but loading looks at them. `TypeNode::inner` is a
+  `Box<Inner>`, the `Members` of `Kind::Sequence`, `Kind::Set`,
+  `Kind::Choice` and `Kind::External` are a `Box<Members>`, and
+  `MemberInfo::default` is a `Box<Value>`. `MemberInfo::size` is no
+  more, as the type of the member has it.
+
 ## [2.0.0-rc3] - 2026-10-26
 
 ### Added
