@@ -36,7 +36,7 @@ fn main() {
             asnkit_compiler::compile(&input).unwrap()
         });
         benches.run(&format!("asni/{name}"), || {
-            asnkit_compiler::compile_to_asni(&input, None).unwrap()
+            asnkit_compiler::compile_to_asni(&input).unwrap()
         });
     }
 }

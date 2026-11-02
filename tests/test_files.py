@@ -8,11 +8,24 @@ import io
 import json
 import os
 import unittest
+import zlib
 
 from tests import compiled as fixtures
 from asnkitrt import runtime, syntax
 from asnkitrt.syntax import cbor, wire
 from asnkitrt.syntax.__main__ import main
+
+
+CORRUPT = "The CRC-32 of the file does not match: the file is corrupt."
+
+
+def asni_of(rest: bytes, version: bytes = b"\x02\x00") -> bytes:
+    """An .asni file of the version with given metadata and nodes, and
+    their CRC-32 in its header.
+
+    """
+
+    return b"ASNI" + version + zlib.crc32(rest).to_bytes(4, "big") + rest
 
 
 class FilesTest(unittest.TestCase):
@@ -137,10 +150,12 @@ class FilesTest(unittest.TestCase):
             syntax.Metadata(generator=None),
         )
 
-        # The magic, the version, no flags and no metadata.
-        self.assertEqual(data[:9], b"ASNI\x02\x00\x00\x00\xa0")
+        # The magic, the version, the CRC-32 of the rest, and no metadata.
+        self.assertEqual(data[:6], b"ASNI\x02\x00")
+        self.assertEqual(data[6:10], zlib.crc32(data[10:]).to_bytes(4, "big"))
+        self.assertEqual(data[10:11], b"\xa0")
         self.assertEqual(
-            cbor.loads(data[9:]),
+            cbor.loads(data[11:]),
             # CompiledSpecification, modules.
             [
                 1,
@@ -179,7 +194,7 @@ class FilesTest(unittest.TestCase):
                 ],
             ],
         )
-        self.assertEqual(len(data), 59)
+        self.assertEqual(len(data), 61)
 
     def test_compact(self):
         datas = [
@@ -238,7 +253,7 @@ class FilesTest(unittest.TestCase):
         # CompiledModule and the first Member of the first type.
         compact[1][1].extend([None, None, "later"])
         compact[1][1][2][1][2][1][1].extend([None, None, [0, "later"]])
-        later = asni[:5] + b"\x01" + asni[6:header_size] + cbor.dumps(compact)
+        later = asni_of(asni[10:header_size] + cbor.dumps(compact), b"\x02\x01")
         self.assertEqual(syntax.from_asni(later), syntax.from_asni(asni))
         self.assertEqual(syntax.read_header(later).version, (2, 1))
 
@@ -283,7 +298,7 @@ class FilesTest(unittest.TestCase):
         datas = [
             (syntax.from_asni, b"", "Expected an .asni or .asnst file."),
             (syntax.from_asni, b"ASN1" + asni[4:], "Expected an .asni or .asnst file."),
-            (syntax.from_asni, asni[:7], "Expected an .asni or .asnst file."),
+            (syntax.from_asni, asni[:9], "Expected an .asni or .asnst file."),
             # Version 1, which had a nonce, a signature and encryption.
             (
                 syntax.from_asni,
@@ -295,39 +310,19 @@ class FilesTest(unittest.TestCase):
                 asni[:4] + b"\x03" + asni[5:],
                 "Unsupported version 3.0, expected 2.x.",
             ),
-            # Flags that are not known, among them those of version 1.
+            # Anything changed after the header, or cut short, or added
+            # to, and the CRC-32 itself changed, before any CBOR is read.
+            (syntax.from_asni, asni[:-1] + bytes([asni[-1] ^ 1]), CORRUPT),
+            (syntax.from_asni, asni[:6] + bytes([asni[6] ^ 0x80]) + asni[7:], CORRUPT),
+            (syntax.from_asni, asni[:10], CORRUPT),
+            (syntax.from_asni, asni[:-1], CORRUPT),
+            (syntax.from_asni, asni + b"\x00", CORRUPT),
+            # The same with the CRC-32 made to match, which the CBOR catches.
+            (syntax.from_asni, asni_of(b""), "Out of CBOR data."),
+            (syntax.from_asni, asni_of(asni[10:-1]), "Out of CBOR data."),
             (
                 syntax.from_asni,
-                asni[:7] + b"\x02" + asni[8:],
-                "Unsupported flags 0x0002.",
-            ),
-            (
-                syntax.from_asni,
-                asni[:7] + b"\x04" + asni[8:],
-                "Unsupported flags 0x0004.",
-            ),
-            (
-                syntax.from_asni,
-                asni[:7] + b"\x08" + asni[8:],
-                "Unsupported flags 0x0008.",
-            ),
-            (
-                syntax.from_asni,
-                asni[:6] + b"\x80" + asni[7:],
-                "Unsupported flags 0x8000.",
-            ),
-            # Bound without telling to what.
-            (
-                syntax.from_asni,
-                asni[:7] + b"\x01" + asni[8:],
-                "Expected a bound file to tell what it is bound to.",
-            ),
-            (syntax.from_asni, asni[:8], "Out of CBOR data."),
-            (syntax.from_asni, asni[:9], "Out of CBOR data."),
-            (syntax.from_asni, asni[:-1], "Out of CBOR data."),
-            (
-                syntax.from_asni,
-                asni + b"\x00",
+                asni_of(asni[10:] + b"\x00"),
                 "Unexpected data after the nodes at offset {}.".format(len(asni)),
             ),
             (
@@ -342,12 +337,12 @@ class FilesTest(unittest.TestCase):
             ),
             (
                 syntax.from_asni,
-                asni[:8] + b"\x00" + cbor.dumps([20]),
+                asni_of(b"\x00" + cbor.dumps([20])),
                 "Expected the metadata as a map.",
             ),
             (
                 syntax.from_asni,
-                asni[:8] + b"\xa0" + cbor.dumps([20]),
+                asni_of(b"\xa0" + cbor.dumps([20])),
                 "Expected a compiled specification.",
             ),
             (
@@ -364,9 +359,10 @@ class FilesTest(unittest.TestCase):
 
                 self.assertEqual(str(cm.exception), message)
 
-        # The metadata follows the flags.
-        self.assertEqual(asni[:8], b"ASNI\x02\x00\x00\x00")
-        self.assertIsInstance(cbor.loads_first(asni, 8)[0], dict)
+        # The metadata follows the CRC-32.
+        self.assertEqual(asni[:6], b"ASNI\x02\x00")
+        self.assertEqual(asni_of(asni[10:]), asni)
+        self.assertIsInstance(cbor.loads_first(asni, 10)[0], dict)
 
         # An .asnst file is CBOR and nothing else.
         contents = cbor.loads(asnst)
@@ -475,120 +471,43 @@ class FilesTest(unittest.TestCase):
         # A list is told from a node by a number no kind has.
         self.assertNotIn(wire.TUPLE, wire.KIND_NUMBERS.values())
 
-    def test_bound_to(self):
+    def test_crc32(self):
         string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
-        metadata = syntax.Metadata(generator=None)
-        plain = fixtures.compile_string_to_asni(string, metadata=metadata)
-        data = fixtures.compile_string_to_asni(
-            string, metadata=metadata, bound_to="Thing 2"
-        )
-        compiled = syntax.from_asni(plain)
+        data = fixtures.compile_string_to_asni(string)
+        compiled = syntax.from_asni(data)
 
-        # The flag, and what it is bound to in the metadata.
-        self.assertEqual(data[6:8], b"\x00\x01")
-        self.assertEqual(cbor.loads_first(data, 8)[0], {"bound_to": "Thing 2"})
-        self.assertEqual(syntax.read_header(data).metadata.bound_to, "Thing 2")
-        self.assertIsNone(syntax.read_header(plain).metadata.bound_to)
-        self.assertEqual(
-            syntax.to_asni(
-                compiled, syntax.Metadata(generator=None, bound_to="Thing 2")
-            ),
-            data,
-        )
+        # That of zlib, of the bytes after the header, most significant
+        # byte first.
+        self.assertEqual(zlib.crc32(b"123456789"), 0xCBF43926)
+        self.assertEqual(int.from_bytes(data[6:10], "big"), zlib.crc32(data[10:]))
 
-        # Read if bound to what is expected.
-        self.assertEqual(syntax.from_asni(data, bound_to="Thing 2"), compiled)
-        self.assertEqual(
-            repr(runtime.load_asni(data, bound_to="Thing 2").types),
-            repr(runtime.load(compiled).types),
-        )
-        self.assertEqual(
-            repr(runtime.load(data, bound_to="Thing 2").types),
-            repr(runtime.load(compiled).types),
-        )
+        # Every bit flipped after the magic and the version is caught,
+        # in the CRC-32 itself too, also by read_header().
+        for index in range(6, len(data)):
+            for bit in range(8):
+                corrupt = bytearray(data)
+                corrupt[index] ^= 1 << bit
 
-        # Not read otherwise, unless any binding will do, which is
-        # not so by default.
-        datas = [
-            (data, {}, "The file is bound to 'Thing 2', but no binding is expected."),
-            (
-                data,
-                {"bound_to": "Thing 1"},
-                "Expected a file bound to 'Thing 1', but it is bound to 'Thing 2'.",
-            ),
-            (
-                data,
-                {"bound_to": "Thing 2 "},
-                "Expected a file bound to 'Thing 2 ', but it is bound to 'Thing 2'.",
-            ),
-            (
-                data,
-                {"bound_to": ""},
-                "Expected a file bound to '', but it is bound to 'Thing 2'.",
-            ),
-            (plain, {"bound_to": "Thing 2"}, "Expected a file bound to 'Thing 2'."),
-        ]
-
-        for encoded, arguments, message in datas:
-            with self.subTest(message=message):
-                for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
+                for function in [
+                    syntax.from_asni,
+                    syntax.read_header,
+                    runtime.load_asni,
+                    runtime.load,
+                ]:
                     with self.assertRaises(syntax.ConvertError) as cm:
-                        function(encoded, **arguments)
+                        function(bytes(corrupt))
 
-                    self.assertEqual(str(cm.exception), message)
+                    self.assertEqual(str(cm.exception), CORRUPT)
 
-                self.assertEqual(
-                    syntax.from_asni(encoded, accept_any_binding=True, **arguments),
-                    compiled,
-                )
+        # The minor version is not covered: a later one is read.
+        self.assertEqual(syntax.from_asni(data[:5] + b"\x09" + data[6:]), compiled)
 
-        # What a file that is not bound says it is bound to is not
-        # looked at.
-        unbound = data[:6] + b"\x00\x00" + data[8:]
-        self.assertIsNone(syntax.read_header(unbound).metadata.bound_to)
-        self.assertEqual(syntax.from_asni(unbound), compiled)
-
-        # At most 255 bytes, which is not as many characters.
-        longest = "\u00e9" * 127 + "e"
-        encoded = fixtures.compile_string_to_asni(string, bound_to=longest)
-        self.assertEqual(syntax.from_asni(encoded, bound_to=longest), compiled)
-        message = "Expected what the file is bound to as at most 255 bytes as UTF-8."
-
-        with self.assertRaises(syntax.ConvertError) as cm:
-            fixtures.compile_string_to_asni(string, bound_to="\u00e9" * 128)
-
-        self.assertEqual(str(cm.exception), message)
-
-        # Also when found in a file, whatever is expected.
-        for arguments in [{}, {"bound_to": "a" * 256}, {"accept_any_binding": True}]:
-            with self.assertRaises(syntax.ConvertError) as cm:
-                syntax.from_asni(
-                    data[:8]
-                    + cbor.dumps({"bound_to": "a" * 256})
-                    + data[8 + len(cbor.dumps({"bound_to": "Thing 2"})) :],
-                    **arguments,
-                )
-
-            self.assertEqual(str(cm.exception), message)
-
-        # A syntax tree is for plugins, and is never bound.
-        with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.to_asnst(
-                syntax.from_asnst(fixtures.parse_string_to_asnst(string)),
-                syntax.Metadata(bound_to="Thing 2"),
-            )
-
-        self.assertEqual(
-            str(cm.exception), "Only an .asni file can be bound to something."
-        )
-
-        with self.assertRaises(syntax.ConvertError) as cm:
-            fixtures.compile_string_to_asni(string, bound_to=5)
-
-        self.assertEqual(
-            str(cm.exception),
-            "Expected what the file is bound to as a string, but got 5.",
-        )
+        # What a file of 2.0.0-rc4 told it was bound to is metadata that
+        # is not known, and is ignored.
+        metadata, offset = cbor.loads_first(data, 10)
+        bound = asni_of(cbor.dumps(dict(metadata, bound_to="Thing 2")) + data[offset:])
+        self.assertEqual(syntax.from_asni(bound), compiled)
+        self.assertEqual(syntax.read_header(bound), syntax.read_header(data))
 
     def test_removed_options(self):
         """The options of what an .asni file no longer has, a nonce, a
@@ -607,6 +526,8 @@ class FilesTest(unittest.TestCase):
             "verification_keys",
             "accept_any_signature",
             "decryption_keys",
+            "bound_to",
+            "accept_any_binding",
         ]:
             with self.subTest(name=name):
                 for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
@@ -669,23 +590,19 @@ class FilesTest(unittest.TestCase):
     def test_corpus(self):
         decoded = {"id": 1, "question": "Is 1+1=3?"}
 
-        for name, bound in [("plain", False), ("bound", True)]:
-            with self.subTest(name=name):
-                path = "examples/corpus/{}.asni".format(name)
+        with open("examples/corpus/plain.asni", "rb") as fin:
+            header = syntax.read_header(fin.read())
 
-                with open(path, "rb") as fin:
-                    header = syntax.read_header(fin.read())
+        self.assertEqual(header.version, (2, 0))
+        foo = runtime.load_asni_file("examples/corpus/plain.asni", "ber")
+        self.assertEqual(
+            foo.decode("Question", foo.encode("Question", decoded)), decoded
+        )
 
-                self.assertEqual(header.version, (2, 0))
-                self.assertEqual(header.metadata.bound_to, "corpus" if bound else None)
+        with self.assertRaises(syntax.ConvertError) as cm:
+            runtime.load_asni_file("examples/corpus/corrupt.asni", "ber")
 
-                foo = runtime.load_asni_file(
-                    path, "ber", bound_to="corpus" if bound else None
-                )
-                self.assertEqual(
-                    foo.decode("Question", foo.encode("Question", decoded)),
-                    decoded,
-                )
+        self.assertEqual(str(cm.exception), CORRUPT)
 
         self.assertEqual(
             sorted(
@@ -693,7 +610,7 @@ class FilesTest(unittest.TestCase):
                 for name in os.listdir("examples/corpus")
                 if name.endswith(".asni")
             ),
-            ["bound", "plain"],
+            ["corrupt", "plain"],
         )
 
     def test_load_real_specification_example(self):

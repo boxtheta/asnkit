@@ -7,14 +7,20 @@
 [![npm](https://img.shields.io/npm/v/asnkitrt)](https://www.npmjs.com/package/asnkitrt)
 
 > [!NOTE]
-> `trunk` is at **2.0.0-rc4**, a release candidate, and this README
+> `trunk` is at **2.0.0-rc5**, a release candidate, and this README
 > describes it. The registries still serve 1.2.0 by default, and 1.2.0
 > cannot read the version 2 `.asni` files that the 2.0 compiler writes.
 > Until 2.0.0 is released, ask for the release candidate explicitly:
-> `pip install --pre asnkitrt`, `cargo install asnkitcc --version 2.0.0-rc4`
-> (and the same `--version` for each plugin), `cargo add asnkitrt@2.0.0-rc4`
-> and `npm install asnkitrt@next`. Release candidates may still change;
-> see [CHANGELOG.md](CHANGELOG.md).
+> `pip install --pre asnkitrt`, `cargo install asnkitcc --version 2.0.0-rc5`
+> (and the same `--version` for each plugin), `cargo add asnkitrt@2.0.0-rc5`
+> and `npm install asnkitrt@next`.
+>
+> Release candidates of a new major version make no promise of
+> compatibility with each other: the APIs, the command line and the
+> `.asni` format may change between them, as the header of `.asni` files
+> did between rc4 and rc5. Use the same release candidate for the
+> compiler, the plugins and the runtimes, and compile your `.asni` files
+> again when you move to another. See [CHANGELOG.md](CHANGELOG.md).
 
 An [ASN.1](https://en.wikipedia.org/wiki/Abstract_Syntax_Notation_One)
 toolkit that parses a specification once, so that encoding and decoding
@@ -361,17 +367,16 @@ nothing on success. Its output is checked against the
 cases in `packages/asnkit-compiler/tests/golden`, recorded from the
 Python compiler it replaced.
 
-The compiler can bind a file to a string with `--bound-to STRING`.
-Runtime loads reject bound files unless given the expected binding or
-explicitly told to accept any binding. Binding prevents accidental use
-of the wrong schema; it does not authenticate it.
-
-`.asni` uses format 2.0, with an 8-byte header. Recompile version 1 files
-from their ASN.1 sources. `.asnst` remains at 1.0. Signing, encryption
-and nonces have been removed, along with their options and dependencies.
-Provide those protections in the firmware update or patching system,
-or another layer that distributes the files. See
-[File formats](docs/file_formats.md) for the layout.
+`.asni` uses format 2.0, with a 10-byte header that ends with the
+CRC-32 of the rest of the file. Every runtime checks it before it
+parses anything, so a corrupt file is rejected and never read.
+Recompile version 1 files, and those of 2.0.0-rc4, from their ASN.1
+sources. `.asnst` remains at 1.0. Signing, encryption, nonces and
+binding have been removed, along with their options and dependencies;
+the CRC-32 detects corruption, not tampering. Provide those protections
+in the firmware update or patching system, or another layer that
+distributes the files. See [File formats](docs/file_formats.md) for the
+layout.
 
 ## Contributing
 

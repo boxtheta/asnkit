@@ -87,7 +87,7 @@ class NotEmbeddedTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             question.encode()
 
-        self.foo.use_asni(read("examples/corpus/bound.asni"), bound_to="corpus")
+        self.foo.use_asni(read("examples/corpus/plain.asni"))
 
         for codec in ["ber", "uper", "jer"]:
             self.assertEqual(
@@ -96,7 +96,7 @@ class NotEmbeddedTest(unittest.TestCase):
 
     def test_a_file_that_fails_its_checks_is_not_used(self) -> None:
         with self.assertRaises(asnkitrt.Error):
-            self.foo.use_asni(read("examples/corpus/bound.asni"))
+            self.foo.use_asni(read("examples/corpus/corrupt.asni"))
 
 
 class GeneratedFooTest(unittest.TestCase):
@@ -379,11 +379,9 @@ class GeneratedX509Test(unittest.TestCase):
 
 
 class GenerateErrorsTest(unittest.TestCase):
-    def test_a_file_that_is_bound_is_not_embedded(self) -> None:
-        from tests import compiled as fixtures
-
+    def test_a_file_that_is_corrupt_is_not_embedded(self) -> None:
         with self.assertRaises(GenerateError):
-            generate(fixtures.compile_string_to_asni(SHAPES, bound_to="x"))
+            generate(read("examples/corpus/corrupt.asni"))
 
     def test_two_things_with_one_name_in_python_is_an_error(self) -> None:
         from tests import compiled as fixtures

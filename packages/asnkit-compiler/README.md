@@ -11,7 +11,7 @@ of the [repository](https://github.com/boxtheta/asnkit).
 use asnkit_compiler::{Input, compile_to_asni};
 
 let input = Input::String(std::fs::read_to_string("foo.asn")?);
-let asni = compile_to_asni(&input, None)?;
+let asni = compile_to_asni(&input)?;
 
 std::fs::write("foo.asni", asni)?;
 ```

@@ -2,11 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-/** How an `.asni` file is made, as the options of `asnkitcc compile`. */
-export interface CompileOptions {
-  /** What the file is bound to, which the runtime is to check. */
-  boundTo?: string;
-}
+/** How an `.asni` file is made. There are no options yet. */
+export interface CompileOptions {}
 
 /** What a compiled module has. */
 export interface ModuleSummary {

@@ -50,7 +50,7 @@ impl Specification {
     }
 
     /// Loads the contents of an `.asni` file, after `checks`.
-    pub fn from_asni(data: &[u8], checks: &Checks<'_>, options: Options) -> Result<Specification> {
+    pub fn from_asni(data: &[u8], checks: &Checks, options: Options) -> Result<Specification> {
         // The file as CBOR is let go of before the types are lowered,
         // which need only the nodes read from it, so that the two are not
         // on the heap at the same time.

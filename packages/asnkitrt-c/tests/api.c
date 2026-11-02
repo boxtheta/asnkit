@@ -351,27 +351,11 @@ static void test_numeric_enums(const char *types)
     asnkit_spec_free(spec);
 }
 
-static void test_bound_files(void)
+static void test_corrupt_files(void)
 {
-    asnkit_load_options *options;
-
     OK(load_corpus("plain.asni", NULL));
-    CHECK(load_corpus("bound.asni", NULL) == ASNKIT_ERROR_LOAD);
-
-    options = asnkit_load_options_new();
-    OK(asnkit_load_options_set_bound_to(options, "corpus"));
-    OK(load_corpus("bound.asni", options));
-    CHECK(load_corpus("plain.asni", options) == ASNKIT_ERROR_LOAD);
-    OK(asnkit_load_options_set_bound_to(options, "elsewhere"));
-    CHECK(load_corpus("bound.asni", options) == ASNKIT_ERROR_LOAD);
-    CHECK(asnkit_load_options_set_bound_to(options, NULL) == ASNKIT_ERROR_ARGUMENT);
-    asnkit_load_options_free(options);
-
-    options = asnkit_load_options_new();
-    OK(asnkit_load_options_set_accept_any_binding(options));
-    OK(load_corpus("plain.asni", options));
-    OK(load_corpus("bound.asni", options));
-    asnkit_load_options_free(options);
+    CHECK(load_corpus("corrupt.asni", NULL) == ASNKIT_ERROR_LOAD);
+    CHECK(strstr(asnkit_last_error(), "CRC-32") != NULL);
 }
 
 int main(int argc, const char *argv[])
@@ -386,7 +370,7 @@ int main(int argc, const char *argv[])
     test_errors(argv[1]);
     test_values(argv[1]);
     test_numeric_enums(argv[1]);
-    test_bound_files();
+    test_corrupt_files();
 
     printf("ok\n");
 

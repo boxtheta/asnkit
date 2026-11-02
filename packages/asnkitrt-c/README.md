@@ -7,7 +7,7 @@ the header [`include/asnkitrt.h`](include/asnkitrt.h). It loads the
 ASN.1, without parsing ASN.1 itself.
 
 The codecs are BER, DER, OER, PER, UPER, JER, XER and GSER. It can also check
-values against their constraints, and load bound `.asni` files.
+values against their constraints.
 
 ```c
 #include "asnkitrt.h"
@@ -145,13 +145,10 @@ codec.
 - A specification may be used from several threads at once. A value
   may be read from several threads, and changed from one only.
 
-## Bound files
+## Corrupt files
 
-By default, only a file that is not bound is loaded. An
-`asnkit_load_options` says what else is expected:
-`asnkit_load_options_set_bound_to()` or
-`_set_accept_any_binding()`, as `asnkitrt.load_asni()` of the Python
-runtime has them. See
+A file whose CRC-32 does not match is corrupt, and loading it returns
+`ASNKIT_ERROR_LOAD`, whatever the options. See
 [`docs/file_formats.md`](https://github.com/boxtheta/asnkit/blob/trunk/docs/file_formats.md).
 
 ## Testing

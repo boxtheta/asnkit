@@ -31,15 +31,15 @@ $ echo 300e0201011609497320312b313d333f \
 A type that is in more than one module is given as `Module.Type`.
 `--input-hex` and `--output-hex` read and write the binary codecs as
 hexadecimal digits, and `--lenient` has DER decode what BER allows.
-Conversion accepts any container binding; use runtime loading checks
-when a particular binding is required. An `ANY` is
+An `ANY` is
 copied as the bytes it was decoded from, so it can only be converted
 between BER and DER.
 
-The compiler can bind a version 2 `.asni` file to a string with
-`--bound-to STRING`. Signing, encryption and nonces are no longer
-supported; their old options fail with an error. Recompile version 1
-files from source. Run `asnkitcc --help` to see the options.
+The compiler writes version 2 `.asni` files, with the CRC-32 of the
+file in their header, which runtimes check. Signing, encryption, nonces
+and binding are no longer supported; their old options, as
+`--bound-to`, fail with an error. Recompile version 1 files from
+source. Run `asnkitcc --help` to see the options.
 
 The plugin `NAME` is the program `asnkit-gen-NAME`, looked up on the
 `PATH`; see [`docs/plugins.md`](https://github.com/boxtheta/asnkit/blob/trunk/docs/plugins.md). Install

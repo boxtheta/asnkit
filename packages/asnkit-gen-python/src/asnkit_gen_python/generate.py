@@ -771,23 +771,15 @@ NOT_EMBEDDED = """\
 _SPECIFICATION: asnkitrt.syntax.CompiledSpecification | None = None
 
 
-def use_asni(
-    data: bytes | bytearray,
-    *,
-    bound_to: str | None = None,
-    accept_any_binding: bool = False,
-) -> None:
+def use_asni(data: bytes | bytearray) -> None:
     \"\"\"Uses the contents of an .asni file, made from the specification this
-    module is made from, for all codecs. It is checked once, here, with the
-    options of asnkitrt.load_asni().
+    module is made from, for all codecs. Its CRC-32 is checked once, here.
 
     \"\"\"
 
     global _SPECIFICATION
 
-    _SPECIFICATION = asnkitrt.syntax.from_asni(
-        data, bound_to=bound_to, accept_any_binding=accept_any_binding
-    )
+    _SPECIFICATION = asnkitrt.syntax.from_asni(data)
     spec.cache_clear()
 
 
@@ -829,8 +821,7 @@ def generate(
     embed: bool = True,
 ) -> str:
     """Returns the text of a Python module for given contents of an
-    ``.asni`` file, which must not be bound to something, as it may be
-    embedded in the module and loaded without checking that. `sources`
+    ``.asni`` file, which may be embedded in the module. `sources`
     are the names of the files it was made from, and `codec` is what
     the module encodes and decodes with if not told otherwise. Without
     `embed`, the module does not have the specification in it, and is
@@ -841,9 +832,6 @@ def generate(
     try:
         compiled = syntax.from_asni(asni)
     except Exception as error:
-        raise GenerateError(
-            "Expected a compiled specification that is not bound to something, "
-            "but: {}".format(error)
-        )
+        raise GenerateError("Expected a compiled specification, but: {}".format(error))
 
     return Generator(compiled, asni, sources or [], codec, embed).run()

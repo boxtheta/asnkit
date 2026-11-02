@@ -255,32 +255,33 @@ describe('codecs', () => {
   });
 });
 
-describe('files that are bound', () => {
+describe('the files of the corpus', () => {
   const read = (name) => readFileSync(new URL(name, CORPUS));
   const question = { id: 1, question: 'Is 1+1=3?' };
 
-  test('are only loaded when told what to expect', () => {
-    assert.throws(() => new Specification(read('bound.asni')), { name: 'LoadError' });
-    assert.throws(() => new Specification(read('plain.asni'), 'ber', { boundTo: 'corpus' }), {
-      name: 'LoadError',
-    });
-  });
-
-  test('are loaded with the binding', () => {
-    const spec = new Specification(read('bound.asni'), 'uper', { boundTo: 'corpus' });
+  test('a whole file is loaded', () => {
+    const spec = new Specification(read('plain.asni'), 'uper');
 
     assert.deepEqual(roundTrip(spec, 'Question', question), question);
   });
 
-  test('are refused with another binding', () => {
-    assert.throws(() => new Specification(read('bound.asni'), 'ber', { boundTo: 'elsewhere' }), {
+  test('a corrupt file is refused', () => {
+    assert.throws(() => new Specification(read('corrupt.asni')), {
       name: 'LoadError',
+      message: /CRC-32/,
     });
-    new Specification(read('bound.asni'), 'ber', { acceptAnyBinding: true });
   });
 
-  test('the options of a nonce, a signature and encryption are refused', () => {
-    for (const key of ['nonce', 'acceptAnyNonce', 'verificationKeys', 'acceptAnySignature', 'decryptionKeys']) {
+  test('the options of a nonce, a signature, encryption and a binding are refused', () => {
+    for (const key of [
+      'nonce',
+      'acceptAnyNonce',
+      'verificationKeys',
+      'acceptAnySignature',
+      'decryptionKeys',
+      'boundTo',
+      'acceptAnyBinding',
+    ]) {
       assert.throws(() => new Specification(read('plain.asni'), 'ber', { [key]: true }), {
         name: 'TypeError',
         message: new RegExp(`'${key}' is no longer supported`),

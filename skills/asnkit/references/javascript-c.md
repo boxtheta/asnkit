@@ -64,10 +64,9 @@ The compiler package is published on npm as `asnkit-compiler`. Install
 matching compiler and runtime versions; release candidates use the `next`
 tag. It cannot run executable code generation plugins. Use its
 `compileWithSummary` when the UI needs module and type names. See `packages/asnkit-compiler-wasm/README.md` for builds.
-The compiler accepts `{ boundTo: 'device-family' }`; load the result with
-`load(asni, 'uper', { boundTo: 'device-family' })`. Runtime loads expect
-unbound files by default; `acceptAnyBinding: true` explicitly bypasses the
-binding check. Both WASM packages reject removed nonce/signing/encryption
+The compiler takes no options yet. Runtime loads reject a file whose
+CRC-32 does not match with a `LoadError`. Both WASM packages reject the
+removed binding (`boundTo`, `acceptAnyBinding`) and nonce/signing/encryption
 options with `TypeError`, rather than silently ignoring them.
 
 For WASM source builds, match the `wasm-bindgen-cli` version to the crate
@@ -97,9 +96,8 @@ Ownership is part of the API:
 - Check statuses/NULL handles and capture `asnkit_last_error()` and
   `asnkit_last_error_offset()` when diagnosing failures.
 
-Load options expect unbound files by default. Use
-`asnkit_load_options_set_bound_to` for an expected binding, or explicitly
-use `asnkit_load_options_set_accept_any_binding` to bypass that check.
-Nonce/key/signature setters and `ASNKIT_KEY_*` constants are removed.
+Load options are `numeric_enums` and `lenient`. A file whose CRC-32 does
+not match fails with `ASNKIT_ERROR_LOAD`. The binding setters,
+nonce/key/signature setters and `ASNKIT_KEY_*` constants are removed.
 Use codec options for constraint checks. Do not pass allocator-owned buffers to
 C's `free`; use the library's matching destructor.

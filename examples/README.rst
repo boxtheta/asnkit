@@ -16,7 +16,7 @@ This folder contains executable example scripts.
    and how to make and load them.
 
 ``corpus``
-   Plain and bound version 2 compiled files, for testing a reader.
+   A whole and a corrupt version 2 compiled file, for testing a reader.
 
 ``compact_extensions_uper``
    More compact UPER encoding without extension markers.

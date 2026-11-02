@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 from typing import Any
 
 import asnkitrt
@@ -66,19 +67,10 @@ class RustCompilerTest(unittest.TestCase):
         self.assertEqual(self.read(), b"\x02\x01\x05")
 
         with open(self.path("a.asni"), "rb") as fin:
-            self.assertEqual(fin.read(8), b"ASNI\x02\x00\x00\x00")
+            data = fin.read()
 
-    def test_bound(self) -> None:
-        result = self.compile("--bound-to", "corpus")
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-        self.assertEqual(self.read(bound_to="corpus"), b"\x02\x01\x05")
-
-        with self.assertRaises(asnkitrt.Error):
-            self.read()
-
-        with self.assertRaises(asnkitrt.Error):
-            self.read(bound_to="elsewhere")
+        self.assertEqual(data[:6], b"ASNI\x02\x00")
+        self.assertEqual(data[6:10], zlib.crc32(data[10:]).to_bytes(4, "big"))
 
     def test_the_options_of_a_nonce_and_keys_are_refused(self) -> None:
         self.write("key", bytes(32))
@@ -89,6 +81,7 @@ class RustCompilerTest(unittest.TestCase):
             ["--signing-key-id", "00" * 16],
             ["--encryption-key-file", self.path("key")],
             ["--encryption-key-id", "00" * 16],
+            ["--bound-to", "corpus"],
         ]:
             with self.subTest(option=option[0]):
                 result = self.compile(*option)
@@ -107,14 +100,13 @@ class RustCompilerTest(unittest.TestCase):
         with open(self.path("a.asni"), "rb") as fin:
             quiet_file = fin.read()
 
-        result = self.compile("-v", "--bound-to", "corpus")
+        result = self.compile("-v")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, b"")
         text = result.stderr.decode()
 
         self.assertIn("Reading ", text)
         self.assertIn("Module A: 1 types, 0 object classes.", text)
-        self.assertIn("Bound to 'corpus'.", text)
         self.assertIn("Wrote ", text)
 
         # What is written is not changed by telling of it.
@@ -194,11 +186,11 @@ class RustCompilerTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b"is not found", result.stderr)
 
-    def test_generate_refuses_what_a_file_that_is_embedded_can_not_have(self) -> None:
+    def test_generate_refuses_what_it_does_not_take(self) -> None:
         result = self.generate("--plugin", "python", "--bound-to", "x")
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b"does not bind", result.stderr)
+        self.assertIn(b"--bound-to is no longer supported", result.stderr)
 
         result = self.generate()
         self.assertIn(b"needs --plugin", result.stderr)

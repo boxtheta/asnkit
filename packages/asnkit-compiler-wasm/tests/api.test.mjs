@@ -23,6 +23,21 @@ const FOO = new URL('../../../examples/compiled/foo.asn', import.meta.url);
 const FOO_TEXT = readFileSync(FOO, 'utf8');
 const QUESTION = { id: 1, question: 'Is 1+1=3?' };
 
+// The CRC-32 of zlib, gzip and PNG, a bit at a time.
+function crc32(bytes) {
+  let crc = 0xffffffff;
+
+  for (const byte of bytes) {
+    crc ^= byte;
+
+    for (let bit = 0; bit < 8; bit++) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    }
+  }
+
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 function hex(bytes) {
   return Buffer.from(bytes).toString('hex');
 }
@@ -71,14 +86,15 @@ describe('compile', () => {
     assert.ok(asni.includes(`asnkit-compiler ${version()} (Rust)`));
   });
 
-  test('binds', async () => {
-    const asni = await compile(FOO_TEXT, { boundTo: 'demo' });
-    const spec = await load(asni, 'der', { boundTo: 'demo' });
+  test('writes the CRC-32 of the file', async () => {
+    const asni = await compile(FOO_TEXT);
+    const view = new DataView(asni.buffer, asni.byteOffset, asni.byteLength);
 
-    assert.deepEqual(spec.decode('Question', spec.encode('Question', QUESTION)), QUESTION);
-    assert.deepEqual(await compile(FOO_TEXT, { boundTo: 'demo' }), asni);
+    assert.deepEqual([...asni.subarray(0, 6)], [...Buffer.from('ASNI\x02\x00', 'latin1')]);
+    assert.equal(view.getUint32(6), crc32(asni.subarray(10)));
 
-    await rejectsWith(load(asni, 'der'), 'LoadError', /bound/);
+    asni[asni.length - 1] ^= 1;
+    await rejectsWith(load(asni, 'der'), 'LoadError', /CRC-32/);
   });
 
   test('throws errors that tell where', async () => {
@@ -94,7 +110,7 @@ describe('compile', () => {
     for (const [options, pattern] of [
       ['yes', /options to be an object/],
       [{ nonce: 1 }, /'nonce' is no longer supported/],
-      [{ boundTo: 3 }, /'boundTo' to be a string/],
+      [{ boundTo: 'demo' }, /'boundTo' is no longer supported/],
       [{ signingKey: new Uint8Array(32) }, /'signingKey' is no longer supported/],
       [{ signingKeyId: new Uint8Array(16) }, /'signingKeyId' is no longer supported/],
       [{ encryptionKey: new Uint8Array(32) }, /'encryptionKey' is no longer supported/],

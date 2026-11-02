@@ -26,7 +26,6 @@ makes a change, so that the fixtures are those of the compiler as it is.
 
 """
 
-import dataclasses
 import hashlib
 import json
 import os
@@ -152,19 +151,9 @@ def _sources(files: str | list[str]) -> list[tuple[str, str]]:
     return [(os.path.basename(path), _read(path)) for path in files]
 
 
-def _protected(
-    plain: bytes,
-    metadata: Any = None,
-    bound_to: str | None = None,
-) -> bytes:
-    if metadata is None and bound_to is None:
-        return plain
-
+def _protected(plain: bytes, metadata: Any = None) -> bytes:
     if metadata is None:
-        metadata = asnkitrt.syntax.read_header(plain).metadata
-
-    if bound_to is not None:
-        metadata = dataclasses.replace(metadata, bound_to=bound_to)
+        return plain
 
     return asnkitrt.syntax.to_asni(asnkitrt.syntax.from_asni(plain), metadata)
 

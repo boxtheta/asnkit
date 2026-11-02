@@ -4,7 +4,8 @@
 
 //! Writes the `.asni` and `.asnst` files (see `docs/file_formats.md`) as
 //! `asnkitrt.syntax.container` does: the part of CBOR (RFC 8949) they use,
-//! in the shortest form, and the header of an `.asni` file.
+//! in the shortest form, and the header of an `.asni` file, with the
+//! CRC-32 of the rest of it.
 
 use num_bigint::BigUint;
 use serde_json::Value as Json;
@@ -26,8 +27,9 @@ const TAG_NEGATIVE_BIGNUM: u64 = 3;
 const ASNI_VERSION: (u8, u8) = (2, 0);
 /// The version of an `.asnst` file, of its map and its nodes.
 const ASNST_VERSION: (u8, u8) = (1, 0);
-const FLAG_BOUND: u16 = 1;
-pub const BOUND_TO_MAXIMUM_SIZE: usize = 255;
+/// Where the metadata of an `.asni` file begins: after the magic, the
+/// version and the CRC-32.
+const ASNI_HEADER_SIZE: usize = 10;
 
 /// What the files tell of where they come from.
 #[derive(Debug, Clone, Default)]
@@ -42,7 +44,26 @@ pub struct Source {
 pub struct Metadata {
     pub generator: Option<String>,
     pub sources: Vec<Source>,
-    pub bound_to: Option<String>,
+}
+
+/// The CRC-32 of `data`, as zlib, gzip and PNG compute it (CRC-32/ISO-HDLC),
+/// a bit at a time, which is fast enough for files of this size.
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+
+    for &byte in data {
+        crc ^= u32::from(byte);
+
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xedb8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+
+    !crc
 }
 
 fn encode_head(major: u8, argument: u64, out: &mut Vec<u8>) {
@@ -138,7 +159,7 @@ fn sha256_hex(text: &str) -> String {
 
 /// The metadata as a CBOR map, with its keys in the order of the Python
 /// writer.
-fn encode_metadata(metadata: &Metadata, out: &mut Vec<u8>) -> Result<(), String> {
+fn encode_metadata(metadata: &Metadata, out: &mut Vec<u8>) {
     let mut entries = 0;
 
     if metadata.generator.is_some() {
@@ -146,16 +167,6 @@ fn encode_metadata(metadata: &Metadata, out: &mut Vec<u8>) -> Result<(), String>
     }
 
     if !metadata.sources.is_empty() {
-        entries += 1;
-    }
-
-    if let Some(bound_to) = &metadata.bound_to {
-        if bound_to.len() > BOUND_TO_MAXIMUM_SIZE {
-            return Err(format!(
-                "Expected what the file is bound to as at most {BOUND_TO_MAXIMUM_SIZE} bytes as UTF-8."
-            ));
-        }
-
         entries += 1;
     }
 
@@ -194,39 +205,26 @@ fn encode_metadata(metadata: &Metadata, out: &mut Vec<u8>) -> Result<(), String>
             }
         }
     }
-
-    if let Some(bound_to) = &metadata.bound_to {
-        encode_text("bound_to", out);
-        encode_text(bound_to, out);
-    }
-
-    Ok(())
 }
 
 /// The contents of an `.asni` file.
-pub fn write_asni(metadata: &Metadata, nodes: &Json) -> Result<Vec<u8>, String> {
-    let flags = if metadata.bound_to.is_some() {
-        FLAG_BOUND
-    } else {
-        0
-    };
-
+pub fn write_asni(metadata: &Metadata, nodes: &Json) -> Vec<u8> {
     let mut out = b"ASNI".to_vec();
     out.push(ASNI_VERSION.0);
     out.push(ASNI_VERSION.1);
-    out.extend_from_slice(&flags.to_be_bytes());
-    encode_metadata(metadata, &mut out)?;
+    // The CRC-32, once the rest is written.
+    out.extend_from_slice(&[0; 4]);
+    encode_metadata(metadata, &mut out);
     encode(nodes, &mut out);
 
-    Ok(out)
+    let crc = crc32(&out[ASNI_HEADER_SIZE..]);
+    out[6..ASNI_HEADER_SIZE].copy_from_slice(&crc.to_be_bytes());
+
+    out
 }
 
 /// The contents of an `.asnst` file.
-pub fn write_asnst(metadata: &Metadata, tree: &Json) -> Result<Vec<u8>, String> {
-    if metadata.bound_to.is_some() {
-        return Err("Only an .asni file can be bound to something.".to_string());
-    }
-
+pub fn write_asnst(metadata: &Metadata, tree: &Json) -> Vec<u8> {
     let mut out = Vec::new();
     encode_head(MAJOR_MAP, 4, &mut out);
     encode_text("format", &mut out);
@@ -236,11 +234,11 @@ pub fn write_asnst(metadata: &Metadata, tree: &Json) -> Result<Vec<u8>, String> 
     encode_head(MAJOR_UNSIGNED, u64::from(ASNST_VERSION.0), &mut out);
     encode_head(MAJOR_UNSIGNED, u64::from(ASNST_VERSION.1), &mut out);
     encode_text("metadata", &mut out);
-    encode_metadata(metadata, &mut out)?;
+    encode_metadata(metadata, &mut out);
     encode_text("tree", &mut out);
     encode(tree, &mut out);
 
-    Ok(out)
+    out
 }
 
 #[cfg(test)]
@@ -299,23 +297,27 @@ mod tests {
     }
 
     #[test]
-    fn the_header_of_a_file_is_the_magic_the_version_and_the_flags() {
-        let file = write_asni(&Metadata::default(), &Json::Null).unwrap();
+    fn crc32_is_that_of_zlib() {
+        assert_eq!(crc32(b""), 0);
+        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
+    }
 
-        assert_eq!(&file[..9], b"ASNI\x02\x00\x00\x00\xa0");
+    #[test]
+    fn the_header_of_a_file_is_the_magic_the_version_and_the_crc() {
+        let file = write_asni(&Metadata::default(), &Json::Null);
 
-        let metadata = Metadata {
-            bound_to: Some("corpus".to_string()),
-            ..Metadata::default()
-        };
-        let file = write_asni(&metadata, &Json::Null).unwrap();
-
-        assert_eq!(&file[..8], b"ASNI\x02\x00\x00\x01");
+        // An empty map and null, after the header.
+        assert_eq!(&file[ASNI_HEADER_SIZE..], [0xa0, 0xf6]);
+        assert_eq!(&file[..6], b"ASNI\x02\x00");
+        assert_eq!(
+            &file[6..ASNI_HEADER_SIZE],
+            crc32(&[0xa0, 0xf6]).to_be_bytes()
+        );
     }
 
     #[test]
     fn a_syntax_tree_keeps_its_own_version() {
-        let file = write_asnst(&Metadata::default(), &Json::Null).unwrap();
+        let file = write_asnst(&Metadata::default(), &Json::Null);
         let mut version = Vec::new();
         encode_text("version", &mut version);
         version.extend([0x82, 0x01, 0x00]);

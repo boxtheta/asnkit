@@ -74,15 +74,19 @@ Do not treat proposal documents as implemented APIs.
   `generate` for explicit mappings; fallback types and runtime load-time overrides remain unsupported.
 - DER decoding is strict by default. Use lenient mode only when accepting
   BER-compatible input is an intentional requirement.
-- `.asni` is version 2.0: an 8-byte header (`ASNI`, major/minor version,
-  two-byte flags), followed by metadata and nodes. Binding is flag bit 0;
-  other flag bits are rejected. Version 1 files must be recompiled from
-  source. `.asnst` remains version 1.0.
-- Signing, encryption and nonces are removed. Handle authenticity and
-  confidentiality outside asnkit, in the firmware update/patching layer
-  where applicable. Binding is a label check, not cryptographic protection.
-  Runtime loads reject bound files by default; supply the expected binding
-  explicitly. Do not silently bypass it to fix a load failure. The CLI
-  converter accepts any binding.
+- `.asni` is version 2.0: a 10-byte header (`ASNI`, major/minor version,
+  then the big-endian CRC-32 of the rest of the file, as `zlib.crc32`),
+  followed by metadata and nodes. Every runtime rejects a file whose
+  CRC-32 does not match before parsing it. Version 1 files, and those
+  written by 2.0.0-rc4 (which had two bytes of flags there), must be
+  recompiled from source; release candidates of a major make no
+  compatibility promise to each other. `.asnst` remains version 1.0.
+- Signing, encryption, nonces and binding are removed, with their
+  options (`--bound-to`, `bound_to`, `boundTo`, `accept_any_binding`, the
+  C binding setters). The CRC-32 detects corruption, not tampering:
+  handle authenticity and confidentiality outside asnkit, in the firmware
+  update/patching layer where applicable. A CRC failure means the file
+  is damaged or not from this compiler release; recompile or fetch it
+  again rather than working around the check.
 - Type support varies by runtime and features. Check the relevant package
   README and API before promising support for unusual ASN.1 constructs.

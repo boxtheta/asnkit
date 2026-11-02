@@ -107,8 +107,8 @@ void asnkit_bytes_free(uint8_t *data, size_t length);
 /* A specification, loaded for one codec. */
 typedef struct asnkit_spec asnkit_spec;
 
-/* What a file has to be to be loaded, and how it is. By default only a
- * file that is not bound is loaded; see docs/file_formats.md. The setters return
+/* How a file is loaded. A file whose CRC-32 does not match is never
+ * loaded; see docs/file_formats.md. The setters return
  * ASNKIT_ERROR_ARGUMENT for a NULL argument. */
 typedef struct asnkit_load_options asnkit_load_options;
 
@@ -119,11 +119,6 @@ void asnkit_load_options_free(asnkit_load_options *options);
 asnkit_status asnkit_load_options_set_numeric_enums(asnkit_load_options *options, int numeric_enums);
 /* DER decodes what BER allows. */
 asnkit_status asnkit_load_options_set_lenient(asnkit_load_options *options, int lenient);
-
-/* Loads a file only if it is bound to `bound_to`, which is copied. */
-asnkit_status asnkit_load_options_set_bound_to(asnkit_load_options *options, const char *bound_to);
-/* Loads a file whatever it is bound to. */
-asnkit_status asnkit_load_options_set_accept_any_binding(asnkit_load_options *options);
 
 /* Loads the `length` bytes of an .asni file for `codec`: "ber", "der",
  * "oer", "per", "uper", "jer", "xer" or "gser", or "ber"

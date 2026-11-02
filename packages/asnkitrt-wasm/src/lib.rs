@@ -12,7 +12,7 @@
 //! here that take or give a value their names without `_`, and the
 //! values as they are in JavaScript and not as buffers.
 
-use asnkitrt::container::{Binding, Checks};
+use asnkitrt::container::Checks;
 use asnkitrt::runtime::{Options, Specification as Inner};
 use asnkitrt::types::{Codec, TypeId};
 use asnkitrt::value::Value;
@@ -143,25 +143,31 @@ fn text(options: &JsValue, key: &str) -> Result<Option<String>, JsValue> {
         .ok_or_else(|| type_error(&format!("Expected '{key}' to be a string.")))
 }
 
+const UNSIGNED: &str = ".asni files have no nonce and are not signed or encrypted.";
+const UNBOUND: &str =
+    ".asni files are not bound to anything. They have a CRC-32, which tells a corrupt file.";
+
 /// The options of what `.asni` files no longer have: a nonce, a
-/// signature and encryption. They are rejected rather than ignored, so
-/// that nobody loads a file that is not signed when they asked for one
-/// that is.
-const REMOVED_OPTIONS: [&str; 5] = [
-    "nonce",
-    "acceptAnyNonce",
-    "verificationKeys",
-    "acceptAnySignature",
-    "decryptionKeys",
+/// signature, encryption and a binding, with why. They are rejected
+/// rather than ignored, so that nobody loads a file that is not checked
+/// as they asked it to be.
+const REMOVED_OPTIONS: [(&str, &str); 7] = [
+    ("nonce", UNSIGNED),
+    ("acceptAnyNonce", UNSIGNED),
+    ("verificationKeys", UNSIGNED),
+    ("acceptAnySignature", UNSIGNED),
+    ("decryptionKeys", UNSIGNED),
+    ("boundTo", UNBOUND),
+    ("acceptAnyBinding", UNBOUND),
 ];
 
 fn reject_removed(options: &JsValue) -> Result<(), JsValue> {
-    for key in REMOVED_OPTIONS {
+    for (key, why) in REMOVED_OPTIONS {
         let value = option(options, key)?;
 
         if !value.is_undefined() && !value.is_null() {
             return Err(type_error(&format!(
-                "'{key}' is no longer supported: .asni files have no nonce and are not signed or encrypted."
+                "'{key}' is no longer supported: {why}"
             )));
         }
     }
@@ -193,8 +199,7 @@ pub struct Specification {
 impl Specification {
     /// Loads the contents of an `.asni` file for `codec`, `ber` if not
     /// given. The options are those of `asnkitrt.load_asni()` of the
-    /// runtime for Python, in camel case: `numericEnums`, `lenient`,
-    /// `boundTo` and `acceptAnyBinding`.
+    /// runtime for Python, in camel case: `numericEnums` and `lenient`.
     #[wasm_bindgen(constructor)]
     pub fn new(
         asni: &[u8],
@@ -209,18 +214,8 @@ impl Specification {
 
         reject_removed(&options)?;
 
-        let bound_to = text(&options, "boundTo")?;
-        let checks = Checks {
-            bound_to: match &bound_to {
-                Some(bound_to) => Binding::To(bound_to),
-                None if flag(&options, "acceptAnyBinding")? => Binding::Any,
-                None => Binding::None,
-            },
-            ..Checks::default()
-        };
-
         Ok(Specification {
-            inner: Inner::from_asni(asni, &checks, load).map_err(runtime_error)?,
+            inner: Inner::from_asni(asni, &Checks::default(), load).map_err(runtime_error)?,
             codec,
         })
     }

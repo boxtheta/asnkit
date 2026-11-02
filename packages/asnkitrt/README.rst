@@ -21,17 +21,11 @@ live in the same
 limitations.
 
 The runtime reads version 2 ``.asni`` files. Recompile version 1 files
-from their ASN.1 sources. A file may be bound to a string; loads accept
-only unbound files by default. Give the expected binding explicitly:
-
-.. code-block:: python
-
-   spec = asnkitrt.load_asni_file('bound.asni', 'uper', bound_to='corpus')
-
-``accept_any_binding=True`` explicitly accepts any binding. On ``load``,
-``load_asni`` and ``load_asni_file``, options after ``numeric_enums`` are
-keyword-only. Signing, encryption, nonces and their install extras have
-been removed. Binding is not authentication; provide any required
+from their ASN.1 sources. A file whose CRC-32 does not match is
+corrupt, and is not loaded. On ``load``, ``load_asni`` and
+``load_asni_file``, options after ``numeric_enums`` are keyword-only.
+Signing, encryption, nonces, binding and their options have been
+removed. The CRC-32 is not authentication; provide any required
 cryptographic protection outside the runtime.
 
 .. _asnkitcc: https://crates.io/crates/asnkitcc

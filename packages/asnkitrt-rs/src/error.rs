@@ -78,10 +78,9 @@ pub enum Error {
     NotAsni,
     /// A major version that is not known.
     UnsupportedVersion,
-    /// A flag that is not known.
-    UnsupportedFlags,
-    /// What the file is bound to is not what the reader expects.
-    BadBinding,
+    /// The CRC-32 in the header is not that of the rest of the file,
+    /// which is so corrupt.
+    BadChecksum,
     /// The metadata is not what it has to be.
     BadMetadata,
     /// The nodes are not what a compiled specification has.
@@ -114,8 +113,7 @@ impl fmt::Display for Error {
             Error::TrailingData => "Unexpected data after the nodes.",
             Error::NotAsni => "Expected an .asni file.",
             Error::UnsupportedVersion => "Unsupported major version.",
-            Error::UnsupportedFlags => "Unsupported flags.",
-            Error::BadBinding => "The file is not bound to what is expected.",
+            Error::BadChecksum => "The CRC-32 of the file does not match: the file is corrupt.",
             Error::BadMetadata => "Bad metadata.",
             Error::Encode(what, location)
             | Error::Decode(what, _, location)

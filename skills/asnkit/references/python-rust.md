@@ -22,12 +22,10 @@ For bytes already in memory, use `asnkitrt.load_asni(data, "der")`.
 `load()` accepts the runtime's schema representation; it is not an ASN.1
 source parser. There is no `asnkitrt.compile_files()` API.
 
-Loads expect an unbound schema by default. For a bound schema pass
-`bound_to="device-family"` to `load_asni` or `load_asni_file`.
-`accept_any_binding=True` explicitly accepts any binding. On `load`,
-`load_asni` and `load_asni_file`, options after `numeric_enums` are
-keyword-only (`bound_to`, `accept_any_binding`, `lenient`). The lower-level
-`syntax.from_asni` options after the data are also keyword-only. Nonce,
+Loads reject a file whose CRC-32 does not match with
+`asnkitrt.syntax.ConvertError`. On `load`, `load_asni` and
+`load_asni_file`, options after `numeric_enums` are keyword-only
+(`lenient`). `syntax.from_asni` takes only the data. Binding, nonce,
 signature and key options and the `signing`/`encryption` install extras
 have been removed.
 
@@ -71,13 +69,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`Checks` contains only `bound_to` and `max_depth` (the CBOR nesting limit).
-Its default binding is `Binding::None`, which rejects bound schemas.
-For a known binding use
-`Checks { bound_to: Binding::To("device-family"), ..Checks::default() }`
-with `Binding` imported from `asnkitrt::container`; `Binding::Any` explicitly
-accepts any binding. Parsed container metadata is at `asni.header.metadata`,
-not `asni.metadata`.
+`Checks` contains only `max_depth` (the CBOR nesting limit); there is no
+`Binding`. Loading returns `Error::BadChecksum` for a file whose CRC-32
+does not match, and `asnkitrt::container::crc32` computes it. Parsed
+container metadata is at `asni.header.metadata`, not `asni.metadata`.
 
 For ambiguous names use `encode_in("Foo", "Question", &value)`,
 `decode_in("Foo", "Question", &bytes)` and `check_constraints_in`.

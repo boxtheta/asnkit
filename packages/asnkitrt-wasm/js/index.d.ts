@@ -59,15 +59,12 @@ export type Value =
   | Value[]
   | { [member: string]: Value };
 
-/** What an `.asni` file has to be to be loaded, and how. */
+/** How an `.asni` file is loaded. */
 export interface LoadOptions {
   /** ENUMERATED values are numbers and not names. */
   numericEnums?: boolean;
   /** DER decodes what BER allows. */
   lenient?: boolean;
-  /** What the file has to be bound to. */
-  boundTo?: string;
-  acceptAnyBinding?: boolean;
 }
 
 export interface CodecOptions {

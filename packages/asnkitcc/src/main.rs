@@ -19,7 +19,7 @@ use asnkit_compiler::{
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: asnkitcc {compile,parse} [-v] [-o OUTPUT] [-e ENCODING] [--bound-to STRING] FILE [FILE ...]\n       asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] [-v] [-o FOLDER] [-e ENCODING] FILE [FILE ...]
+const USAGE: &str = "usage: asnkitcc {compile,parse} [-v] [-o OUTPUT] [-e ENCODING] FILE [FILE ...]\n       asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] [-v] [-o FOLDER] [-e ENCODING] FILE [FILE ...]
        asnkitcc convert -t [MODULE.]TYPE [--from CODEC] [--to CODEC] [-i INPUT] [-o OUTPUT] [--input-hex] [--output-hex]
        [--indent N] [--lenient] [-v] [-e ENCODING] {FILE.asni | FILE.asn [FILE.asn ...]}
        asnkitcc {-h,--help,help}
@@ -54,7 +54,6 @@ struct Arguments {
     output: Option<PathBuf>,
     verbose: bool,
     encoding: String,
-    bound_to: Option<String>,
     plugin: Option<String>,
     plugin_options: Vec<String>,
     type_name: Option<String>,
@@ -88,7 +87,6 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
         output: None,
         verbose: false,
         encoding: "utf-8".to_string(),
-        bound_to: None,
         plugin: None,
         plugin_options: Vec::new(),
         type_name: None,
@@ -137,7 +135,13 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
                         .map_err(|_| format!("error: bad indent '{text}'."))?,
                 );
             }
-            "--bound-to" => parsed.bound_to = Some(value("--bound-to")?),
+            "--bound-to" => {
+                return Err(
+                    "error: --bound-to is no longer supported: .asni files are not bound to \
+                     anything. They have a CRC-32, which tells a corrupt file."
+                        .to_string(),
+                );
+            }
             removed if REMOVED_OPTIONS.contains(&removed) => {
                 return Err(format!(
                     "error: {removed} is no longer supported: .asni files have no nonce and are \
@@ -171,11 +175,8 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
             return Err(format!("error: convert needs --type.\n{USAGE}"));
         }
 
-        if parsed.bound_to.is_some() || parsed.plugin.is_some() || !parsed.plugin_options.is_empty()
-        {
-            return Err(format!(
-                "error: convert takes no binding or plugin.\n{USAGE}"
-            ));
+        if parsed.plugin.is_some() || !parsed.plugin_options.is_empty() {
+            return Err(format!("error: convert takes no plugin.\n{USAGE}"));
         }
     } else if converting {
         return Err(format!(
@@ -185,15 +186,6 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
     } else if parsed.command == "generate" {
         if parsed.plugin.is_none() {
             return Err(format!("error: generate needs --plugin.\n{USAGE}"));
-        }
-
-        // What is made is embedded as it is, and nothing is there to
-        // tell what it is bound to.
-        if parsed.bound_to.is_some() {
-            return Err(
-                "error: generate does not bind: what the plugin is given is embedded as it is."
-                    .to_string(),
-            );
         }
     } else if parsed.plugin.is_some() || !parsed.plugin_options.is_empty() {
         return Err(format!(
@@ -273,7 +265,7 @@ fn generate(arguments: &Arguments) -> Result<(), String> {
         encoding: arguments.encoding.clone(),
     };
     let (asni, summary) =
-        compile_to_asni_with_summary_and_options(&input, None, &compile_options(arguments)?)
+        compile_to_asni_with_summary_and_options(&input, &compile_options(arguments)?)
             .map_err(|error| format!("error: {}", error.message))?;
     let asnst = parse_to_asnst(&input).map_err(|error| format!("error: {}", error.message))?;
 
@@ -374,22 +366,15 @@ fn main() -> ExitCode {
         }
 
         let data = if arguments.command == "compile" {
-            let (data, summary) = compile_to_asni_with_summary_and_options(
-                &input,
-                arguments.bound_to.clone(),
-                &compile_options(&arguments)?,
-            )
-            .map_err(|error| format!("error: {}", error.message))?;
+            let (data, summary) =
+                compile_to_asni_with_summary_and_options(&input, &compile_options(&arguments)?)
+                    .map_err(|error| format!("error: {}", error.message))?;
 
             for module in &summary {
                 say(format!(
                     "Module {}: {} types, {} object classes.",
                     module.name, module.types, module.object_classes
                 ));
-            }
-
-            if let Some(bound_to) = &arguments.bound_to {
-                say(format!("Bound to '{bound_to}'."));
             }
 
             data
