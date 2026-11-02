@@ -377,3 +377,109 @@ fn choices_that_hold_themselves() {
 
     assert!(started.elapsed().as_secs() < 30, "{:?}", started.elapsed());
 }
+
+/// A module with types and object classes, each a name and its fields,
+/// each a name and a type.
+fn module_with_classes(assignments: Vec<Cbor>, classes: Vec<(&str, Vec<(&str, Cbor)>)>) -> Cbor {
+    let classes = classes
+        .into_iter()
+        .map(|(name, fields)| {
+            let fields = fields
+                .into_iter()
+                .map(|(name, ty)| Cbor::Array(vec![int(40), text(name), ty]))
+                .collect();
+
+            Cbor::Array(vec![int(39), text(name), list(fields)])
+        })
+        .collect();
+
+    Cbor::Array(vec![
+        int(1),
+        list(vec![Cbor::Array(vec![
+            int(2),
+            text("M"),
+            list(assignments),
+            list(classes),
+        ])]),
+    ])
+}
+
+fn sequence(members: Vec<Cbor>) -> Cbor {
+    Cbor::Array(vec![int(15), list(members)])
+}
+
+/// That the types of `nodes` are not lowered as they go too deep, with
+/// every codec, and not that the stack is used up.
+fn assert_too_deep(nodes: &Cbor) {
+    for codec in all_codecs() {
+        match Specification::from_nodes(nodes, Options::new(codec)) {
+            Err(error) => assert!(
+                error.to_string().contains("nested too deeply"),
+                "{codec:?}: {error}"
+            ),
+            Ok(_) => panic!("{codec:?}: lowered"),
+        }
+    }
+}
+
+/// C0 ::= CLASS { &x C1.&x }, C1 ::= CLASS { &x C2.&x }, and so on, `count`
+/// of them, to a BOOLEAN, and A ::= C0.&x.
+fn chain_of_fields(count: usize) -> Cbor {
+    let names: Vec<String> = (0..=count).map(|i| format!("C{i}")).collect();
+    let fields: Vec<String> = (0..count).map(|i| format!("C{}.&x", i + 1)).collect();
+    let mut classes: Vec<(&str, Vec<(&str, Cbor)>)> = (0..count)
+        .map(|i| (names[i].as_str(), vec![("&x", reference(&fields[i]))]))
+        .collect();
+
+    classes.push((names[count].as_str(), vec![("&x", BOOLEAN())]));
+
+    module_with_classes(vec![assignment("A", reference("C0.&x"))], classes)
+}
+
+#[test]
+fn a_field_of_an_object_class_that_is_itself() {
+    // C ::= CLASS { &x C.&x }, A ::= C.&x
+    let nodes = module_with_classes(
+        vec![assignment("A", reference("C.&x"))],
+        vec![("C", vec![("&x", reference("C.&x"))])],
+    );
+
+    assert_too_deep(&nodes);
+}
+
+#[test]
+fn fields_of_object_classes_that_hold_each_other() {
+    // C ::= CLASS { &x SEQUENCE { a C.&y }, &y SEQUENCE { b C.&x } }
+    let nodes = module_with_classes(
+        vec![assignment("A", reference("C.&x"))],
+        vec![(
+            "C",
+            vec![
+                ("&x", sequence(vec![member("a", reference("C.&y"))])),
+                ("&y", sequence(vec![member("b", reference("C.&x"))])),
+            ],
+        )],
+    );
+
+    assert_too_deep(&nodes);
+}
+
+#[test]
+fn a_long_chain_of_fields_of_object_classes() {
+    // No cycle, but deeper than any specification goes.
+    assert_too_deep(&chain_of_fields(100_000));
+}
+
+#[test]
+fn a_short_chain_of_fields_of_object_classes() {
+    let nodes = chain_of_fields(10);
+
+    for codec in all_codecs() {
+        let spec = Specification::from_nodes(&nodes, Options::new(codec))
+            .unwrap_or_else(|error| panic!("{codec:?}: {error}"));
+        let value = asnkitrt::value::Value::Boolean(true);
+        let encoded = spec.encode("A", &value).unwrap();
+
+        assert_eq!(spec.decode("A", &encoded).unwrap(), value, "{codec:?}");
+    }
+}
