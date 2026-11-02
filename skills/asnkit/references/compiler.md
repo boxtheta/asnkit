@@ -43,8 +43,11 @@ Codecs can be inferred from extensions (`.json` → JER, `.xml` → XER),
 but explicit `--from` and `--to` are clearer in pipelines. Use
 `Module.Type` when names are ambiguous.
 
-Conversion is not a constraint validator or signature verifier. For
-protected schemas or explicit constraint validation, use the runtime API.
+Conversion accepts any container binding and does not validate constraints.
+Use the runtime API for an expected binding or explicit constraint validation.
+`compile --bound-to LABEL` sets the binding. The old `--nonce`,
+`--signing-key-*` and `--encryption-key-*` options are no longer supported;
+there is no signed or encrypted output mode.
 
 ## Compiler inside a Rust application
 
@@ -54,23 +57,23 @@ ship a precompiled schema and depend only on `asnkitrt`.
 
 ```rust
 use asnkit_compiler::{Input, compile_to_asni};
-use asnkit_compiler::container::Protection;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source = std::fs::read_to_string("foo.asn")?;
-    let asni = compile_to_asni(
-        &Input::String(source), None, None, &Protection::default(),
-    )?;
+    let asni = compile_to_asni(&Input::String(source), None)?;
     std::fs::write("foo.asni", asni)?;
     Ok(())
 }
 ```
 
 For multiple files use `Input::Files { paths, encoding: "utf-8".into() }`.
-The two `None` arguments above are nonce and binding. The result is
-container bytes; `compile()` instead returns the compiled node structure.
-See `packages/asnkit-compiler/src/lib.rs` for exact signatures and
-`docs/file_formats.md` for protected-container requirements.
+The `None` argument means no binding; use `Some("device-family".into())`
+for a bound schema. The result is container bytes; `compile()` instead
+returns the compiled node structure. `compile_to_asni_with_options` takes
+`(input, bound_to, &options)`; the summary variants use the same arguments
+as their counterparts and also return module summaries. `Protection` and
+`derive_key_id` no longer exist. See `packages/asnkit-compiler/src/lib.rs`
+and `docs/file_formats.md` for the current API and format.
 
 ## Generated models
 
@@ -123,9 +126,10 @@ Useful `--plugin-opt KEY=VALUE` options:
   the default `i64`; `no_std=true` generates code requiring only `alloc`.
 
 With `embed=false`, compile the same schema separately. Python requires
-`use_asni(data, ...)` before model use. Rust omits `load()`; pass a
-`Specification::from_asni(...)` result to the models. This supports
-protected schemas without embedding an unchecked copy.
+`use_asni(data, bound_to=..., accept_any_binding=...)` before model use;
+omit the keyword options for an unbound schema. Rust omits `load()`; pass
+a `Specification::from_asni(...)` result with the expected binding to the
+models.
 
 For embedded Rust, the not-yet-published plugin can be installed from
 the repository with `cargo install --path packages/asnkit-gen-rust-codec`;

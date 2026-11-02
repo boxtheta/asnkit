@@ -22,6 +22,15 @@ For bytes already in memory, use `asnkitrt.load_asni(data, "der")`.
 `load()` accepts the runtime's schema representation; it is not an ASN.1
 source parser. There is no `asnkitrt.compile_files()` API.
 
+Loads expect an unbound schema by default. For a bound schema pass
+`bound_to="device-family"` to `load_asni` or `load_asni_file`.
+`accept_any_binding=True` explicitly accepts any binding. On `load`,
+`load_asni` and `load_asni_file`, options after `numeric_enums` are
+keyword-only (`bound_to`, `accept_any_binding`, `lenient`). The lower-level
+`syntax.from_asni` options after the data are also keyword-only. Nonce,
+signature and key options and the `signing`/`encryption` install extras
+have been removed.
+
 The high-level `encode` and `decode` methods operate on unique type
 names. For collisions select `spec.modules["Foo"]["Question"]` and use
 that type object's `encode`/`decode`. Call its `check_types(value)` and
@@ -62,6 +71,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+`Checks` contains only `bound_to` and `max_depth` (the CBOR nesting limit).
+Its default binding is `Binding::None`, which rejects bound schemas.
+For a known binding use
+`Checks { bound_to: Binding::To("device-family"), ..Checks::default() }`
+with `Binding` imported from `asnkitrt::container`; `Binding::Any` explicitly
+accepts any binding. Parsed container metadata is at `asni.header.metadata`,
+not `asni.metadata`.
+
 For ambiguous names use `encode_in("Foo", "Question", &value)`,
 `decode_in("Foo", "Question", &bytes)` and `check_constraints_in`.
 `encode_indented(name, &value, indent)` supports JER, XER and GSER.
@@ -71,8 +88,8 @@ sequences would lose the ASN.1 distinction. Generated models handle
 those mappings for you.
 
 For embedded/no-std builds set `default-features = false`; the runtime
-still needs `alloc`. Enable `jer`, `gser`, `serde`, `signing` or
-`encryption` as required. `xer` and `bigint` pull in `std`. `bigint` is
+still needs `alloc`. Enable `jer`, `gser` or `serde` as required.
+The `signing` and `encryption` features no longer exist. `xer` and `bigint` pull in `std`. `bigint` is
 needed for very large constraint bounds, not merely for an INTEGER value
 larger than `i128`. Use `Value::BigInteger` for larger integer values;
 its bytes are signed two's-complement, big-endian.

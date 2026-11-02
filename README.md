@@ -134,15 +134,6 @@ pip install asnkitrt           # Encode and decode.
 pip install asnkit-gen-python  # Generate Python code from ASN.1 with asnkitcc.
 ```
 
-Signed and encrypted `.asni` files need the
-[cryptography](https://cryptography.io) package. `asnkitrt` installs it
-only as an extra, and does not import it until such a file is loaded:
-
-```text
-pip install asnkitrt[signing]
-pip install asnkitrt[encryption]
-```
-
 The compiler, the Rust runtime and the plugin for Rust are on
 crates.io, and the WebAssembly runtime is on npm:
 
@@ -335,12 +326,17 @@ python -m asnkitrt.syntax foo.asni    # Prints a file as JSON.
 cases in `packages/asnkit-compiler/tests/golden`, recorded from the
 Python compiler it replaced.
 
-The compiler can also add a nonce, bind a file to a string, and sign and
-encrypt it. Run `asnkitcc` without arguments to see the options. Keys are
-given as files with `--signing-key-file` and `--encryption-key-file`. A
-key's identifier defaults to the first 16 bytes of the SHA-256 of the key
-(of the public key, for signing), and can be set with `--signing-key-id`
-and `--encryption-key-id`.
+The compiler can bind a file to a string with `--bound-to STRING`.
+Runtime loads reject bound files unless given the expected binding or
+explicitly told to accept any binding. Binding prevents accidental use
+of the wrong schema; it does not authenticate it.
+
+`.asni` uses format 2.0, with an 8-byte header. Recompile version 1 files
+from their ASN.1 sources. `.asnst` remains at 1.0. Signing, encryption
+and nonces have been removed, along with their options and dependencies.
+Provide those protections in the firmware update or patching system,
+or another layer that distributes the files. See
+[File formats](docs/file_formats.md) for the layout.
 
 ## Contributing
 

@@ -22,8 +22,8 @@ files, which are for plugins of the compiler.
 
 The parts of a runtime, in the order they are best made:
 
-1. The container: the header, the flags, the signature, the nonce,
-   the encryption and the binding, as told in [file formats](file_formats.md), with the checks in the order given there.
+1. The container: the 8-byte header, the flags, the metadata and
+   the binding, as told in [file formats](file_formats.md), with the checks in the order given there.
 
 2. The nodes of an `.asni` file, in the compact form, and the
    types they make.
@@ -36,24 +36,25 @@ The parts of a runtime, in the order they are best made:
    runtime that only decodes may leave out the check of constraints
    on what it decodes, but must then say so.
 
-A runtime may leave out signing or encryption, for a device that has
-neither, but then it rejects every file with the flag set, as the
-format says of a flag that is not supported. It never ignores one.
+A runtime reads version 2 `.asni` files and rejects version 1 files.
+Only the bound flag (bit 0) is defined. A runtime that does not support
+binding rejects files with that flag; every runtime rejects unknown
+flags. Signing, encryption and nonces are outside the format.
 
 ## Being secure by default
 
 A runtime loads files that may come from anywhere, and is often found
 where nobody can update it. So:
 
-- It follows the order of checks, and reads nothing of the metadata or
-  the nodes as CBOR before the signature is checked.
+- It checks the header before parsing metadata, checks the binding
+  before parsing nodes, and rejects trailing data.
 
-- A reader is not set up to accept any signature, nonce or binding
-  unless asked to be, with a name that makes it plain. The default is
-  to reject.
+- A reader accepts only unbound files by default. Accepting any binding
+  requires an explicit option with a name that makes it plain.
 
-- A reader that keeps the nonce of the last file it accepted does so
-  only once the whole file is checked and loaded.
+- Binding is not authentication. Applications that need authenticity,
+  confidentiality or replay protection provide it outside the runtime,
+  before handing the file to it.
 
 - It limits what untrusted data can make it use: the depth of
   nesting, the size of anything it allocates from a length it was
@@ -74,12 +75,14 @@ keep it small and well tested.
 
 ## Testing a runtime
 
-`examples/corpus` has eight `.asni` files, one for every
-combination of being signed, encrypted and bound, with the keys to
-read them. A runtime has to load them, and has to reject each of them
-when it is set up with the wrong key, the wrong binding or the wrong
-nonce, or without the key it needs. A signed or encrypted file is
-also rejected when any byte of it is changed.
+`examples/corpus` has two version 2 `.asni` files: `plain.asni` and
+`bound.asni`, which is bound to `corpus`. A default reader loads the
+plain file and rejects the bound one. A reader expecting `corpus` loads
+the bound file and rejects the plain one or a different binding. An
+explicit accept-any-binding option loads both. Also test rejection of
+version 1, unknown flags, malformed metadata, oversized bindings,
+truncated CBOR and trailing bytes. Binding does not detect arbitrary
+changes to a file.
 
 For the codecs, `tests/vectors` has what the Rust runtime, the one of
 reference, encodes and decodes for BER, DER, OER, PER, UPER, JER and XER, with the compiled

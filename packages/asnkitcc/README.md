@@ -30,16 +30,19 @@ $ echo 300e0201011609497320312b313d333f \
 
 A type that is in more than one module is given as `Module.Type`.
 `--input-hex` and `--output-hex` read and write the binary codecs as
-hexadecimal digits, `--lenient` has DER decode what BER allows, and
-`--encryption-key-file` is the key to decrypt an encrypted `.asni` file
-with. Its signature, nonce and binding are not checked. An `ANY` is
+hexadecimal digits, and `--lenient` has DER decode what BER allows.
+Conversion accepts any container binding; use runtime loading checks
+when a particular binding is required. An `ANY` is
 copied as the bytes it was decoded from, so it can only be converted
 between BER and DER.
 
-The compiler can also add a nonce to an `.asni` file, bind it to a
-string, and sign and encrypt it. Run `asnkitcc` without arguments to see
-the options. The plugin `NAME` is the program `asnkit-gen-NAME`, looked
-up on the `PATH`; see [`docs/plugins.md`](https://github.com/boxtheta/asnkit/blob/trunk/docs/plugins.md). Install
+The compiler can bind a version 2 `.asni` file to a string with
+`--bound-to STRING`. Signing, encryption and nonces are no longer
+supported; their old options fail with an error. Recompile version 1
+files from source. Run `asnkitcc` without arguments to see the options.
+
+The plugin `NAME` is the program `asnkit-gen-NAME`, looked up on the
+`PATH`; see [`docs/plugins.md`](https://github.com/boxtheta/asnkit/blob/trunk/docs/plugins.md). Install
 the plugins with `cargo install asnkit-gen-rust` or
 `pip install asnkit-gen-python`.
 

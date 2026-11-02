@@ -39,7 +39,7 @@ the name of the source file, which a text does not have.
 
 Errors are thrown as `Error`s named `ParseError` and `CompileError`,
 with the line and the column, as `Error` for what the format does not
-allow, such as a nonce that is too large, or as a `TypeError` for wrong
+allow, such as a binding longer than 255 UTF-8 bytes, or as a `TypeError` for wrong
 arguments. There are no plugins, which are programs to run. TypeScript
 types are in `js/index.d.ts`.
 
