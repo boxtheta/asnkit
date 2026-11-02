@@ -15,7 +15,7 @@ $ asnkitcc convert -t Question -i q.json -o q.der foo.asni   # JER to DER.
 ```
 
 `convert` decodes a value of a type with one codec and encodes it with
-another: BER, DER, OER, PER, UPER, JER or XER. The specification is an
+another: BER, DER, OER, PER, UPER, JER, XER or GSER. The specification is an
 `.asni` file, or the ASN.1 files, which are compiled first. The codecs
 are given with `--from` and `--to`, or told by the extensions of `-i`
 and `-o` (`.json` is JER, `.xml` is XER, `.der` is DER and so on), and
@@ -39,12 +39,12 @@ between BER and DER.
 The compiler can bind a version 2 `.asni` file to a string with
 `--bound-to STRING`. Signing, encryption and nonces are no longer
 supported; their old options fail with an error. Recompile version 1
-files from source. Run `asnkitcc` without arguments to see the options.
+files from source. Run `asnkitcc --help` to see the options.
 
 The plugin `NAME` is the program `asnkit-gen-NAME`, looked up on the
 `PATH`; see [`docs/plugins.md`](https://github.com/boxtheta/asnkit/blob/trunk/docs/plugins.md). Install
-the plugins with `cargo install asnkit-gen-rust` or
-`pip install asnkit-gen-python`.
+the plugins with `cargo install asnkit-gen-rust`,
+`cargo install asnkit-gen-rust-codec` or `pip install asnkit-gen-python`.
 
 Licensed under the Apache License 2.0 (`LICENSE-COMPILER`). What it
 produces is yours to use under terms of your choice.

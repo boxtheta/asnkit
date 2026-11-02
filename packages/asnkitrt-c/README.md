@@ -6,7 +6,7 @@ the header [`include/asnkitrt.h`](include/asnkitrt.h). It loads the
 `.asni` files produced by `asnkitcc` and uses them to encode and decode
 ASN.1, without parsing ASN.1 itself.
 
-The codecs are BER, DER, OER, PER, UPER, JER and XER. It can also check
+The codecs are BER, DER, OER, PER, UPER, JER, XER and GSER. It can also check
 values against their constraints, and load bound `.asni` files.
 
 ```c

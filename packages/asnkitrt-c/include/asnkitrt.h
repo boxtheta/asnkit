@@ -323,8 +323,9 @@ typedef struct asnkit_options {
     /* Nonzero to check the value against the constraints of its type,
      * before encoding it or after decoding it. */
     int check_constraints;
-    /* The number of spaces for each level of JER and XER, or negative
-     * for none. Other codecs return ASNKIT_ERROR_UNSUPPORTED for one. */
+    /* The number of spaces for each level of JER, XER and GSER, or
+     * negative for none. Other codecs return ASNKIT_ERROR_UNSUPPORTED
+     * for one. */
     int indent;
 } asnkit_options;
 

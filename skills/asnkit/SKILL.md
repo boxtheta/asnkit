@@ -36,6 +36,11 @@ Read only the reference needed for the task:
 These examples describe this repository's implementation. For an installed
 package, check the project lockfile/version and its actual API before using
 new features. Prefer matching compiler, runtime and generator releases.
+`pip install`, `cargo install`, `cargo add` and `npm install` pick the
+latest stable release, so a project on a release candidate must ask for
+it explicitly (`pip install --pre`, `--version X.Y.Z-rcN`, `crate@X.Y.Z-rcN`,
+`npm install pkg@next`). A 1.x runtime cannot load the version 2 `.asni`
+files a 2.x compiler writes.
 Within a checkout, resolve source paths from the repository root, not the
 skill directory; in other projects use the installed package documentation.
 Do not treat proposal documents as implemented APIs.

@@ -32,7 +32,7 @@ Something is deprecated in a minor release first, with a warning where
 the language has one and a line in `CHANGELOG.md`, and removed no
 earlier than the next major release.
 
-## Minor: 1.2.0
+## Minor: 2.1.0
 
 A minor release may change what is encoded and decoded, but code that
 built and ran with the release before it still does. It carries:
@@ -50,7 +50,7 @@ Each change to what is encoded or decoded is listed in `CHANGELOG.md`,
 with the values it affects, so that an application that stores or
 exchanges them can tell whether it is affected before it upgrades.
 
-## Patch: 1.2.1
+## Patch: 2.0.1
 
 A patch release only fixes internal logic. A value is encoded to the
 same bytes, and the same input is decoded to the same value or rejected,

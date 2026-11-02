@@ -6,6 +6,16 @@
 [![crates.io](https://img.shields.io/crates/v/asnkitrt)](https://crates.io/crates/asnkitrt)
 [![npm](https://img.shields.io/npm/v/asnkitrt)](https://www.npmjs.com/package/asnkitrt)
 
+> [!NOTE]
+> `trunk` is at **2.0.0-rc4**, a release candidate, and this README
+> describes it. The registries still serve 1.2.0 by default, and 1.2.0
+> cannot read the version 2 `.asni` files that the 2.0 compiler writes.
+> Until 2.0.0 is released, ask for the release candidate explicitly:
+> `pip install --pre asnkitrt`, `cargo install asnkitcc --version 2.0.0-rc4`
+> (and the same `--version` for each plugin), `cargo add asnkitrt@2.0.0-rc4`
+> and `npm install asnkitrt@next`. Release candidates may still change;
+> see [CHANGELOG.md](CHANGELOG.md).
+
 An [ASN.1](https://en.wikipedia.org/wiki/Abstract_Syntax_Notation_One)
 toolkit that parses a specification once, so that encoding and decoding
 can happen anywhere. A compiler turns ASN.1 into a compiled
@@ -60,13 +70,17 @@ Also in the repository:
   write one.
 - [`docs/any_defined_by.md`](docs/any_defined_by.md): how to configure
   the types an `ANY DEFINED BY` can hold.
+- [`docs/versioning.md`](docs/versioning.md): what each kind of release
+  may change.
+- [`skills/asnkit`](skills/asnkit): an agent skill for using the
+  runtimes and the compiler.
 - `tests/vectors`: encodings and decodings recorded from the Rust
   runtime, the one of reference, for testing a runtime in any language.
 - `examples/corpus`: `.asni` files for testing a reader of the format.
 
 ## Codecs
 
-| Codec | Python | Rust | WebAssembly |
+| Codec | Python | Rust | WebAssembly and C |
 |---|---|---|---|
 | Basic Encoding Rules (BER) | yes | yes | yes |
 | Distinguished Encoding Rules (DER) | yes | yes | yes |
@@ -77,16 +91,17 @@ Also in the repository:
 | XML Encoding Rules (XER) | yes | yes, feature `xer` | yes |
 | Generic String Encoding Rules (GSER) | encoding only | yes, feature `gser` | yes |
 
-The Rust runtime is the one of reference: the more than 5,300 vectors
+The Rust runtime is the one of reference: the more than 5,500 vectors
 in `tests/vectors` are what it does, including constraint checks, and
 the Python runtime gives the same results for all of them. The
-WebAssembly runtime is the Rust one, and is tested on the vectors
-through its JavaScript API. In Rust,
-the text codecs are crate features that are enabled by default. GSER
-is for debug output: it is encoded and not decoded. `xer`
-uses [quick-xml](https://crates.io/crates/quick-xml) and `bigint` uses
-[num-bigint](https://crates.io/crates/num-bigint), and both need `std`,
-so embedded builds use `default-features = false`.
+WebAssembly and C runtimes are the Rust one; the WebAssembly runtime is
+tested on the vectors through its JavaScript API. In Rust, the text
+codecs are crate features that are enabled by default. GSER decoding
+takes the generic forms of RFC 3641, as bare values or as the value
+assignments the encoder writes; the Python runtime only encodes GSER.
+`xer` uses [quick-xml](https://crates.io/crates/quick-xml) and `bigint`
+uses [num-bigint](https://crates.io/crates/num-bigint), and both need
+`std`, so embedded builds use `default-features = false`.
 
 The DER decoder rejects anything X.690 does not allow, such as a
 `BOOLEAN` other than 0x00 or 0xff, an `INTEGER` that is not minimally
@@ -130,19 +145,26 @@ later, and the WebAssembly runtime Node.js 18 or later (or a browser
 with WebAssembly).
 
 ```text
-pip install asnkitrt           # Encode and decode.
-pip install asnkit-gen-python  # Generate Python code from ASN.1 with asnkitcc.
+pip install asnkitrt                 # Encode and decode.
+pip install asnkit-gen-python        # Generate Python code from ASN.1 with asnkitcc.
 ```
 
-The compiler, the Rust runtime and the plugin for Rust are on
-crates.io, and the WebAssembly runtime is on npm:
+The compiler, the Rust runtime and the plugins for Rust are on
+crates.io, and the WebAssembly runtime and compiler are on npm. The C
+runtime is built from source; see
+[`packages/asnkitrt-c`](packages/asnkitrt-c/README.md).
 
 ```text
-cargo install asnkitcc         # The compiler.
-cargo install asnkit-gen-rust  # Generate Rust code from ASN.1 with asnkitcc.
-cargo add asnkitrt             # Encode and decode in Rust.
-npm install asnkitrt           # Encode and decode in browsers and Node.js.
+cargo install asnkitcc               # The compiler.
+cargo install asnkit-gen-rust        # Generate Rust code from ASN.1 with asnkitcc.
+cargo install asnkit-gen-rust-codec  # Generate Rust codecs from ASN.1 with asnkitcc.
+cargo add asnkitrt                   # Encode and decode in Rust.
+npm install asnkitrt                 # Encode and decode in browsers and Node.js.
+npm install asnkit-compiler          # Compile ASN.1 in browsers and Node.js.
 ```
+
+While `trunk` is a release candidate, add the pre-release flags from the
+note at the top of this README.
 
 ## Example
 
@@ -250,6 +272,11 @@ Question(id=1, question='Is 1+1=3?')
 ```
 
 ```rust
+mod foo;
+
+use asnkitrt::types::Codec;
+use foo::{Asn1Type, Question};
+
 let specification = foo::load(Codec::Uper)?;
 let encoded = Question { id: 1, question: "Is 1+1=3?".into() }.encode(&specification)?;
 
@@ -296,9 +323,10 @@ assert_eq!(decoded.question, "Is 1+1=3?");
 ```
 
 Only the selected codec's methods are emitted. The consuming crate needs
-the matching `asnkitrt` from `packages/asnkitrt-rs` as a path dependency;
-`default-features = false` supports builds without `std`. Use the plugin
-option `no_std=true` when generating for those builds.
+`asnkitrt` of the same version as the plugin, as `asnkitrt::wire` may
+change between minor versions; `default-features = false` supports
+builds without `std`. Use the plugin option `no_std=true` when
+generating for those builds.
 
 Across 37 X.509 certificates on an Apple M5, generated BER/DER decoding
 took about 0.74 µs per certificate and buffer encoding about 1.52 µs;
@@ -320,11 +348,16 @@ are listed separately.
 asnkitcc compile foo.asn    # Writes foo.asni, for a runtime to load.
 asnkitcc parse foo.asn      # Writes foo.asnst, a syntax tree for plugins.
 asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] foo.asn
+asnkitcc convert -t Question -i q.json -o q.der foo.asni   # JER to DER.
+asnkitcc --help             # Every option.
 
 python -m asnkitrt.syntax foo.asni    # Prints a file as JSON.
 ```
 
-`asnkitcc` prints nothing on success. Its output is checked against the
+`convert` decodes a value with one codec and encodes it with another,
+with an `.asni` file or ASN.1 files it compiles first; see
+[`packages/asnkitcc`](packages/asnkitcc/README.md). `asnkitcc` prints
+nothing on success. Its output is checked against the
 cases in `packages/asnkit-compiler/tests/golden`, recorded from the
 Python compiler it replaced.
 
@@ -382,8 +415,8 @@ The runtimes, such as `asnkitrt`, are licensed under the MIT License
 (`LICENSE-RUNTIMES`). The compiler, the plugins, the documentation and
 everything else are licensed under the Apache License 2.0
 (`LICENSE-COMPILER`). The test vectors are made from ASN.1 modules
-written by others, and keep their authors' licenses. What the compiler
-and the plugins produce, compiler and first party plugins output is subject
-to no licensing claims from us and you may use it under your own terms.
+written by others, and keep their authors' licenses. We make no
+licensing claims on what the compiler and the first-party plugins
+produce: you may use their output under your own terms.
 
 THIS PROJECT IS PROVIDED AS IS WITH NO WARRANTY AS PER THE LICENSE.

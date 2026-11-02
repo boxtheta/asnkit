@@ -1,15 +1,20 @@
 # asnkit
 
 This is the documentation of the Python runtime and of the formats of the
-files. For the repository as a whole (the runtimes in Python and in Rust,
-the compiler, the plugins, the codecs, the commands and the known
-limitations) see the [README](https://github.com/boxtheta/asnkit#readme).
+files. For the repository as a whole (the runtimes in Python, Rust,
+WebAssembly and C, the compiler, the plugins, the codecs, the commands
+and the known limitations) see the
+[README](https://github.com/boxtheta/asnkit#readme).
 The Rust crates are documented by `cargo doc`. ASN.1 is compiled to `.asni`
 files by the compiler `asnkitcc`, which has no Python API.
 
 - [File formats](file_formats.md): the `.asni` and `.asnst` files.
+- [ANY DEFINED BY](any_defined_by.md): how to map the types an
+  `ANY DEFINED BY` can hold.
 - [Guidelines for third-party runtimes](third_party_runtimes.md).
-- [Plugins](plugins.md): how they are run, and the two there are.
+- [Plugins](plugins.md): how they are run, how to write one, and the
+  three there are.
+- [Versioning](versioning.md): what each kind of release may change.
 - [Playground](playground/): compile ASN.1 and encode a value with
   every codec, in the browser, with the compiler and the runtime as
   WebAssembly.

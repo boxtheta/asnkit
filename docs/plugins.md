@@ -1,80 +1,110 @@
 # Plugins
 
-`asnkitcc generate --plugin NAME` compiles the ASN.1 files and sends the
-compiled specification, with the source text in it, to `asnkit-gen-NAME`
-on standard input. The plugin writes the files it makes into the output
-directory (`-o`, default `.`), and exits with `0` if it succeeded or a
-non-zero code if it did not, with any error message on standard error.
+`asnkitcc generate --plugin NAME` compiles the ASN.1 files, parses them
+into a syntax tree, and runs the program `asnkit-gen-NAME` on the two.
+The plugin writes the files it makes into the output directory (`-o`,
+default `.`), and exits with `0` if it succeeded or a non-zero code if
+it did not, with any error message on standard error.
 
 Any program on `PATH` whose name begins with `asnkit-gen-` is a plugin.
+`--plugin` also takes the path of a program, as `--plugin ./my-plugin`.
 
 ## Protocol
 
-Standard input is a CBOR map (RFC 8949):
+The plugin is run with these arguments:
 
-| Key | Value |
+```text
+asnkit-gen-NAME --asni FILE --asnst FILE --out FOLDER [--opt KEY=VALUE ...]
+```
+
+| Argument | Value |
 |---|---|
-| `"asni"` | Byte string: the compiled `.asni` file, with `sources[i].text` set |
-| `"options"` | Map of string to string: the `--plugin-opt KEY=VALUE` flags |
+| `--asni FILE` | The compiled specification, a version 2 `.asni` file |
+| `--asnst FILE` | The syntax tree, an `.asnst` file, whose metadata has the source text of each ASN.1 file (`sources[i].text`) |
+| `--out FOLDER` | The `-o` folder of `asnkitcc`, which exists, for the files the plugin writes |
+| `--opt KEY=VALUE` | One for each `--plugin-opt KEY=VALUE`, in order |
 
-Nothing is read from standard output; everything the plugin writes goes
-to files in the current working directory, which `asnkitcc` sets to the
-`-o` directory before it starts the plugin.
+The two files are in a temporary folder of their own, which is removed
+when the plugin exits. Nothing is written to the plugin's standard
+input, and what it writes to standard output and standard error goes
+to those of `asnkitcc`.
+
+`asnkitcc --version` runs each plugin it finds on `PATH` with
+`--version`, and shows the last word of what it prints as its version.
 
 ## Writing a plugin in Python
 
 ```python
 #!/usr/bin/env python3
-import sys
-import cbor2
-import asnkitrt.syntax
+import argparse
+import os
 
-request = cbor2.load(sys.stdin.buffer)
-header, specification = asnkitrt.syntax.load_asni(request["asni"])
-options = request["options"]
+from asnkitrt import syntax
 
-for module_name, module in specification.modules.items():
-    for type_name, type_descriptor in module.types.items():
-        ...
+parser = argparse.ArgumentParser()
+parser.add_argument("--asni", required=True)
+parser.add_argument("--asnst")
+parser.add_argument("--out", required=True)
+parser.add_argument("--opt", action="append", default=[])
+args = parser.parse_args()
+
+options = dict(item.partition("=")[::2] for item in args.opt)
+specification = syntax.from_asni_file(args.asni)
+
+with open(args.asnst, "rb") as fin:
+    sources = syntax.read_header(fin.read()).metadata.sources
+
+for module in specification.modules:
+    for assignment in module.types:
+        ...  # assignment.name, assignment.type
+
+with open(os.path.join(args.out, "out.txt"), "w") as fout:
+    ...
 ```
 
-The schema of `specification` is in `docs/file_formats.md`, and the
-classes that `load_asni` returns are in `asnkitrt/syntax.py`. Each
-`header.metadata.sources[i]` has `name`, `sha256` and `text`, the ASN.1
-source text that was compiled.
+`syntax.from_asni_file()` gives a `CompiledSpecification`, whose
+`modules` each have a `name` and `types`, a tuple of `TypeAssignment`s
+with a `name` and a `type`. The classes are in
+`packages/asnkitrt/src/asnkitrt/syntax/nodes.py`, and what the nodes
+mean is in [File formats](file_formats.md). `syntax.from_asnst()` reads
+the whole syntax tree, for a plugin that needs what the compiled
+specification leaves out. Each of `sources` has `name`, `sha256` and
+`text`, the ASN.1 source text that was compiled.
 
 ## asnkit-gen-python
 
 The first plugin, `asnkit-gen-python`, is in `packages/asnkit-gen-python`.
-It writes one `.py` file with a `TypedDict` for each `SEQUENCE` and
-`SET`, a `Literal` for each `ENUMERATED`, a union of single-key
-`TypedDict`s for each `CHOICE`, a type alias for each other named type,
-and a class for each type with `encode()`, `decode()` and
-`check_constraints()` methods that check the type of their argument with
-mypy and pyright.
+It writes one `.py` file with a data class for each `SEQUENCE` and
+`SET`, an enumeration for each `ENUMERATED` and a class for each
+alternative of a `CHOICE`, all with `encode()` and `decode()` methods.
+The module has the compiled specification in it, unless `embed=false`.
 
 ```text
 $ pip install asnkit-gen-python
-$ asnkitcc generate --plugin python -o src/asn foo.asn
+$ asnkitcc generate --plugin python -o out foo.asn    # Writes out/foo.py.
 ```
 
 ```python
-from asn import foo
-
-encoded = foo.Question.encode({"id": 1, "question": "Is 1+1=3?"})
-decoded = foo.Question.decode(encoded)
-# decoded is foo.QuestionDict, so mypy knows decoded["id"] is int.
+>>> from foo import Question
+>>> encoded = Question(id=1, question='Is 1+1=3?').encode('uper')
+>>> Question.decode(encoded, 'uper')
+Question(id=1, question='Is 1+1=3?')
 ```
 
 Options, passed with `--plugin-opt KEY=VALUE`:
 
-`codec`
-: The default codec of `encode()` and `decode()` (default `ber`). Every
-  method also accepts `codec=` to use another at the call.
+`name`
+: The name of the module, without `.py` (default: the name of the first
+  ASN.1 file).
 
-`module`
-: The name of the `.py` file to write, without `.py` (default: the stem
-  of the first `.asn` file, converted to `snake_case`).
+`codec`
+: The codec of `encode()` and `decode()` when none is given (default
+  `ber`).
+
+`embed`
+: `false` to leave the compiled specification out of the module, which
+  is then given one with `use_asni()` (default `true`). See
+  `packages/asnkit-gen-python/README.rst`.
 
 ## asnkit-gen-rust
 
