@@ -21,22 +21,12 @@ use crate::{
 };
 
 /// What a file has to be to be loaded, as `Checks`, and how.
+#[derive(Default)]
 pub struct LoadOptions {
     numeric_enums: bool,
     lenient: bool,
     bound_to: Option<String>,
     accept_any_binding: bool,
-}
-
-impl Default for LoadOptions {
-    fn default() -> LoadOptions {
-        LoadOptions {
-            numeric_enums: false,
-            lenient: false,
-            bound_to: None,
-            accept_any_binding: false,
-        }
-    }
 }
 
 /// A specification loaded for a codec.
