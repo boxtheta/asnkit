@@ -46,16 +46,23 @@ pub struct Specification {
 impl Specification {
     /// Loads the nodes of a compiled specification.
     pub fn from_nodes(nodes: &Cbor, options: Options) -> Result<Specification> {
-        let spec = Spec::from_nodes(nodes)?;
-
-        Ok(Specification {
-            types: types::lower(&spec, options.codec, options.numeric_enums, options.lenient)?,
-        })
+        Specification::from_spec(&Spec::from_nodes(nodes)?, options)
     }
 
     /// Loads the contents of an `.asni` file, after `checks`.
     pub fn from_asni(data: &[u8], checks: &Checks<'_>, options: Options) -> Result<Specification> {
-        Specification::from_nodes(&container::read(data, checks)?.nodes, options)
+        // The file as CBOR is let go of before the types are lowered,
+        // which need only the nodes read from it, so that the two are not
+        // on the heap at the same time.
+        let spec = Spec::from_nodes(&container::read(data, checks)?.nodes)?;
+
+        Specification::from_spec(&spec, options)
+    }
+
+    fn from_spec(spec: &Spec, options: Options) -> Result<Specification> {
+        Ok(Specification {
+            types: types::lower(spec, options.codec, options.numeric_enums, options.lenient)?,
+        })
     }
 
     pub fn types(&self) -> &Types {

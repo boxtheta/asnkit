@@ -112,13 +112,13 @@ fn put_unsigned(w: &mut Writer, value: u128) -> Result<()> {
 
 /// The range of an integer as OER sees it, which is that of `i128` that
 /// gives the same encoding if a bound does not fit in an `i128`.
-fn oer_range(node: &crate::types::TypeNode) -> Option<crate::types::Range> {
+fn oer_range(constraints: &crate::types::Constraints) -> Option<crate::types::Range> {
     #[cfg(feature = "bigint")]
-    if let Some(range) = &node.effective_big_range {
+    if let Some(range) = &constraints.big_range {
         return Some(range.as_oer_range());
     }
 
-    node.effective_range
+    constraints.range
 }
 
 /// A time element of DURATION-INTERVAL-ENCODING, which is an INTEGER
@@ -278,7 +278,8 @@ impl<'a> Coder<'a> {
 
         let node = self.types.node(id);
         let kind = &self.types.node(node.concrete).kind;
-        let size = node.effective_size;
+        let constraints = self.types.constraints(id);
+        let size = constraints.size;
 
         match kind {
             Kind::Boolean => match value {
@@ -301,7 +302,7 @@ impl<'a> Coder<'a> {
                     _ => return encode_error("Expected data of type int or str."),
                 };
 
-                self.encode_integer(&number, oer_range(node), w)
+                self.encode_integer(&number, oer_range(constraints), w)
             }
             Kind::Real => {
                 let number = match value {
@@ -925,11 +926,12 @@ impl<'a> Coder<'a> {
 
         let node = self.types.node(id);
         let kind = &self.types.node(node.concrete).kind;
-        let size = node.effective_size;
+        let constraints = self.types.constraints(id);
+        let size = constraints.size;
 
         match kind {
             Kind::Boolean => Ok(Value::Boolean(r.uint(8)? != 0)),
-            Kind::Integer(_) => self.decode_integer(oer_range(node), r),
+            Kind::Integer(_) => self.decode_integer(oer_range(constraints), r),
             Kind::Real => match self.types.node(node.concrete).real {
                 None => {
                     let length = get_length(r)?;

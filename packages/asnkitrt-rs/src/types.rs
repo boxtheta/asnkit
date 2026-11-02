@@ -31,12 +31,71 @@ fn bad<T>(what: &'static str) -> Result<T> {
 pub type Part = (Option<i128>, Option<i128>);
 
 /// A range of sizes or values. A bound that is `None` is MIN or MAX.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Range {
     pub min: Option<i128>,
     pub max: Option<i128>,
     /// There is an extension marker.
     pub extensible: bool,
+}
+
+/// The constraints of a type that the codecs look at: those of the type
+/// itself, or else those of the type it refers to. See
+/// [`Types::constraints`]. Few types have any, and many have the same,
+/// so they are kept once for all of the types that have them.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct Constraints {
+    pub size: Option<Range>,
+    pub range: Option<Range>,
+    /// The range if a bound of it does not fit in an `i128`, in place of
+    /// `range` and `range_parts`.
+    #[cfg(feature = "bigint")]
+    pub big_range: Option<crate::bigint::BigRange>,
+    /// The permitted alphabet, in order.
+    pub alphabet: Option<Vec<char>>,
+    /// The values and ranges of the size and of the range, of which
+    /// those are the least and the greatest.
+    pub size_parts: Option<Vec<Part>>,
+    pub range_parts: Option<Vec<Part>>,
+}
+
+impl Constraints {
+    /// Those of a type with constraints of its own, `self`, that refers
+    /// to a type with `inherited`: each of its own takes the place of
+    /// that of the type it refers to, as the compiler has worked them out
+    /// of both. A range of its own is either of `i128` or big, and takes
+    /// the place of both of the type it refers to.
+    fn over(self, inherited: &Constraints, alphabet_given: bool) -> Constraints {
+        #[cfg(feature = "bigint")]
+        let own_big = self.big_range.is_some();
+        #[cfg(not(feature = "bigint"))]
+        let own_big = false;
+
+        Constraints {
+            size: self.size.or(inherited.size),
+            range: if own_big {
+                None
+            } else {
+                self.range.or(inherited.range)
+            },
+            #[cfg(feature = "bigint")]
+            big_range: match self.range {
+                Some(_) => None,
+                None => self.big_range.or_else(|| inherited.big_range.clone()),
+            },
+            alphabet: if alphabet_given {
+                self.alphabet
+            } else {
+                inherited.alphabet.clone()
+            },
+            size_parts: self.size_parts.or_else(|| inherited.size_parts.clone()),
+            range_parts: if own_big {
+                None
+            } else {
+                self.range_parts.or_else(|| inherited.range_parts.clone())
+            },
+        }
+    }
 }
 
 /// The constraints a value is checked against, of a component in WITH
@@ -107,10 +166,10 @@ pub struct MemberInfo {
     pub name: String,
     pub ty: TypeId,
     pub optional: bool,
-    pub default: Option<Value<'static>>,
-    /// A SIZE given with the member itself.
-    pub size: Option<Range>,
-    default_const: Option<Const>,
+    /// Few members have one, so it is not kept in the member.
+    pub default: Option<Box<Value<'static>>>,
+    /// The default as the compiler gives it, until it is made a value.
+    default_const: Option<Box<Const>>,
 }
 
 impl MemberInfo {
@@ -190,11 +249,11 @@ pub enum Kind {
         /// `Some` if there is an extension marker.
         additions: Option<Vec<(String, i64)>>,
     },
-    Sequence(Members),
-    Set(Members),
-    Choice(Members),
+    Sequence(Box<Members>),
+    Set(Box<Members>),
+    Choice(Box<Members>),
     /// EXTERNAL, a SEQUENCE with the tag 8.
-    External(Members),
+    External(Box<Members>),
     SequenceOf(TypeId),
     SetOf(TypeId),
     Str(StrKind),
@@ -217,41 +276,23 @@ pub struct TypeNode {
     pub kind: Kind,
     /// The tag of the type itself, if it has one.
     pub tag: Option<crate::node::Tag>,
-    pub size: Option<Range>,
-    pub range: Option<Range>,
-    /// The range if a bound of it does not fit in an `i128`, in place of
-    /// `range` and `range_parts`, and that of the type or the one it
-    /// refers to, in place of `effective_range` and
-    /// `effective_range_parts`.
-    #[cfg(feature = "bigint")]
-    pub big_range: Option<crate::bigint::BigRange>,
-    #[cfg(feature = "bigint")]
-    pub effective_big_range: Option<crate::bigint::BigRange>,
-    /// The permitted alphabet, in order.
-    pub alphabet: Option<Vec<char>>,
+    /// The constraints of the type or of the one it refers to, as an
+    /// index in [`Types::constraints`], which gives them. While the
+    /// types are lowered, until they are worked out with those of the
+    /// type it refers to, those of the type itself.
+    constraints: u32,
     /// If the type has a permitted alphabet of its own, also one that is
     /// no permitted alphabet as it is extensible, which is then not taken
     /// from the type it refers to.
     pub alphabet_given: bool,
-    /// The values and ranges of the size and of the range of the type,
-    /// of which those are the least and the greatest.
-    pub size_parts: Option<Vec<Part>>,
-    pub range_parts: Option<Vec<Part>>,
+    /// For a REAL that the ranges of its parts make an IEEE 754 number.
+    pub real: Option<RealFormat>,
     /// What a type with a reference is: the type it ends in, and
     /// all of its tags on the wire, the outermost first.
     pub concrete: TypeId,
     pub tags: Vec<WireTag>,
-    /// The size, the range and the alphabet of the type, or those of
-    /// the type it is a reference to.
-    pub effective_size: Option<Range>,
-    pub effective_range: Option<Range>,
-    pub effective_alphabet: Option<Vec<char>>,
-    pub effective_size_parts: Option<Vec<Part>>,
-    pub effective_range_parts: Option<Vec<Part>>,
-    /// For a REAL that the ranges of its parts make an IEEE 754 number.
-    pub real: Option<RealFormat>,
     /// The inner type constraint of the type itself.
-    pub inner: Option<Inner>,
+    pub inner: Option<Box<Inner>>,
     /// The type of which the inner type constraint is that of this one:
     /// itself, or one it refers to.
     pub effective_inner: Option<TypeId>,
@@ -308,6 +349,8 @@ pub struct Types {
     /// found in one module only.
     index: BTreeMap<String, BTreeMap<String, TypeId>>,
     unique: BTreeMap<String, Option<TypeId>>,
+    /// The constraints of the types, each once, the first being none.
+    constraints: Vec<Constraints>,
 }
 
 impl Types {
@@ -344,6 +387,12 @@ impl Types {
 
     pub fn node(&self, id: TypeId) -> &TypeNode {
         &self.nodes[id]
+    }
+
+    /// The constraints of a type: its own, or else those of the type
+    /// it refers to.
+    pub fn constraints(&self, id: TypeId) -> &Constraints {
+        &self.constraints[self.nodes[id].constraints as usize]
     }
 
     /// The kind of a type, past the references.
@@ -403,7 +452,36 @@ pub fn lower(spec: &Spec, codec: Codec, numeric_enums: bool, lenient: bool) -> R
         ids: Vec::new(),
         module_index: BTreeMap::new(),
         type_index: Vec::new(),
+        constraints: alloc::vec![Constraints::default()],
+        sorted: alloc::vec![0],
     };
+
+    // The first of a name is the one that is found.
+    for (index, module) in spec.modules.iter().enumerate() {
+        lowering
+            .module_index
+            .entry(module.name.as_str())
+            .or_insert(index);
+    }
+
+    // The nodes are counted before they are made, so that the vector of
+    // them is made once, of the size it ends with, and not grown to as
+    // much as twice that. The count is that of the types of the modules
+    // and of those that lowering them adds.
+    let count = spec
+        .modules
+        .iter()
+        .enumerate()
+        .map(|(index, module)| {
+            module
+                .types
+                .iter()
+                .map(|assignment| 1 + lowering.count_inside(&assignment.ty, index))
+                .sum::<usize>()
+        })
+        .sum();
+
+    lowering.nodes = Vec::with_capacity(count);
 
     // Every type of a module has its id before any is lowered, as
     // types refer to each other.
@@ -422,10 +500,6 @@ pub fn lower(spec: &Spec, codec: Codec, numeric_enums: bool, lenient: bool) -> R
             names.entry(assignment.name.as_str()).or_insert(*id);
         }
 
-        lowering
-            .module_index
-            .entry(module.name.as_str())
-            .or_insert(lowering.ids.len());
         lowering.type_index.push(names);
         lowering.ids.push(ids);
     }
@@ -437,6 +511,12 @@ pub fn lower(spec: &Spec, codec: Codec, numeric_enums: bool, lenient: bool) -> R
             lowering.nodes[lowering.ids[module_index][type_index]] = node;
         }
     }
+
+    debug_assert_eq!(
+        lowering.nodes.len(),
+        count,
+        "The nodes are not counted right."
+    );
 
     let modules: Vec<(String, Vec<(String, TypeId)>)> = spec
         .modules
@@ -479,9 +559,10 @@ pub fn lower(spec: &Spec, codec: Codec, numeric_enums: bool, lenient: bool) -> R
         lenient,
         index,
         unique,
+        constraints: lowering.constraints,
     };
 
-    finish(&mut types)?;
+    finish(&mut types, &mut lowering.sorted)?;
 
     Ok(types)
 }
@@ -493,28 +574,24 @@ fn element_name_of(element: &Type, given: Option<&str>) -> String {
     }
 }
 
+/// If a reference has a tag or constraints of its own, and so is a type
+/// of its own and not the one it refers to.
+fn has_own(ty: &Type) -> bool {
+    ty.tag.is_some()
+        || ty.size.is_some()
+        || ty.restricted_to.is_some()
+        || ty.permitted_alphabet.is_some()
+}
+
 fn placeholder() -> TypeNode {
     TypeNode {
         kind: Kind::Null,
         tag: None,
-        size: None,
-        range: None,
-        #[cfg(feature = "bigint")]
-        big_range: None,
-        #[cfg(feature = "bigint")]
-        effective_big_range: None,
-        alphabet: None,
+        constraints: 0,
+        alphabet_given: false,
+        real: None,
         concrete: 0,
         tags: Vec::new(),
-        effective_size: None,
-        effective_range: None,
-        effective_alphabet: None,
-        alphabet_given: false,
-        size_parts: None,
-        range_parts: None,
-        effective_size_parts: None,
-        effective_range_parts: None,
-        real: None,
         inner: None,
         effective_inner: None,
         begins_with: Vec::new(),
@@ -533,6 +610,11 @@ struct Lowering<'a> {
     /// The index of each module by name, and of the types of each module.
     module_index: BTreeMap<&'a str, usize>,
     type_index: Vec<BTreeMap<&'a str, usize>>,
+    /// The constraints of the types, each once, the first being none,
+    /// and their indexes in the order of the constraints, to find those
+    /// that are there already. See [`intern`].
+    constraints: Vec<Constraints>,
+    sorted: Vec<u32>,
 }
 
 /// A bound that does not fit in an `i128`, which `bigint` takes.
@@ -692,7 +774,7 @@ fn alphabet_of(elements: &[Element]) -> Result<Option<Vec<char>>> {
     Ok(Some(characters))
 }
 
-impl Lowering<'_> {
+impl<'a> Lowering<'a> {
     /// The module of a name, if there is one of it.
     fn module_named(&self, name: &str) -> Option<usize> {
         self.module_index.get(name).copied()
@@ -762,20 +844,72 @@ impl Lowering<'_> {
     }
 
     fn lower_member(&mut self, member: &Member, module: usize) -> Result<MemberInfo> {
+        // A SIZE given with the member itself is that of its own type.
         let ty = self.lower_type(&member.ty, module)?;
-        let size = match &member.ty.size {
-            Some(elements) => Some(range_of(elements, false)?),
-            None => None,
-        };
 
         Ok(MemberInfo {
             name: member.name.clone(),
             ty,
             optional: member.optional,
             default: None,
-            size,
-            default_const: member.default.clone(),
+            default_const: member.default.clone().map(Box::new),
         })
+    }
+
+    /// How many nodes [`Lowering::lower_type`] adds for `ty`, as it
+    /// lowers it.
+    fn count_type(&self, ty: &Type, module: usize) -> usize {
+        if let Body::Referenced(name) = &ty.body
+            && !has_own(ty)
+            && !name.contains('&')
+        {
+            return 0;
+        }
+
+        1 + self.count_inside(ty, module)
+    }
+
+    /// How many nodes [`Lowering::lower_node`] adds for what is in `ty`,
+    /// as it lowers it, but for the node of `ty` itself. A type that can
+    /// not be lowered adds none, as lowering stops at it.
+    fn count_inside(&self, ty: &Type, module: usize) -> usize {
+        let module = self.module_of(ty, module);
+        let members = |items: &[MemberItem]| -> usize {
+            items
+                .iter()
+                .map(|item| match item {
+                    MemberItem::Member(member) => self.count_type(&member.ty, module),
+                    MemberItem::Group(group) => group
+                        .iter()
+                        .map(|item| match item {
+                            MemberItem::Member(member) => self.count_type(&member.ty, module),
+                            _ => 0,
+                        })
+                        .sum(),
+                    MemberItem::ExtensionMarker => 0,
+                })
+                .sum()
+        };
+
+        match &ty.body {
+            // See `Lowering::external`.
+            Body::Builtin(Builtin::External) => 7,
+            Body::Referenced(name) if name.contains('&') => {
+                match self.field_type(name, module, ty.module_name.as_ref()) {
+                    Ok((field, class_module)) => 1 + self.count_inside(field, class_module),
+                    Err(_) => 0,
+                }
+            }
+            Body::Sequence(items) | Body::Set(items) | Body::Choice(items) => members(items),
+            Body::SequenceOf { element, .. } | Body::SetOf { element, .. } => {
+                self.count_type(element, module)
+            }
+            Body::AnyDefinedBy { choices, .. } => choices
+                .iter()
+                .map(|choice| self.count_type(&choice.ty, module))
+                .sum(),
+            _ => 0,
+        }
     }
 
     /// The id of a type that is found where it is used. A reference
@@ -783,15 +917,11 @@ impl Lowering<'_> {
     fn lower_type(&mut self, ty: &Type, module: usize) -> Result<TypeId> {
         let module = self.module_of(ty, module);
 
-        if let Body::Referenced(name) = &ty.body {
-            let has_own = ty.tag.is_some()
-                || ty.size.is_some()
-                || ty.restricted_to.is_some()
-                || ty.permitted_alphabet.is_some();
-
-            if !has_own && !name.contains('&') {
-                return self.lookup(name, module, ty.module_name.as_ref());
-            }
+        if let Body::Referenced(name) = &ty.body
+            && !has_own(ty)
+            && !name.contains('&')
+        {
+            return self.lookup(name, module, ty.module_name.as_ref());
         }
 
         let node = self.lower_node(ty, module)?;
@@ -806,7 +936,7 @@ impl Lowering<'_> {
         name: &str,
         module: usize,
         module_name: Option<&String>,
-    ) -> Result<(Type, usize)> {
+    ) -> Result<(&'a Type, usize)> {
         let (class_name, field_name) = name.split_once('.').ok_or(Error::BadNodes("Bad field."))?;
         let start = module_name
             .and_then(|module_name| self.module_named(module_name))
@@ -821,7 +951,7 @@ impl Lowering<'_> {
                 .find(|class| class.name == class_name)
                 && let Some(field) = class.fields.iter().find(|field| field.name == field_name)
             {
-                return Ok((field.ty.clone(), candidate));
+                return Ok((&field.ty, candidate));
             }
         }
 
@@ -841,25 +971,29 @@ impl Lowering<'_> {
         let mut node = placeholder();
 
         node.tag = ty.tag.clone();
-        node.size = ty.size.as_deref().map(|e| range_of(e, false)).transpose()?;
-        node.size_parts = ty.size.as_deref().map(|e| parts_of(e, false)).transpose()?;
         let range = integer_range(ty.restricted_to.as_deref())?;
-
-        node.range = range.range;
-        node.range_parts = range.parts;
-        #[cfg(feature = "bigint")]
-        {
-            node.big_range = range.big;
-        }
-        node.alphabet = match &ty.permitted_alphabet {
-            Some(elements) => alphabet_of(elements)?,
-            None => None,
+        let own = Constraints {
+            size: ty.size.as_deref().map(|e| range_of(e, false)).transpose()?,
+            range: range.range,
+            #[cfg(feature = "bigint")]
+            big_range: range.big,
+            alphabet: match &ty.permitted_alphabet {
+                Some(elements) => alphabet_of(elements)?,
+                None => None,
+            },
+            size_parts: ty.size.as_deref().map(|e| parts_of(e, false)).transpose()?,
+            range_parts: range.parts,
         };
+
         node.alphabet_given = ty.permitted_alphabet.is_some();
+        // Its own until `settle` works them out with those of the type it
+        // refers to.
+        node.constraints = intern(&mut self.constraints, &mut self.sorted, own)?;
         if matches!(ty.body, Body::Builtin(Builtin::Real)) {
             node.real = real_format(ty.with_components.as_deref())?;
         }
-        node.inner = inner_of(ty.with_components.as_deref(), ty.with_component.as_deref())?;
+        node.inner =
+            inner_of(ty.with_components.as_deref(), ty.with_component.as_deref())?.map(Box::new);
 
         node.kind = match &ty.body {
             Body::Builtin(builtin) => self.lower_builtin(*builtin)?,
@@ -867,8 +1001,9 @@ impl Lowering<'_> {
                 // A field of an object class is the type it is, of which
                 // the constraints are taken as those of any type it refers
                 // to.
-                let (mut field, class_module) =
+                let (field, class_module) =
                     self.field_type(name, module, ty.module_name.as_ref())?;
+                let mut field = field.clone();
 
                 field.tag = None;
                 // The types in the field are lowered first, and take
@@ -926,9 +1061,9 @@ impl Lowering<'_> {
 
                 Kind::Enumerated { root, additions }
             }
-            Body::Sequence(items) => Kind::Sequence(self.lower_members(items, module)?),
-            Body::Set(items) => Kind::Set(self.lower_members(items, module)?),
-            Body::Choice(items) => Kind::Choice(self.lower_members(items, module)?),
+            Body::Sequence(items) => Kind::Sequence(Box::new(self.lower_members(items, module)?)),
+            Body::Set(items) => Kind::Set(Box::new(self.lower_members(items, module)?)),
+            Body::Choice(items) => Kind::Choice(Box::new(self.lower_members(items, module)?)),
             Body::SequenceOf {
                 element,
                 element_name,
@@ -1003,11 +1138,10 @@ impl Lowering<'_> {
             ty,
             optional,
             default: None,
-            size: None,
             default_const: None,
         };
         let encoding = add(
-            Kind::Choice(Members {
+            Kind::Choice(Box::new(Members {
                 root: alloc::vec![
                     member("single-ASN1-type", single, false),
                     member("octet-aligned", octets, false),
@@ -1017,7 +1151,7 @@ impl Lowering<'_> {
                 order: Vec::new(),
                 addition_order: Vec::new(),
                 root_after_additions: 0,
-            }),
+            })),
             None,
         );
 
@@ -1064,7 +1198,7 @@ impl Lowering<'_> {
             Builtin::Utf8 => Kind::Str(StrKind::Utf8),
             Builtin::Universal => Kind::Str(StrKind::Universal),
             Builtin::Visible => Kind::Str(StrKind::Visible),
-            Builtin::External => Kind::External(self.external()),
+            Builtin::External => Kind::External(Box::new(self.external())),
             Builtin::CharacterString | Builtin::EmbeddedPdv | Builtin::Unsupported => {
                 return bad("A type is not supported.");
             }
@@ -1268,10 +1402,10 @@ fn universal_tag(kind: &Kind) -> Option<(u64, bool)> {
 
 /// Works out what is left to do with the lowered nodes: the tags on
 /// the wire, the constraints of references and the defaults.
-fn finish(types: &mut Types) -> Result<()> {
+fn finish(types: &mut Types, sorted: &mut Vec<u32>) -> Result<()> {
     let count = types.nodes.len();
 
-    settle_all(types)?;
+    settle_all(types, sorted)?;
     compute_beginnings(types)?;
     compute_canonical(types);
     lower_object_identifier_choices(types);
@@ -1451,7 +1585,7 @@ fn compute_canonical(types: &mut Types) {
 /// Works out each type that is a reference. It follows a reference to
 /// the end of the chain, and then works back, so that a chain of a
 /// hundred thousand references is no deeper than one.
-fn settle_all(types: &mut Types) -> Result<()> {
+fn settle_all(types: &mut Types, sorted: &mut Vec<u32>) -> Result<()> {
     // Not seen, on the way down, and done.
     const NEW: u8 = 0;
     const ON_THE_WAY: u8 = 1;
@@ -1480,7 +1614,7 @@ fn settle_all(types: &mut Types) -> Result<()> {
         }
 
         for id in path.into_iter().rev() {
-            settle(types, id);
+            settle(types, id, sorted)?;
             state[id] = DONE;
         }
     }
@@ -1488,13 +1622,30 @@ fn settle_all(types: &mut Types) -> Result<()> {
     Ok(())
 }
 
+/// The index of `constraints` in `table`, where they are put if they
+/// are not there yet. `sorted` has the indexes of the table in the order
+/// of their constraints.
+fn intern(
+    table: &mut Vec<Constraints>,
+    sorted: &mut Vec<u32>,
+    constraints: Constraints,
+) -> Result<u32> {
+    match sorted.binary_search_by(|index| table[*index as usize].cmp(&constraints)) {
+        Ok(position) => Ok(sorted[position]),
+        Err(position) => {
+            let index = u32::try_from(table.len())
+                .map_err(|_| Error::BadNodes("There are too many constraints."))?;
+
+            table.push(constraints);
+            sorted.insert(position, index);
+
+            Ok(index)
+        }
+    }
+}
+
 /// Works out one type, of which the type it refers to is done.
-fn settle(types: &mut Types, id: TypeId) {
-    #[cfg(feature = "bigint")]
-    let inherited_big = match types.nodes[id].kind {
-        Kind::Ref(target) => types.nodes[target].effective_big_range.clone(),
-        _ => None,
-    };
+fn settle(types: &mut Types, id: TypeId, sorted: &mut Vec<u32>) -> Result<()> {
     let (concrete, mut tags, inherited, inherited_inner) = match types.nodes[id].kind {
         Kind::Ref(target) => {
             let target = &types.nodes[target];
@@ -1502,13 +1653,7 @@ fn settle(types: &mut Types, id: TypeId) {
             (
                 target.concrete,
                 target.tags.clone(),
-                (
-                    target.effective_size,
-                    target.effective_range,
-                    target.effective_alphabet.clone(),
-                    target.effective_size_parts.clone(),
-                    target.effective_range_parts.clone(),
-                ),
+                target.constraints,
                 target.effective_inner,
             )
         }
@@ -1523,7 +1668,7 @@ fn settle(types: &mut Types, id: TypeId) {
                 })
                 .unwrap_or_default();
 
-            (id, tags, (None, None, None, None, None), None)
+            (id, tags, 0, None)
         }
     };
 
@@ -1542,48 +1687,35 @@ fn settle(types: &mut Types, id: TypeId) {
         }
     }
 
+    // A type with no constraints of its own has those of the type it
+    // refers to, and one that refers to none its own, which are not
+    // copied. An extensible permitted alphabet is none of its own, but
+    // still takes the place of that of the type it refers to.
+    let own = types.nodes[id].constraints;
+    let alphabet_given = types.nodes[id].alphabet_given;
+    let constraints = if own == 0 && !alphabet_given {
+        inherited
+    } else if inherited == 0 {
+        own
+    } else {
+        let merged = types.constraints[own as usize]
+            .clone()
+            .over(&types.constraints[inherited as usize], alphabet_given);
+
+        intern(&mut types.constraints, sorted, merged)?
+    };
     let node = &mut types.nodes[id];
 
     node.concrete = concrete;
     node.tags = tags;
-    // Its own constraints take the place of those of the type it refers
-    // to, as the compiler has worked them out of both.
-    // A range of its own is either of `i128` or big, and takes the place
-    // of both of the type it refers to.
-    #[cfg(feature = "bigint")]
-    let own_big = node.big_range.is_some();
-    #[cfg(not(feature = "bigint"))]
-    let own_big = false;
-
-    node.effective_size = node.size.or(inherited.0);
-    node.effective_range = if own_big {
-        None
-    } else {
-        node.range.or(inherited.1)
-    };
-    node.effective_alphabet = if node.alphabet_given {
-        node.alphabet.clone()
-    } else {
-        inherited.2
-    };
-    node.effective_size_parts = node.size_parts.clone().or(inherited.3);
-    node.effective_range_parts = if own_big {
-        None
-    } else {
-        node.range_parts.clone().or(inherited.4)
-    };
-    #[cfg(feature = "bigint")]
-    {
-        node.effective_big_range = match node.range {
-            Some(_) => None,
-            None => node.big_range.clone().or(inherited_big),
-        };
-    }
+    node.constraints = constraints;
     node.effective_inner = if node.inner.is_some() {
         Some(id)
     } else {
         inherited_inner
     };
+
+    Ok(())
 }
 
 /// What a type with no tag of its own can begin with: a CHOICE, the tags
@@ -1658,7 +1790,7 @@ fn compute_beginnings(types: &mut Types) -> Result<()> {
 fn fill_defaults(types: &Types, members: &mut Members) -> Result<()> {
     let fill = |member: &mut MemberInfo| -> Result<()> {
         if let Some(constant) = member.default_const.take() {
-            member.default = default_value(types, member.ty, &constant)?;
+            member.default = default_value(types, member.ty, &constant)?.map(Box::new);
         }
 
         Ok(())
@@ -1862,7 +1994,7 @@ pub fn clean_bits(bytes: &[u8], bits: usize, named: bool) -> (Vec<u8>, usize) {
 
 /// If a value is the default of a member.
 pub fn is_default(types: &Types, member: &MemberInfo, value: &Value) -> bool {
-    let Some(default) = &member.default else {
+    let Some(default) = member.default.as_deref() else {
         return false;
     };
 

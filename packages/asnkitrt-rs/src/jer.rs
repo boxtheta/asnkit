@@ -73,7 +73,7 @@ fn names<'a>(
 impl<'a> Coder<'a> {
     /// The size of a BIT STRING that has one size only.
     fn fixed_size(&self, id: TypeId) -> Option<usize> {
-        let size = self.types.node(id).effective_size?;
+        let size = self.types.constraints(id).size?;
 
         match (size.min, size.max) {
             (Some(min), Some(max)) if min == max => usize::try_from(min).ok(),

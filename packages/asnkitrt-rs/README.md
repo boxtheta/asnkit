@@ -111,16 +111,17 @@ On a device (`thumbv7em-none-eabi`, a Cortex-M4 or M7, `opt-level =
 `xer` and `bigint` need `std` and are not available there. These flash
 figures cover the probe, not the rest of an application or its firmware.
 The interpreter needs a global allocator, and RAM can be the tighter
-limit: in these examples, a loaded specification occupies roughly 30 to
-42 times its `.asni` size, with a higher peak during loading. The heap
-measurements below are from a 64-bit computer; they are not device RAM
-requirements:
+limit: in these examples, a loaded specification occupies roughly 9 to
+16 times its `.asni` size, with a higher peak during loading. The heap
+measurements below are from a 64-bit computer, made with
+`cargo run --release -p asnkitrt --example load_memory -- FILE.asni`;
+they are not device RAM requirements:
 
 | Specification | `.asni` | Kept | Peak while loading |
 |---|---:|---:|---:|
-| `examples/compiled/foo.asni` | 244 B | 9.2 KiB | 15.3 KiB |
-| `examples/compiled/information_object.asni` | 2.1 KiB | 59.9 KiB | 126.4 KiB |
-| `examples/compiled/rfc5280.asni` | 12.3 KiB | 519.4 KiB | 970.5 KiB |
+| `examples/compiled/foo.asni` | 244 B | 3.7 KiB | 7.5 KiB |
+| `examples/compiled/information_object.asni` | 2.1 KiB | 19.8 KiB | 50.0 KiB |
+| `examples/compiled/rfc5280.asni` | 12.3 KiB | 132.5 KiB | 337.3 KiB |
 
 Decoding, checking and encoding a certificate of RFC 5280 in DER takes
 4 to 8 KiB more in that host measurement. Budget separately for the

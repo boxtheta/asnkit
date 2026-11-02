@@ -1054,7 +1054,8 @@ impl<'a> Coder<'a> {
 
         let node = self.types.node(id);
         let kind = &self.types.node(node.concrete).kind;
-        let size = node.effective_size;
+        let constraints = self.types.constraints(id);
+        let size = constraints.size;
 
         match kind {
             Kind::Boolean => match value {
@@ -1079,11 +1080,11 @@ impl<'a> Coder<'a> {
                 };
 
                 #[cfg(feature = "bigint")]
-                if let Some(range) = &node.effective_big_range {
+                if let Some(range) = &constraints.big_range {
                     return self.encode_big_integer(&number, range, w);
                 }
 
-                self.encode_integer(&number, node.effective_range, w)
+                self.encode_integer(&number, constraints.range, w)
             }
             Kind::Real => {
                 let encoded = match value {
@@ -1143,7 +1144,7 @@ impl<'a> Coder<'a> {
             Kind::Str(string) => {
                 let text = text_of(value)?;
 
-                self.encode_string(*string, text, size, &node.effective_alphabet, w)
+                self.encode_string(*string, text, size, &constraints.alphabet, w)
             }
             Kind::Utc => match value {
                 Value::DateTime(value) => {
@@ -1795,15 +1796,16 @@ impl<'a> Coder<'a> {
 
         let node = self.types.node(id);
         let kind = &self.types.node(node.concrete).kind;
-        let size = node.effective_size;
+        let constraints = self.types.constraints(id);
+        let size = constraints.size;
 
         match kind {
             Kind::Boolean => r.bit().map(Value::Boolean),
             #[cfg(feature = "bigint")]
-            Kind::Integer(_) if node.effective_big_range.is_some() => {
-                self.decode_big_integer(node.effective_big_range.as_ref().unwrap(), r)
+            Kind::Integer(_) if constraints.big_range.is_some() => {
+                self.decode_big_integer(constraints.big_range.as_ref().unwrap(), r)
             }
-            Kind::Integer(_) => self.decode_integer(node.effective_range, r),
+            Kind::Integer(_) => self.decode_integer(constraints.range, r),
             Kind::Real => {
                 r.align();
 
@@ -1834,7 +1836,7 @@ impl<'a> Coder<'a> {
             Kind::SequenceOf(element) | Kind::SetOf(element) => {
                 self.decode_array(*element, size, r, depth)
             }
-            Kind::Str(string) => self.decode_string(*string, size, &node.effective_alphabet, r),
+            Kind::Str(string) => self.decode_string(*string, size, &constraints.alphabet, r),
             Kind::Utc => {
                 let text = self.decode_known(StrKind::Visible, None, &None, r)?;
 

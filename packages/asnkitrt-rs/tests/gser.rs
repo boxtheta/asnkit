@@ -436,7 +436,7 @@ fn omitted_optional_and_default_members() {
     let Kind::Sequence(mut members) = types.kind(id).clone() else {
         panic!()
     };
-    members.root[0].default = Some(Value::Integer(7));
+    members.root[0].default = Some(Box::new(Value::Integer(7)));
     members.root[1].optional = true;
     let concrete = types.nodes[id].concrete;
     types.nodes[concrete].kind = Kind::Sequence(members);
@@ -489,7 +489,7 @@ fn extension_groups_are_required_only_when_present() {
     e.optional = true;
     let mut f = b.clone();
     f.name = "f".into();
-    f.default = Some(Value::Boolean(false));
+    f.default = Some(Box::new(Value::Boolean(false)));
     let mut g = b.clone();
     g.name = "g".into();
     members.additions = Some(vec![Addition::Group(vec![b, d, e, f]), Addition::Member(g)]);

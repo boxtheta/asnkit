@@ -623,7 +623,7 @@ impl<'a> Generator<'a> {
 
     /// If an INTEGER of the type `id` is a `wire::Integer`.
     fn is_big(&self, id: TypeId) -> bool {
-        self.integer_type(self.types.nodes[id].effective_range)
+        self.integer_type(self.types.constraints(id).range)
             .starts_with("wire::")
     }
 
@@ -634,7 +634,7 @@ impl<'a> Generator<'a> {
 
         match self.kind(concrete) {
             Kind::Boolean => "bool".to_string(),
-            Kind::Integer(_) => self.integer_type(node.effective_range),
+            Kind::Integer(_) => self.integer_type(self.types.constraints(id).range),
             Kind::Null => "()".to_string(),
             Kind::BitString(bits) if !bits.is_empty() => format!("{}<'a>", self.names[&concrete]),
             Kind::BitString(_) => "wire::BitString<'a>".to_string(),
@@ -672,7 +672,7 @@ impl<'a> Generator<'a> {
 
     /// The default of a member as Rust, if it can be one.
     fn default_value(&self, member: &MemberInfo) -> Option<String> {
-        let default = member.default.as_ref()?;
+        let default = member.default.as_deref()?;
         let concrete = self.concrete(member.ty);
 
         match (self.kind(concrete), default) {
@@ -685,7 +685,7 @@ impl<'a> Generator<'a> {
                 .find(|(candidate, _)| candidate == name)
                 .map(|(_, value)| format!("wire::Integer::new({value})")),
             (Kind::Integer(_), Value::Integer(value)) => {
-                let ty = self.integer_type(self.types.nodes[member.ty].effective_range);
+                let ty = self.integer_type(self.types.constraints(member.ty).range);
                 let fits = match ty.as_str() {
                     "u8" => u8::try_from(*value).is_ok(),
                     "u16" => u16::try_from(*value).is_ok(),
@@ -808,7 +808,7 @@ impl<'a> Generator<'a> {
     /// The name of the permitted alphabet of a string of a known
     /// multiplier of the type `id`, which is made once.
     fn known(&mut self, id: TypeId, kind: StrKind) -> String {
-        let known = Known::new(kind, &self.types.nodes[id].effective_alphabet, false);
+        let known = Known::new(kind, &self.types.constraints(id).alphabet, false);
         let characters = match &known.alphabet.characters {
             Characters::Numeric => "per::Characters::Numeric".to_string(),
             Characters::Printable => "per::Characters::Printable".to_string(),
@@ -1021,18 +1021,24 @@ impl<'a> Generator<'a> {
 
         if self.options.codec == Encoding::Uper {
             // UPER, writing.
-            let size = range(node.effective_size);
+            let size = range(self.types.constraints(id).size);
             let write = match kind {
                 Kind::Boolean => "w.bit(*v);".to_string(),
                 Kind::Integer(_) if self.is_big(id) => {
-                    format!("per::big_integer(w, v, {})?;", range(node.effective_range))
+                    format!(
+                        "per::big_integer(w, v, {})?;",
+                        range(self.types.constraints(id).range)
+                    )
                 }
                 Kind::Integer(_) if ty == "i128" => {
-                    format!("per::integer(w, *v, {})?;", range(node.effective_range))
+                    format!(
+                        "per::integer(w, *v, {})?;",
+                        range(self.types.constraints(id).range)
+                    )
                 }
                 Kind::Integer(_) => format!(
                     "per::integer(w, i128::from(*v), {})?;",
-                    range(node.effective_range)
+                    range(self.types.constraints(id).range)
                 ),
                 Kind::Null => "let _ = (v, w);".to_string(),
                 Kind::BitString(named) if !named.is_empty() => {
@@ -1083,11 +1089,14 @@ impl<'a> Generator<'a> {
             let read = match kind {
                 Kind::Boolean => "r.bit()?".to_string(),
                 Kind::Integer(_) if self.is_big(id) => {
-                    format!("per::read_big_integer(r, {})?", range(node.effective_range))
+                    format!(
+                        "per::read_big_integer(r, {})?",
+                        range(self.types.constraints(id).range)
+                    )
                 }
                 Kind::Integer(_) => format!(
                     "{{\n        let n = per::read_integer(r, {})?;\n        per::fit(r, n)?\n    }}",
-                    range(node.effective_range)
+                    range(self.types.constraints(id).range)
                 ),
                 Kind::Null => "{\n        let _ = r;\n    }".to_string(),
                 Kind::BitString(named) if !named.is_empty() => format!(

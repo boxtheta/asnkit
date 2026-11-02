@@ -606,7 +606,7 @@ impl<'a> Generator<'a> {
         Ok(match kind {
             Kind::Ref(_) => unreachable!("references are followed"),
             Kind::Boolean => "bool".to_string(),
-            Kind::Integer(_) => self.integer_type(node.effective_range),
+            Kind::Integer(_) => self.integer_type(self.types.constraints(first).range),
             Kind::Real => match self.types.nodes[id].real.or(node.real) {
                 Some(RealFormat::Binary32) => "f32".to_string(),
                 _ => "f64".to_string(),

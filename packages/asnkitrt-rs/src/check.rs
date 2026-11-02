@@ -99,7 +99,7 @@ fn check_at(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<()
 
     match node
         .effective_inner
-        .and_then(|holder| types.node(holder).inner.as_ref())
+        .and_then(|holder| types.node(holder).inner.as_deref())
     {
         Some(inner) if !satisfies_inner(types, node.concrete, inner, value, depth + 1)? => {
             match inner {
@@ -114,12 +114,13 @@ fn check_at(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<()
 /// Checks `value` as the type `id` but for its inner type constraint.
 fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<()> {
     let node = types.node(id);
+    let constraints = types.constraints(id);
     let kind = &types.node(node.concrete).kind;
 
     match (kind, value) {
         (Kind::Integer(named), value) => {
             #[cfg(feature = "bigint")]
-            if let Some(range) = &node.effective_big_range {
+            if let Some(range) = &constraints.big_range {
                 let number = match value {
                     Value::Text(name) => {
                         match named.iter().find(|(candidate, _)| candidate == name) {
@@ -147,8 +148,7 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
             let number = match value {
                 Value::Integer(number) => *number,
                 Value::BigInteger(bytes) => {
-                    return if big_in_range(node.effective_range, &node.effective_range_parts, bytes)
-                    {
+                    return if big_in_range(constraints.range, &constraints.range_parts, bytes) {
                         Ok(())
                     } else {
                         fail("Expected an integer in the range.")
@@ -161,22 +161,22 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
                 _ => return Err(Error::encode("Expected data of type int or str.")),
             };
 
-            if !in_range(node.effective_range, &node.effective_range_parts, number) {
+            if !in_range(constraints.range, &constraints.range_parts, number) {
                 return fail("Expected an integer in the range.");
             }
 
             Ok(())
         }
-        (Kind::Str(kind), Value::Text(text)) => check_string(*kind, text, node, true),
+        (Kind::Str(kind), Value::Text(text)) => check_string(*kind, text, constraints, true),
         // Its text is made only for a SIZE, of which it is the length.
-        (Kind::ObjectIdentifier, Value::ObjectIdentifier(oid)) => match node.effective_size {
-            Some(_) => check_string(StrKind::Utf8, &oid.to_string(), node, false),
+        (Kind::ObjectIdentifier, Value::ObjectIdentifier(oid)) => match constraints.size {
+            Some(_) => check_string(StrKind::Utf8, &oid.to_string(), constraints, false),
             None => Ok(()),
         },
         (Kind::OctetString, Value::Bytes(bytes)) => {
             if !in_range(
-                node.effective_size,
-                &node.effective_size_parts,
+                constraints.size,
+                &constraints.size_parts,
                 bytes.len() as i128,
             ) {
                 return fail("Expected a number of bytes in the range.");
@@ -185,11 +185,7 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
             Ok(())
         }
         (Kind::BitString(_), Value::Bits(_, bits)) => {
-            if !in_range(
-                node.effective_size,
-                &node.effective_size_parts,
-                *bits as i128,
-            ) {
+            if !in_range(constraints.size, &constraints.size_parts, *bits as i128) {
                 return fail("Expected a number of bits in the range.");
             }
 
@@ -197,8 +193,8 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
         }
         (Kind::SequenceOf(element) | Kind::SetOf(element), Value::List(items)) => {
             if !in_range(
-                node.effective_size,
-                &node.effective_size_parts,
+                constraints.size,
+                &constraints.size_parts,
                 items.len() as i128,
             ) {
                 return fail("Expected a list of a length in the range.");
@@ -241,12 +237,12 @@ fn check_kind(types: &Types, id: TypeId, value: &Value, depth: usize) -> Result<
 fn check_string(
     kind: StrKind,
     text: &str,
-    node: &crate::types::TypeNode,
+    constraints: &crate::types::Constraints,
     has_alphabet: bool,
 ) -> Result<()> {
     if !in_range(
-        node.effective_size,
-        &node.effective_size_parts,
+        constraints.size,
+        &constraints.size_parts,
         text.chars().count() as i128,
     ) {
         return fail("Expected a number of characters in the range.");
@@ -256,7 +252,7 @@ fn check_string(
         return Ok(());
     }
 
-    match &node.effective_alphabet {
+    match &constraints.alphabet {
         Some(alphabet) => {
             if text.chars().any(|character| !alphabet.contains(&character)) {
                 return fail("Expected a character in the permitted alphabet.");
