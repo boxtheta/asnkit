@@ -773,13 +773,9 @@ _SPECIFICATION: asnkitrt.syntax.CompiledSpecification | None = None
 
 def use_asni(
     data: bytes | bytearray,
-    nonce: asnkitrt.syntax.NonceCheck = None,
-    accept_any_nonce: bool = False,
+    *,
     bound_to: str | None = None,
     accept_any_binding: bool = False,
-    verification_keys: asnkitrt.syntax.Keys | None = None,
-    accept_any_signature: bool = False,
-    decryption_keys: asnkitrt.syntax.Keys | None = None,
 ) -> None:
     \"\"\"Uses the contents of an .asni file, made from the specification this
     module is made from, for all codecs. It is checked once, here, with the
@@ -790,14 +786,7 @@ def use_asni(
     global _SPECIFICATION
 
     _SPECIFICATION = asnkitrt.syntax.from_asni(
-        data,
-        nonce,
-        accept_any_nonce,
-        bound_to,
-        accept_any_binding,
-        verification_keys,
-        accept_any_signature,
-        decryption_keys,
+        data, bound_to=bound_to, accept_any_binding=accept_any_binding
     )
     spec.cache_clear()
 
@@ -840,13 +829,12 @@ def generate(
     embed: bool = True,
 ) -> str:
     """Returns the text of a Python module for given contents of an
-    ``.asni`` file, which must not be signed, encrypted, bound to
-    something or have a nonce to check, as it may be embedded in the
-    module and loaded without any of those. `sources` are the names of
-    the files it was made from, and `codec` is what the module encodes
-    and decodes with if not told otherwise. Without `embed`, the module
-    does not have the specification in it, and is given it with its
-    ``use_asni()``, as from a file that is signed or encrypted.
+    ``.asni`` file, which must not be bound to something, as it may be
+    embedded in the module and loaded without checking that. `sources`
+    are the names of the files it was made from, and `codec` is what
+    the module encodes and decodes with if not told otherwise. Without
+    `embed`, the module does not have the specification in it, and is
+    given it with its ``use_asni()``, as from a file it is sent.
 
     """
 
@@ -854,8 +842,8 @@ def generate(
         compiled = syntax.from_asni(asni)
     except Exception as error:
         raise GenerateError(
-            "Expected a compiled specification that is not signed, encrypted, "
-            "bound to something or has a nonce, but: {}".format(error)
+            "Expected a compiled specification that is not bound to something, "
+            "but: {}".format(error)
         )
 
     return Generator(compiled, asni, sources or [], codec, embed).run()

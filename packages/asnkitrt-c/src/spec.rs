@@ -8,9 +8,9 @@
 //! which is a handle and not a struct of C so that it can be given more
 //! later. The options of encoding and decoding are few, and a struct.
 
-use std::ffi::{CString, c_char, c_int, c_void};
+use std::ffi::{CString, c_char, c_int};
 
-use asnkitrt::container::{Binding, Checks, KEY_ID_SIZE, KEY_SIZE, Key, Nonce, Signature};
+use asnkitrt::container::{Binding, Checks};
 use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 use asnkitrt::value::Value;
@@ -20,26 +20,12 @@ use crate::{
     guard_handle, handle, optional_text, out, text,
 };
 
-/// Tells if a nonce is accepted, with the context it was set with.
-pub type NonceCallback = unsafe extern "C" fn(nonce: u32, context: *mut c_void) -> c_int;
-
-enum NonceOption {
-    None,
-    Exact(u32),
-    Accept(NonceCallback, *mut c_void),
-    Any,
-}
-
 /// What a file has to be to be loaded, as `Checks`, and how.
 pub struct LoadOptions {
     numeric_enums: bool,
     lenient: bool,
-    nonce: NonceOption,
     bound_to: Option<String>,
     accept_any_binding: bool,
-    verification_keys: Option<Vec<Key>>,
-    accept_any_signature: bool,
-    decryption_keys: Option<Vec<Key>>,
 }
 
 impl Default for LoadOptions {
@@ -47,12 +33,8 @@ impl Default for LoadOptions {
         LoadOptions {
             numeric_enums: false,
             lenient: false,
-            nonce: NonceOption::None,
             bound_to: None,
             accept_any_binding: false,
-            verification_keys: None,
-            accept_any_signature: false,
-            decryption_keys: None,
         }
     }
 }
@@ -120,23 +102,12 @@ unsafe fn read_options<'a>(options: *const CodecOptions) -> Result<Read<'a>> {
     })
 }
 
-unsafe fn key(id: *const u8, key: *const u8) -> Result<Key> {
-    let id = unsafe { bytes(id, KEY_ID_SIZE, "the id of the key") }?;
-    let key = unsafe { bytes(key, KEY_SIZE, "the key") }?;
-
-    Ok(Key {
-        id: id.try_into().expect("KEY_ID_SIZE bytes"),
-        key: key.try_into().expect("KEY_SIZE bytes"),
-    })
-}
-
 unsafe fn options_mut<'a>(options: *mut LoadOptions) -> Result<&'a mut LoadOptions> {
     unsafe { options.as_mut() }
         .ok_or_else(|| failure(ASNKIT_ERROR_ARGUMENT, "Expected the load options."))
 }
 
-/// New load options, that load only a file that is not signed, not
-/// encrypted, with no nonce and not bound.
+/// New load options, that load only a file that is not bound.
 #[unsafe(no_mangle)]
 pub extern "C" fn asnkit_load_options_new() -> *mut LoadOptions {
     guard_handle(|| Ok(Box::into_raw(Box::default())))
@@ -172,42 +143,6 @@ pub unsafe extern "C" fn asnkit_load_options_set_lenient(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_set_nonce(
-    options: *mut LoadOptions,
-    nonce: u32,
-) -> c_int {
-    guard(|| {
-        unsafe { options_mut(options) }?.nonce = NonceOption::Exact(nonce);
-        Ok(())
-    })
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_set_nonce_callback(
-    options: *mut LoadOptions,
-    accept: Option<NonceCallback>,
-    context: *mut c_void,
-) -> c_int {
-    guard(|| {
-        let accept =
-            accept.ok_or_else(|| failure(ASNKIT_ERROR_ARGUMENT, "Expected a function."))?;
-
-        unsafe { options_mut(options) }?.nonce = NonceOption::Accept(accept, context);
-        Ok(())
-    })
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_set_accept_any_nonce(
-    options: *mut LoadOptions,
-) -> c_int {
-    guard(|| {
-        unsafe { options_mut(options) }?.nonce = NonceOption::Any;
-        Ok(())
-    })
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn asnkit_load_options_set_bound_to(
     options: *mut LoadOptions,
     bound_to: *const c_char,
@@ -230,50 +165,6 @@ pub unsafe extern "C" fn asnkit_load_options_set_accept_any_binding(
     })
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_add_verification_key(
-    options: *mut LoadOptions,
-    id: *const u8,
-    public_key: *const u8,
-) -> c_int {
-    guard(|| {
-        let key = unsafe { key(id, public_key) }?;
-
-        unsafe { options_mut(options) }?
-            .verification_keys
-            .get_or_insert_with(Vec::new)
-            .push(key);
-        Ok(())
-    })
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_set_accept_any_signature(
-    options: *mut LoadOptions,
-) -> c_int {
-    guard(|| {
-        unsafe { options_mut(options) }?.accept_any_signature = true;
-        Ok(())
-    })
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_add_decryption_key(
-    options: *mut LoadOptions,
-    id: *const u8,
-    secret_key: *const u8,
-) -> c_int {
-    guard(|| {
-        let key = unsafe { key(id, secret_key) }?;
-
-        unsafe { options_mut(options) }?
-            .decryption_keys
-            .get_or_insert_with(Vec::new)
-            .push(key);
-        Ok(())
-    })
-}
-
 fn load(asni: &[u8], codec: Option<&str>, options: &LoadOptions) -> Result<Spec> {
     let codec = codec.unwrap_or("ber");
     let mut load = Options::new(codec_of(codec)?);
@@ -281,23 +172,7 @@ fn load(asni: &[u8], codec: Option<&str>, options: &LoadOptions) -> Result<Spec>
     load.numeric_enums = options.numeric_enums;
     load.lenient = options.lenient;
 
-    let accept_nonce = |nonce: u32| match options.nonce {
-        NonceOption::Accept(accept, context) => unsafe { accept(nonce, context) != 0 },
-        _ => false,
-    };
     let checks = Checks {
-        signature: match &options.verification_keys {
-            Some(keys) => Signature::Keys(keys),
-            None if options.accept_any_signature => Signature::Any,
-            None => Signature::None,
-        },
-        nonce: match options.nonce {
-            NonceOption::None => Nonce::None,
-            NonceOption::Exact(nonce) => Nonce::Exact(nonce),
-            NonceOption::Accept(..) => Nonce::Accept(&accept_nonce),
-            NonceOption::Any => Nonce::Any,
-        },
-        decryption_keys: options.decryption_keys.as_deref(),
         bound_to: match &options.bound_to {
             Some(bound_to) => Binding::To(bound_to),
             None if options.accept_any_binding => Binding::Any,

@@ -7,8 +7,7 @@ the header [`include/asnkitrt.h`](include/asnkitrt.h). It loads the
 ASN.1, without parsing ASN.1 itself.
 
 The codecs are BER, DER, OER, PER, UPER, JER and XER. It can also check
-values against their constraints, and load signed, encrypted and bound
-`.asni` files.
+values against their constraints, and load bound `.asni` files.
 
 ```c
 #include "asnkitrt.h"
@@ -146,15 +145,13 @@ codec.
 - A specification may be used from several threads at once. A value
   may be read from several threads, and changed from one only.
 
-## Signed, encrypted and bound files
+## Bound files
 
-By default, only a file that is not signed, not encrypted, with no nonce
-and not bound is loaded. An `asnkit_load_options` says what else is
-expected: `asnkit_load_options_add_verification_key()` and
-`_add_decryption_key()`, which take an id of `ASNKIT_KEY_ID_SIZE` bytes
-and a key of `ASNKIT_KEY_SIZE` bytes, `_set_bound_to()`,
-`_set_nonce()` or `_set_nonce_callback()`, and the `_accept_any_*()`
-functions, as `asnkitrt.load_asni()` of the Python runtime has them. See
+By default, only a file that is not bound is loaded. An
+`asnkit_load_options` says what else is expected:
+`asnkit_load_options_set_bound_to()` or
+`_set_accept_any_binding()`, as `asnkitrt.load_asni()` of the Python
+runtime has them. See
 [`docs/file_formats.md`](https://github.com/boxtheta/asnkit/blob/trunk/docs/file_formats.md).
 
 ## Testing

@@ -10,34 +10,18 @@ runtime loads, also on small devices, so it is:
 - The four bytes ``ASNI``.
 
 - One byte with the major and one with the minor version of the
-  layout of its nodes. A reader accepts any minor version of the
-  major version it knows, ignoring the fields of nodes it does not
-  know of in a later one.
+  file. A reader accepts any minor version of the major version it
+  knows, ignoring the fields of nodes it does not know of in a later
+  one.
 
 - Two bytes of flags, the most significant first, telling if the
-  file is signed, if it is encrypted, if its nonce is to be checked
-  and if it is bound to what its metadata tells.
-
-- Three bytes of nonce, which are only looked at if the flag for it
-  is set, and zero if not.
-
-- If signed, the 16 bytes of the identifier of the key it is signed
-  with and the 64 bytes of an Ed25519 signature of the SHA-256 digest
-  of all of the file but the signature.
-
-- If encrypted, the 16 bytes of the identifier of the key it is
-  encrypted with, the 12 bytes of the initialization vector and the
-  16 bytes of the tag of AES-256 in Galois/Counter Mode.
+  file is bound to what its metadata tells.
 
 - The metadata as a CBOR map.
 
 - The nodes as CBOR in the compact form.
 
-The two last are encrypted as one in an encrypted file.
-
-Signing and encrypting need the cryptography package, which is only
-imported for a file that is signed or encrypted. See
-docs/file_formats.md for all there is to know about the files.
+See docs/file_formats.md for all there is to know about the files.
 
 An ``.asnst`` file holds a syntax tree. It is what plugins are given,
 to generate code and such, so it is nothing but CBOR: one map with
@@ -50,8 +34,7 @@ See :mod:`.wire` for the two forms of nodes.
 
 import dataclasses
 import hashlib
-import os
-from typing import Any, Callable, Dict, Mapping, Tuple, Union
+from typing import Any, Dict, Mapping, Tuple
 
 from ..version import __version__
 from . import cbor
@@ -64,41 +47,19 @@ MAGIC_ASNI = b"ASNI"
 # What an .asnst file says it is.
 FORMAT_ASNST = "asnst"
 
-HEADER_SIZE = 11
+# The version of an .asni file, of its header and its nodes, as (major,
+# minor). That of an .asnst file is SCHEMA_VERSION.
+ASNI_VERSION = (2, 0)
 
-NONCE_SIZE = 3
-NONCE_MAXIMUM = 2 ** (8 * NONCE_SIZE) - 1
+HEADER_SIZE = 8
 
 # Of what a file is bound to, in bytes as UTF-8.
 BOUND_TO_MAXIMUM_SIZE = 255
 
-# What the nonce of a file has to be: a number, or a function given
-# it that returns True if it will do.
-NonceCheck = Union[int, Callable[[int], bool], None]
+# The file is only for what its metadata tells it is bound to.
+FLAG_BOUND = 0x0001
 
-# The file has a signature, its metadata and nodes are encrypted, its
-# nonce is to be checked, and it is only for what its metadata tells
-# it is bound to.
-FLAG_SIGNED = 0x0001
-FLAG_ENCRYPTED = 0x0002
-FLAG_NONCE = 0x0004
-FLAG_BOUND = 0x0008
-
-SUPPORTED_FLAGS = FLAG_SIGNED | FLAG_ENCRYPTED | FLAG_NONCE | FLAG_BOUND
-
-# Of the identifier of a key, of an Ed25519 private or public key and
-# signature, and of an AES-256 key, initialization vector and tag.
-KEY_ID_SIZE = 16
-KEY_SIZE = 32
-SIGNATURE_SIZE = 64
-IV_SIZE = 12
-TAG_SIZE = 16
-
-# A key to sign or encrypt with: its identifier and the key itself.
-Key = Tuple[bytes, bytes]
-
-# The keys to verify or decrypt with: identifier to key.
-Keys = Mapping[bytes, bytes]
+SUPPORTED_FLAGS = FLAG_BOUND
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -152,21 +113,14 @@ class Metadata:
 @dataclasses.dataclass(frozen=True, kw_only=True)
 class Header:
     """The header of a file: what it holds as ``'asni'`` or
-    ``'asnst'``, the version of the layout of its nodes as (major,
-    minor) and its metadata, which is ``None`` for an encrypted file.
-
-    Of an ``.asni`` file it also has the nonce if there is one to
-    check, the identifier of the key it is signed with if signed, and
-    that of the key it is encrypted with if encrypted.
+    ``'asnst'``, the version of the file as (major, minor) and its
+    metadata.
 
     """
 
     kind: str
     version: Tuple[int, int]
-    metadata: Metadata | None
-    nonce: int | None = None
-    signed_by: bytes | None = None
-    encrypted_with: bytes | None = None
+    metadata: Metadata
 
 
 def _metadata_to_primitive(metadata: Metadata) -> Dict[str, Any]:
@@ -239,66 +193,7 @@ def _metadata_from_primitive(primitive: Any, is_bound: bool) -> Metadata:
     )
 
 
-def _import_cryptography(what: str, extra: str) -> None:
-    """Raises an exception telling how to get the cryptography
-    package if it is not there.
-
-    """
-
-    try:
-        import cryptography  # noqa: F401
-    except ImportError:
-        raise ConvertError(
-            "{} file needs the cryptography package, which is installed with "
-            "the extra '{}' of this package.".format(what, extra)
-        )
-
-
-def _check_key(key: Any, what: str) -> Key:
-    if (
-        not isinstance(key, tuple)
-        or len(key) != 2
-        or not all(isinstance(item, (bytes, bytearray)) for item in key)
-        or len(key[0]) != KEY_ID_SIZE
-        or len(key[1]) != KEY_SIZE
-    ):
-        raise ConvertError(
-            "Expected the key to {} with as its identifier of {} bytes and "
-            "the key of {} bytes.".format(what, KEY_ID_SIZE, KEY_SIZE)
-        )
-
-    return bytes(key[0]), bytes(key[1])
-
-
-def _find_key(keys: Keys | None, key_id: bytes, what: str, to: str) -> bytes:
-    if keys is None:
-        raise ConvertError(
-            "The file is {}, but no keys to {} it with are given.".format(what, to)
-        )
-
-    for candidate_id, key in keys.items():
-        if bytes(candidate_id) == key_id:
-            if len(key) != KEY_SIZE:
-                raise ConvertError(
-                    "Expected the key {} as {} bytes.".format(key_id.hex(), KEY_SIZE)
-                )
-
-            return bytes(key)
-
-    raise ConvertError(
-        "The file is {} with the key {}, which is not among those given.".format(
-            what, key_id.hex()
-        )
-    )
-
-
-def _write_asni(
-    metadata: Metadata | None,
-    nodes: Any,
-    nonce: int | None,
-    signing_key: Key | None,
-    encryption_key: Key | None,
-) -> bytes:
+def _write_asni(metadata: Metadata | None, nodes: Any) -> bytes:
     if metadata is None:
         metadata = Metadata()
 
@@ -307,160 +202,53 @@ def _write_asni(
     if metadata.bound_to is not None:
         flags |= FLAG_BOUND
 
-    if signing_key is not None:
-        flags |= FLAG_SIGNED
-
-    if encryption_key is not None:
-        flags |= FLAG_ENCRYPTED
-
-    if nonce is None:
-        # Nobody looks at it.
-        nonce = 0
-    elif isinstance(nonce, bool) or not isinstance(nonce, int):
-        raise ConvertError(
-            "Expected a nonce as an integer, but got {!r}.".format(nonce)
-        )
-    elif not 0 <= nonce <= NONCE_MAXIMUM:
-        raise ConvertError(
-            "Expected a nonce of 0 to {}, but got {}.".format(NONCE_MAXIMUM, nonce)
-        )
-    else:
-        flags |= FLAG_NONCE
-
-    header = b"".join(
+    return b"".join(
         [
             MAGIC_ASNI,
-            bytes(SCHEMA_VERSION),
+            bytes(ASNI_VERSION),
             flags.to_bytes(2, "big"),
-            nonce.to_bytes(NONCE_SIZE, "big"),
+            cbor.dumps(_metadata_to_primitive(metadata)),
+            cbor.dumps(nodes),
         ]
     )
-    contents = cbor.dumps(_metadata_to_primitive(metadata)) + cbor.dumps(nodes)
-    encryption = b""
-    signature = b""
-
-    # Encrypted first and then signed, so that the signature is
-    # checked without the key to decrypt with.
-    if encryption_key is not None:
-        key_id, key = _check_key(encryption_key, "encrypt")
-        _import_cryptography("An encrypted", "encryption")
-
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-        iv = os.urandom(IV_SIZE)
-        encrypted = AESGCM(key).encrypt(iv, contents, header + key_id + iv)
-        contents = encrypted[:-TAG_SIZE]
-        encryption = key_id + iv + encrypted[-TAG_SIZE:]
-
-    if signing_key is not None:
-        key_id, key = _check_key(signing_key, "sign")
-        _import_cryptography("A signed", "signing")
-
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-            Ed25519PrivateKey,
-        )
-
-        digest = hashlib.sha256(header + key_id + encryption + contents).digest()
-        signature = key_id + Ed25519PrivateKey.from_private_bytes(key).sign(digest)
-
-    return header + signature + encryption + contents
 
 
-def _check_version(version: Tuple[int, int]) -> None:
-    if version[0] != SCHEMA_VERSION[0]:
+def _check_version(version: Tuple[int, int], expected: Tuple[int, int]) -> None:
+    if version[0] != expected[0]:
         raise ConvertError(
             "Unsupported version {}.{}, expected {}.x.".format(
-                version[0], version[1], SCHEMA_VERSION[0]
+                version[0], version[1], expected[0]
             )
         )
 
 
-@dataclasses.dataclass(frozen=True, kw_only=True)
-class _Prefix:
-    """What comes before the metadata in an .asni file."""
+def _read_flags(data: bytes) -> int:
+    """Returns the flags of an .asni file, after checking its version
+    and that they are known.
 
-    version: Tuple[int, int]
-    flags: int
-    nonce: int | None
-    signed_by: bytes | None
-    signature: bytes
-    encrypted_with: bytes | None
-    iv: bytes
-    tag: bytes
-    size: int
+    """
 
-
-def _read_prefix(data: bytes) -> _Prefix:
     if len(data) < HEADER_SIZE:
         raise ConvertError("Expected an .asni or .asnst file.")
 
-    version = (data[4], data[5])
-    flags = int.from_bytes(data[6:8], "big")
-    _check_version(version)
+    _check_version((data[4], data[5]), ASNI_VERSION)
+    flags = int.from_bytes(data[6:HEADER_SIZE], "big")
 
     if flags & ~SUPPORTED_FLAGS:
         raise ConvertError("Unsupported flags 0x{:04x}.".format(flags))
 
-    nonce = None
-    signed_by = None
-    signature = b""
-    encrypted_with = None
-    iv = b""
-    tag = b""
-    offset = HEADER_SIZE
-
-    def take(size: int) -> bytes:
-        nonlocal offset
-
-        if offset + size > len(data):
-            raise ConvertError("Out of data.")
-
-        offset += size
-
-        return data[offset - size : offset]
-
-    if flags & FLAG_NONCE:
-        nonce = int.from_bytes(data[8:HEADER_SIZE], "big")
-
-    if flags & FLAG_SIGNED:
-        signed_by = take(KEY_ID_SIZE)
-        signature = take(SIGNATURE_SIZE)
-
-    if flags & FLAG_ENCRYPTED:
-        encrypted_with = take(KEY_ID_SIZE)
-        iv = take(IV_SIZE)
-        tag = take(TAG_SIZE)
-
-    return _Prefix(
-        version=version,
-        flags=flags,
-        nonce=nonce,
-        signed_by=signed_by,
-        signature=signature,
-        encrypted_with=encrypted_with,
-        iv=iv,
-        tag=tag,
-        size=offset,
-    )
+    return flags
 
 
 def _read_asni_header(data: bytes) -> Header:
-    prefix = _read_prefix(data)
-    metadata = None
-
-    # Not known without the key of an encrypted file.
-    if prefix.encrypted_with is None:
-        metadata = _metadata_from_primitive(
-            cbor.loads_first(data, prefix.size)[0], bool(prefix.flags & FLAG_BOUND)
-        )
+    flags = _read_flags(data)
 
     return Header(
         kind="asni",
-        version=prefix.version,
-        metadata=metadata,
-        nonce=prefix.nonce,
-        signed_by=prefix.signed_by,
-        encrypted_with=prefix.encrypted_with,
+        version=(data[4], data[5]),
+        metadata=_metadata_from_primitive(
+            cbor.loads_first(data, HEADER_SIZE)[0], bool(flags & FLAG_BOUND)
+        ),
     )
 
 
@@ -487,7 +275,7 @@ def _read_asnst(data: bytes) -> Tuple[Header, Any]:
     ):
         raise ConvertError("Expected the version of an .asnst file as two numbers.")
 
-    _check_version((version[0], version[1]))
+    _check_version((version[0], version[1]), SCHEMA_VERSION)
 
     return (
         Header(
@@ -497,33 +285,6 @@ def _read_asnst(data: bytes) -> Tuple[Header, Any]:
         ),
         contents.get("tree"),
     )
-
-
-def _check_nonce(nonce: int | None, check: NonceCheck, accept_any: bool) -> None:
-    """Raises an exception if given nonce of a file, which is None if
-    it has none to check, is not what it has to be.
-
-    """
-
-    if accept_any:
-        return
-
-    if check is None:
-        if nonce is not None:
-            raise ConvertError(
-                "The file has the nonce {} to check, but no nonce is expected.".format(
-                    nonce
-                )
-            )
-    elif nonce is None:
-        raise ConvertError("Expected a file with a nonce to check.")
-    elif callable(check):
-        if not check(nonce):
-            raise ConvertError(
-                "The nonce {} of the file is not accepted.".format(nonce)
-            )
-    elif isinstance(check, bool) or nonce != check:
-        raise ConvertError("Expected the nonce {}, but got {}.".format(check, nonce))
 
 
 def _check_binding(
@@ -558,76 +319,8 @@ def _check_binding(
 class _Checks:
     """What an .asni file has to be to be read."""
 
-    nonce: NonceCheck = None
-    accept_any_nonce: bool = False
     bound_to: str | None = None
     accept_any_binding: bool = False
-    verification_keys: Keys | None = None
-    accept_any_signature: bool = False
-    decryption_keys: Keys | None = None
-
-
-def _check_signature(data: bytes, prefix: _Prefix, checks: _Checks) -> None:
-    if checks.accept_any_signature:
-        return
-
-    if prefix.signed_by is None:
-        if checks.verification_keys is not None:
-            raise ConvertError("Expected a signed file.")
-
-        return
-
-    key = _find_key(checks.verification_keys, prefix.signed_by, "signed", "verify")
-    _import_cryptography("A signed", "signing")
-
-    from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-    # All of the file but the signature.
-    signature_offset = HEADER_SIZE + KEY_ID_SIZE
-    digest = hashlib.sha256(
-        data[:signature_offset] + data[signature_offset + SIGNATURE_SIZE :]
-    ).digest()
-
-    try:
-        Ed25519PublicKey.from_public_bytes(key).verify(prefix.signature, digest)
-    except InvalidSignature:
-        raise ConvertError("The signature of the file is wrong.")
-
-
-def _decrypt(data: bytes, prefix: _Prefix, checks: _Checks) -> bytes:
-    """Returns the metadata and the nodes of given file, decrypted if
-    they are encrypted.
-
-    """
-
-    contents = data[prefix.size :]
-
-    if prefix.encrypted_with is None:
-        if checks.decryption_keys is not None:
-            raise ConvertError("Expected an encrypted file.")
-
-        return contents
-
-    key = _find_key(
-        checks.decryption_keys, prefix.encrypted_with, "encrypted", "decrypt"
-    )
-    _import_cryptography("An encrypted", "encryption")
-
-    from cryptography.exceptions import InvalidTag
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-    try:
-        return AESGCM(key).decrypt(
-            prefix.iv,
-            contents + prefix.tag,
-            data[:HEADER_SIZE] + prefix.encrypted_with + prefix.iv,
-        )
-    except InvalidTag:
-        raise ConvertError(
-            "The file is not what was encrypted, or the key is not the one it "
-            "was encrypted with."
-        )
 
 
 def _read_asni(data: bytes | bytearray, checks: _Checks) -> Any:
@@ -639,20 +332,17 @@ def _read_asni(data: bytes | bytearray, checks: _Checks) -> Any:
 
         raise ConvertError("Expected an .asni file, but got an .asnst file.")
 
-    prefix = _read_prefix(data)
+    flags = _read_flags(data)
+    metadata, offset = cbor.loads_first(data, HEADER_SIZE)
+    metadata = _metadata_from_primitive(metadata, bool(flags & FLAG_BOUND))
 
-    # Before anything else in the file is looked at.
-    _check_signature(data, prefix, checks)
-    _check_nonce(prefix.nonce, checks.nonce, checks.accept_any_nonce)
-    contents = _decrypt(data, prefix, checks)
-    metadata, offset = cbor.loads_first(contents, 0)
-    metadata = _metadata_from_primitive(metadata, bool(prefix.flags & FLAG_BOUND))
+    # Before the nodes are looked at.
     _check_binding(metadata.bound_to, checks.bound_to, checks.accept_any_binding)
-    nodes, offset = cbor.loads_first(contents, offset)
+    nodes, offset = cbor.loads_first(data, offset)
 
-    if offset != len(contents):
+    if offset != len(data):
         raise ConvertError(
-            "Unexpected data after the nodes at offset {}.".format(prefix.size + offset)
+            "Unexpected data after the nodes at offset {}.".format(offset)
         )
 
     return nodes
@@ -661,9 +351,8 @@ def _read_asni(data: bytes | bytearray, checks: _Checks) -> Any:
 def read_header(data: bytes | bytearray) -> Header:
     """Returns the header of given contents of an ``.asni`` or
     ``.asnst`` file, with its metadata. Nothing of an ``.asni`` file
-    is checked: not its signature, not its nonce and not what it is
-    bound to. The metadata of an encrypted file is ``None``, as it is
-    not decrypted.
+    is checked but its version and its flags, and not what it is
+    bound to.
 
     >>> asnkitrt.syntax.read_header(data).metadata.sources
     (Source(name='foo.asn', sha256='8c3f...', text=None),)
@@ -740,77 +429,32 @@ def from_asnst_file(filename: str) -> SyntaxTree:
 def to_asni(
     compiled: CompiledSpecification,
     metadata: Metadata | None = None,
-    nonce: int | None = None,
-    signing_key: Key | None = None,
-    encryption_key: Key | None = None,
 ) -> bytes:
     """Encode given compiled specification as the contents of an
-    ``.asni`` file, with given metadata.
-
-    Give `nonce` as a number of at most 24 bits for a file with a
-    nonce to check.
-
-    Give `signing_key` for a signed file, as the identifier of the
-    key, of 16 bytes, and the Ed25519 private key, of 32 bytes. Give
-    `encryption_key` for an encrypted file, as the identifier of the
-    key, of 16 bytes, and the AES-256 key, of 32 bytes. Both need the
-    cryptography package.
+    ``.asni`` file, with given metadata. The file is bound to what
+    the metadata tells, if anything.
 
     >>> with open('foo.asni', 'wb') as fout:
     ...     fout.write(asnkitrt.syntax.to_asni(compiled))
 
     """
 
-    return _write_asni(
-        metadata, to_compact(compiled), nonce, signing_key, encryption_key
-    )
+    return _write_asni(metadata, to_compact(compiled))
 
 
 def from_asni(
     data: bytes | bytearray,
-    nonce: NonceCheck = None,
-    accept_any_nonce: bool = False,
+    *,
     bound_to: str | None = None,
     accept_any_binding: bool = False,
-    verification_keys: Keys | None = None,
-    accept_any_signature: bool = False,
-    decryption_keys: Keys | None = None,
 ) -> CompiledSpecification:
     """Decode given contents of an ``.asni`` file, as returned by
     :func:`to_asni()`, to a compiled specification.
-
-    `nonce` is what the nonce of the file has to be: a number it has
-    to be the same as, or a function that is given it and returns
-    ``True`` if it will do, as ``lambda nonce: nonce > last``. A file
-    without a nonce to check is then not read. A file with a nonce to
-    check is not read if `nonce` is not given. With `accept_any_nonce`
-    as ``True`` a file is read whatever its nonce, and whether it has
-    one to check or not.
-
-    A function given as `nonce` must not keep the nonce it is given,
-    as the file may still be found to be bad. Keep that of
-    :func:`read_header()` once the file has been read instead.
 
     `bound_to` is what the file has to be bound to. A file that is
     not bound is then not read. A bound file is not read if `bound_to`
     is not given. With `accept_any_binding` as ``True`` a file is read
     whatever it is bound to, and whether it is bound or not.
-
-    `verification_keys` are the Ed25519 public keys of those trusted
-    to sign files, as a dictionary of the identifier of each key, of
-    16 bytes, to the key, of 32 bytes. A file is then only read if
-    signed with one of them. A signed file is not read if
-    `verification_keys` is not given. With `accept_any_signature` as
-    ``True`` a file is read without its signature being checked, and
-    whether it is signed or not.
-
-    `decryption_keys` are the AES-256 keys to decrypt files with, as
-    a dictionary of the identifier of each key, of 16 bytes, to the
-    key, of 32 bytes. A file is then only read if encrypted with one
-    of them. An encrypted file is not read if `decryption_keys` is not
-    given.
-
-    Signed and encrypted files need the cryptography package.
 
     >>> compiled = asnkitrt.syntax.from_asni(data)
 
@@ -819,15 +463,7 @@ def from_asni(
     compiled = from_compact(
         _read_asni(
             data,
-            _Checks(
-                nonce=nonce,
-                accept_any_nonce=accept_any_nonce,
-                bound_to=bound_to,
-                accept_any_binding=accept_any_binding,
-                verification_keys=verification_keys,
-                accept_any_signature=accept_any_signature,
-                decryption_keys=decryption_keys,
-            ),
+            _Checks(bound_to=bound_to, accept_any_binding=accept_any_binding),
         )
     )
 
@@ -839,13 +475,9 @@ def from_asni(
 
 def from_asni_file(
     filename: str,
-    nonce: NonceCheck = None,
-    accept_any_nonce: bool = False,
+    *,
     bound_to: str | None = None,
     accept_any_binding: bool = False,
-    verification_keys: Keys | None = None,
-    accept_any_signature: bool = False,
-    decryption_keys: Keys | None = None,
 ) -> CompiledSpecification:
     """Same as :func:`from_asni()`, but for the ``.asni`` file with
     given name.
@@ -856,12 +488,5 @@ def from_asni_file(
 
     with open(filename, "rb") as fin:
         return from_asni(
-            fin.read(),
-            nonce,
-            accept_any_nonce,
-            bound_to,
-            accept_any_binding,
-            verification_keys,
-            accept_any_signature,
-            decryption_keys,
+            fin.read(), bound_to=bound_to, accept_any_binding=accept_any_binding
         )

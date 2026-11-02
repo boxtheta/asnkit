@@ -38,9 +38,6 @@
 //! # Features
 //!
 //! - `std`, on by default.
-//! - `signing` and `encryption`, on by default, to load `.asni` files
-//!   that are signed or encrypted. A device that is sent its
-//!   specifications builds with `default-features = false` and these.
 //! - `serde`, on by default, for [`serde_value::to_value`] and
 //!   [`serde_value::from_value`].
 //! - `jer`, `xer` and `gser`, on by default, for the text codecs.

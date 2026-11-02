@@ -6,9 +6,6 @@
 //! `asnkitrt.syntax.container` does: the part of CBOR (RFC 8949) they use,
 //! in the shortest form, and the header of an `.asni` file.
 
-use aes_gcm::aead::{AeadInPlace, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
-use ed25519_dalek::{Signer, SigningKey};
 use num_bigint::BigUint;
 use serde_json::Value as Json;
 use sha2::{Digest, Sha256};
@@ -25,53 +22,12 @@ const MAJOR_SIMPLE: u8 = 7;
 const TAG_POSITIVE_BIGNUM: u64 = 2;
 const TAG_NEGATIVE_BIGNUM: u64 = 3;
 
-const SCHEMA_VERSION: (u8, u8) = (1, 0);
-const FLAG_SIGNED: u16 = 1;
-const FLAG_ENCRYPTED: u16 = 1 << 1;
-const FLAG_BOUND: u16 = 1 << 3;
-const FLAG_NONCE: u16 = 1 << 2;
-pub const NONCE_MAXIMUM: u32 = (1 << 24) - 1;
+/// The version of an `.asni` file, of its header and its nodes.
+const ASNI_VERSION: (u8, u8) = (2, 0);
+/// The version of an `.asnst` file, of its map and its nodes.
+const ASNST_VERSION: (u8, u8) = (1, 0);
+const FLAG_BOUND: u16 = 1;
 pub const BOUND_TO_MAXIMUM_SIZE: usize = 255;
-pub const KEY_ID_SIZE: usize = 16;
-pub const KEY_SIZE: usize = 32;
-pub const IV_SIZE: usize = 12;
-pub const TAG_SIZE: usize = 16;
-const HEADER_SIZE: usize = 11;
-
-/// A key with its identifier: an Ed25519 private key to sign with, or an
-/// AES-256 key to encrypt with.
-#[derive(Debug, Clone)]
-pub struct Key {
-    pub id: [u8; KEY_ID_SIZE],
-    pub key: [u8; KEY_SIZE],
-}
-
-/// What a file is signed and encrypted with, if anything.
-#[derive(Debug, Clone, Default)]
-pub struct Protection {
-    pub signing_key: Option<Key>,
-    pub encryption_key: Option<Key>,
-    /// The initialization vector. Never to be given but to test, as a
-    /// vector used twice with a key makes it worthless; a random one is
-    /// made if not given.
-    pub iv: Option<[u8; IV_SIZE]>,
-}
-
-/// The identifier of a key as the compiler of Python makes it: the first
-/// bytes of the SHA-256 of an AES key, or of the public key of an Ed25519
-/// private key, so that those verifying find it from the key they hold.
-pub fn derive_key_id(key: &[u8; KEY_SIZE], signing: bool) -> [u8; KEY_ID_SIZE] {
-    let digest = if signing {
-        Sha256::digest(SigningKey::from_bytes(key).verifying_key().as_bytes())
-    } else {
-        Sha256::digest(key)
-    };
-
-    let mut id = [0; KEY_ID_SIZE];
-    id.copy_from_slice(&digest[..KEY_ID_SIZE]);
-
-    id
-}
 
 /// What the files tell of where they come from.
 #[derive(Debug, Clone, Default)]
@@ -247,98 +203,22 @@ fn encode_metadata(metadata: &Metadata, out: &mut Vec<u8>) -> Result<(), String>
     Ok(())
 }
 
-/// The contents of an `.asni` file that is not signed or encrypted.
-pub fn write_asni(
-    metadata: &Metadata,
-    nodes: &Json,
-    nonce: Option<u32>,
-    protection: &Protection,
-) -> Result<Vec<u8>, String> {
-    let mut flags = 0u16;
-
-    if protection.signing_key.is_some() {
-        flags |= FLAG_SIGNED;
-    }
-
-    if protection.encryption_key.is_some() {
-        flags |= FLAG_ENCRYPTED;
-    }
-
-    if metadata.bound_to.is_some() {
-        flags |= FLAG_BOUND;
-    }
-
-    let nonce_value = match nonce {
-        None => 0,
-        Some(nonce) if nonce <= NONCE_MAXIMUM => {
-            flags |= FLAG_NONCE;
-
-            nonce
-        }
-        Some(nonce) => {
-            return Err(format!(
-                "Expected a nonce of 0 to {NONCE_MAXIMUM}, but got {nonce}."
-            ));
-        }
+/// The contents of an `.asni` file.
+pub fn write_asni(metadata: &Metadata, nodes: &Json) -> Result<Vec<u8>, String> {
+    let flags = if metadata.bound_to.is_some() {
+        FLAG_BOUND
+    } else {
+        0
     };
 
     let mut out = b"ASNI".to_vec();
-    out.push(SCHEMA_VERSION.0);
-    out.push(SCHEMA_VERSION.1);
+    out.push(ASNI_VERSION.0);
+    out.push(ASNI_VERSION.1);
     out.extend_from_slice(&flags.to_be_bytes());
-    out.extend_from_slice(&nonce_value.to_be_bytes()[1..]);
-    let header = out;
-    let mut contents = Vec::new();
-    encode_metadata(metadata, &mut contents)?;
-    encode(nodes, &mut contents);
-    let mut encryption = Vec::new();
+    encode_metadata(metadata, &mut out)?;
+    encode(nodes, &mut out);
 
-    // Encrypted first and then signed, so that the signature is checked
-    // without the key to decrypt with.
-    if let Some(key) = &protection.encryption_key {
-        let iv = match protection.iv {
-            Some(iv) => iv,
-            None => {
-                let mut iv = [0; IV_SIZE];
-                getrandom::fill(&mut iv).map_err(|error| format!("No random bytes: {error}."))?;
-
-                iv
-            }
-        };
-        let mut aad = header.clone();
-        aad.extend_from_slice(&key.id);
-        aad.extend_from_slice(&iv);
-        let tag = Aes256Gcm::new((&key.key).into())
-            .encrypt_in_place_detached(Nonce::from_slice(&iv), &aad, &mut contents)
-            .map_err(|_| "Could not encrypt.".to_string())?;
-
-        encryption.extend_from_slice(&key.id);
-        encryption.extend_from_slice(&iv);
-        encryption.extend_from_slice(&tag);
-        debug_assert_eq!(encryption.len(), KEY_ID_SIZE + IV_SIZE + TAG_SIZE);
-    }
-
-    let mut signature = Vec::new();
-
-    if let Some(key) = &protection.signing_key {
-        debug_assert_eq!(header.len(), HEADER_SIZE);
-        let mut hash = Sha256::new();
-        hash.update(&header);
-        hash.update(key.id);
-        hash.update(&encryption);
-        hash.update(&contents);
-        let digest = hash.finalize();
-
-        signature.extend_from_slice(&key.id);
-        signature.extend_from_slice(&SigningKey::from_bytes(&key.key).sign(&digest).to_bytes());
-    }
-
-    let mut file = header;
-    file.extend_from_slice(&signature);
-    file.extend_from_slice(&encryption);
-    file.extend_from_slice(&contents);
-
-    Ok(file)
+    Ok(out)
 }
 
 /// The contents of an `.asnst` file.
@@ -353,8 +233,8 @@ pub fn write_asnst(metadata: &Metadata, tree: &Json) -> Result<Vec<u8>, String> 
     encode_text("asnst", &mut out);
     encode_text("version", &mut out);
     encode_head(MAJOR_ARRAY, 2, &mut out);
-    encode_head(MAJOR_UNSIGNED, u64::from(SCHEMA_VERSION.0), &mut out);
-    encode_head(MAJOR_UNSIGNED, u64::from(SCHEMA_VERSION.1), &mut out);
+    encode_head(MAJOR_UNSIGNED, u64::from(ASNST_VERSION.0), &mut out);
+    encode_head(MAJOR_UNSIGNED, u64::from(ASNST_VERSION.1), &mut out);
     encode_text("metadata", &mut out);
     encode_metadata(metadata, &mut out)?;
     encode_text("tree", &mut out);
@@ -419,89 +299,27 @@ mod tests {
     }
 
     #[test]
-    fn the_header_of_a_file_is_the_magic_the_version_the_flags_and_the_nonce() {
-        let file = write_asni(
-            &Metadata::default(),
-            &Json::Null,
-            None,
-            &Protection::default(),
-        )
-        .unwrap();
+    fn the_header_of_a_file_is_the_magic_the_version_and_the_flags() {
+        let file = write_asni(&Metadata::default(), &Json::Null).unwrap();
 
-        assert_eq!(&file[..12], b"ASNI\x01\x00\x00\x00\x00\x00\x00\xa0");
+        assert_eq!(&file[..9], b"ASNI\x02\x00\x00\x00\xa0");
 
         let metadata = Metadata {
             bound_to: Some("corpus".to_string()),
             ..Metadata::default()
         };
-        let file = write_asni(&metadata, &Json::Null, Some(5), &Protection::default()).unwrap();
+        let file = write_asni(&metadata, &Json::Null).unwrap();
 
-        assert_eq!(&file[..11], b"ASNI\x01\x00\x00\x0c\x00\x00\x05");
-    }
-
-    fn from_hex(text: &str) -> Vec<u8> {
-        (0..text.len())
-            .step_by(2)
-            .map(|index| u8::from_str_radix(&text[index..index + 2], 16).unwrap())
-            .collect()
-    }
-
-    /// Made by `asnkitrt.syntax.container` with the same keys and the same
-    /// initialization vector.
-    #[test]
-    fn a_signed_and_encrypted_file_is_that_of_python() {
-        let metadata = Metadata {
-            generator: Some("asnkit 1.0.0".to_string()),
-            bound_to: Some("x".to_string()),
-            ..Metadata::default()
-        };
-        let protection = Protection {
-            signing_key: Some(Key {
-                id: [0; KEY_ID_SIZE],
-                key: std::array::from_fn(|index| index as u8),
-            }),
-            encryption_key: Some(Key {
-                id: [1; KEY_ID_SIZE],
-                key: std::array::from_fn(|index| 100 + index as u8),
-            }),
-            iv: Some(std::array::from_fn(|index| 1 + index as u8)),
-        };
-        let nodes: Json = serde_json::from_str("[1, 2, 3]").unwrap();
-
-        assert_eq!(
-            write_asni(&metadata, &nodes, Some(9), &protection).unwrap(),
-            from_hex(
-                "41534e490100000f00000900000000000000000000000000000000338dce481fcdf988acfd58f932745d4b587da000b74293acb40f530fc9e991c3788be8300d1a4fda3bfc474ab59b7cc59f2a3065956929b453e0f1ec63a9f50a010101010101010101010101010101010102030405060708090a0b0c82e1043d8ea383a3ef4968b92f3907058204e02bc60b2cc31799248e27dab76a5812e7f93b6b0dce76d21659285768d6b33a15e8487448"
-            )
-        );
+        assert_eq!(&file[..8], b"ASNI\x02\x00\x00\x01");
     }
 
     #[test]
-    fn the_iv_is_random_if_not_given() {
-        let protection = Protection {
-            encryption_key: Some(Key {
-                id: [1; KEY_ID_SIZE],
-                key: [2; KEY_SIZE],
-            }),
-            ..Protection::default()
-        };
-        let write = || write_asni(&Metadata::default(), &Json::Null, None, &protection).unwrap();
+    fn a_syntax_tree_keeps_its_own_version() {
+        let file = write_asnst(&Metadata::default(), &Json::Null).unwrap();
+        let mut version = Vec::new();
+        encode_text("version", &mut version);
+        version.extend([0x82, 0x01, 0x00]);
 
-        assert_ne!(
-            write()[11 + KEY_ID_SIZE..][..IV_SIZE],
-            write()[11 + KEY_ID_SIZE..][..IV_SIZE]
-        );
-    }
-
-    #[test]
-    fn key_ids_are_derived_as_python_does() {
-        // The first bytes of the SHA-256 of the key, or of its public key.
-        let key = [7; KEY_SIZE];
-
-        assert_eq!(
-            derive_key_id(&key, false)[..],
-            Sha256::digest(key)[..KEY_ID_SIZE]
-        );
-        assert_ne!(derive_key_id(&key, true), derive_key_id(&key, false));
+        assert!(file.windows(version.len()).any(|window| window == version));
     }
 }

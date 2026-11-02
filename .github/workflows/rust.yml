@@ -191,7 +191,7 @@ jobs:
     - name: Build for a device
       run: |
         cargo build --locked -p asnkitrt --no-default-features --target thumbv7em-none-eabi
-        cargo build --locked -p asnkitrt --no-default-features --features signing,encryption,serde --target thumbv7em-none-eabi
+        cargo build --locked -p asnkitrt --no-default-features --features serde --target thumbv7em-none-eabi
         cargo build --locked -p asnkitrt --no-default-features --features jer,gser --target thumbv7em-none-eabi
 
   # What the plugin makes with `no_std=true` has to build where there is no std.
@@ -297,7 +297,7 @@ jobs:
     - name: Try X.509 with the runtime in Rust and what the Rust compiler makes
       run: |
         ASNKIT_RFC5280_ASNI="$RUNNER_TEMP/rfc5280.asni" cargo test --locked -p asnkitrt --test x509
-    - name: Read signed and encrypted files with the runtime of Python
+    - name: Read what the Rust compiler makes with the runtime of Python
       run: |
         ASNKIT_RUST_BINARY="$PWD/target/release/asnkitcc" \
             uv run python -m unittest tests.test_rust_cli

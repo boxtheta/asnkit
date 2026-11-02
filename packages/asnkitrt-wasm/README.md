@@ -6,8 +6,7 @@ compiled to WebAssembly, with a small JavaScript API. It loads the
 ASN.1, without parsing ASN.1 itself.
 
 The codecs are BER, DER, OER, PER, UPER, JER and XER. It can also check
-values against their constraints, and load signed, encrypted and bound
-`.asni` files.
+values against their constraints, and load bound `.asni` files.
 
 ```js
 import { load } from 'asnkitrt';
@@ -63,11 +62,8 @@ string for JER and XER.
 
 - `load(asni, codec = 'ber', options)` loads the contents of an `.asni`
   file. The options are those of `asnkitrt.load_asni()` in Python, in
-  camel case: `numericEnums`, `lenient`, `nonce` (a number, or a
-  function that returns whether a nonce is accepted), `acceptAnyNonce`,
-  `boundTo`, `acceptAnyBinding`, `verificationKeys`,
-  `acceptAnySignature` and `decryptionKeys`. Keys are `[id, key]` pairs
-  of `Uint8Array`s, as a `Map` or an array.
+  camel case: `numericEnums`, `lenient`, `boundTo` and
+  `acceptAnyBinding`.
 - `spec.encode(name, value, options)` and `spec.decode(name, data,
   options)`. The options are `checkConstraints`, `module` for a type
   name that more than one module defines, and, for `encode()` of JER

@@ -3,8 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 // What the vectors do not show: the values of JavaScript the runtime
-// takes and gives, its errors, and the checks of signed, encrypted and
-// bound files.
+// takes and gives, its errors, and the checks of bound files.
 
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
@@ -256,56 +255,37 @@ describe('codecs', () => {
   });
 });
 
-describe('files that are signed, encrypted or bound', () => {
+describe('files that are bound', () => {
   const read = (name) => readFileSync(new URL(name, CORPUS));
-  const key = (name) => bytes(readFileSync(new URL(name, CORPUS), 'utf-8').trim());
-  const verificationKeys = [[bytes('d543cae4811fc8b033704dc6e7896ff7'), key('signing.pub')]];
-  const decryptionKeys = new Map([[bytes('16cde2f77598fc5472df7570a510f54d'), key('encryption.key')]]);
   const question = { id: 1, question: 'Is 1+1=3?' };
 
   test('are only loaded when told what to expect', () => {
-    for (const name of ['signed.asni', 'encrypted.asni', 'bound.asni']) {
-      assert.throws(() => new Specification(read(name)), { name: 'LoadError' }, name);
-    }
-
-    assert.throws(() => new Specification(read('plain.asni'), 'ber', { verificationKeys }), {
+    assert.throws(() => new Specification(read('bound.asni')), { name: 'LoadError' });
+    assert.throws(() => new Specification(read('plain.asni'), 'ber', { boundTo: 'corpus' }), {
       name: 'LoadError',
     });
   });
 
-  test('are loaded with the keys and the binding', () => {
-    const files = {
-      'signed.asni': { verificationKeys },
-      'encrypted.asni': { decryptionKeys },
-      'bound.asni': { boundTo: 'corpus' },
-      'signed-encrypted-bound.asni': { verificationKeys, decryptionKeys, boundTo: 'corpus' },
-    };
+  test('are loaded with the binding', () => {
+    const spec = new Specification(read('bound.asni'), 'uper', { boundTo: 'corpus' });
 
-    for (const [name, options] of Object.entries(files)) {
-      const spec = new Specification(read(name), 'uper', options);
-
-      assert.deepEqual(roundTrip(spec, 'Question', question), question, name);
-    }
+    assert.deepEqual(roundTrip(spec, 'Question', question), question);
   });
 
-  test('are refused with other keys or another binding', () => {
-    const other = [[bytes('d543cae4811fc8b033704dc6e7896ff7'), new Uint8Array(32).fill(1)]];
-
-    assert.throws(() => new Specification(read('signed.asni'), 'ber', { verificationKeys: other }), {
-      name: 'LoadError',
-    });
+  test('are refused with another binding', () => {
     assert.throws(() => new Specification(read('bound.asni'), 'ber', { boundTo: 'elsewhere' }), {
       name: 'LoadError',
     });
-    new Specification(read('signed.asni'), 'ber', { acceptAnySignature: true });
     new Specification(read('bound.asni'), 'ber', { acceptAnyBinding: true });
   });
 
-  test('take keys of the right sizes only', () => {
-    assert.throws(
-      () => new Specification(read('signed.asni'), 'ber', { verificationKeys: [[bytes('00'), bytes('00')]] }),
-      TypeError,
-    );
+  test('the options of a nonce, a signature and encryption are refused', () => {
+    for (const key of ['nonce', 'acceptAnyNonce', 'verificationKeys', 'acceptAnySignature', 'decryptionKeys']) {
+      assert.throws(() => new Specification(read('plain.asni'), 'ber', { [key]: true }), {
+        name: 'TypeError',
+        message: new RegExp(`'${key}' is no longer supported`),
+      });
+    }
   });
 });
 

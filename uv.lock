@@ -87,21 +87,6 @@ name = "asnkitrt"
 version = "2.0.0rc3"
 source = { editable = "packages/asnkitrt" }
 
-[package.optional-dependencies]
-encryption = [
-    { name = "cryptography" },
-]
-signing = [
-    { name = "cryptography" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", marker = "extra == 'encryption'", specifier = ">=43" },
-    { name = "cryptography", marker = "extra == 'signing'", specifier = ">=43" },
-]
-provides-extras = ["signing", "encryption"]
-
 [[package]]
 name = "ast-serialize"
 version = "0.12.1"

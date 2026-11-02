@@ -19,11 +19,8 @@ categories = ["encoding", "no-std", "parser-implementations"]
 exclude = ["tests/", "fuzz/", "benches/", "examples/"]
 
 [features]
-default = ["std", "signing", "encryption", "serde", "jer", "xer", "gser", "bigint"]
-std = ["sha2?/std", "ed25519-dalek?/std", "aes-gcm?/std", "serde?/std"]
-# To load signed and encrypted .asni files. Nothing else needs them.
-signing = ["dep:sha2", "dep:ed25519-dalek"]
-encryption = ["dep:aes-gcm"]
+default = ["std", "serde", "jer", "xer", "gser", "bigint"]
+std = ["serde?/std"]
 # Values to and from the types of serde, see `serde_value`.
 serde = ["dep:serde"]
 # The text codecs: JER (JSON) and XER (XML).
@@ -37,9 +34,6 @@ gser = []
 bigint = ["std", "dep:num-bigint"]
 
 [dependencies]
-aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"], optional = true }
-ed25519-dalek = { version = "2", default-features = false, optional = true }
-sha2 = { version = "0.10", default-features = false, optional = true }
 serde = { version = "1", default-features = false, features = ["alloc"], optional = true }
 quick-xml = { version = "0.42", default-features = false, optional = true }
 num-bigint = { version = "0.4", optional = true }
@@ -47,10 +41,6 @@ num-bigint = { version = "0.4", optional = true }
 [[test]]
 name = "serde"
 required-features = ["serde"]
-
-[[test]]
-name = "corpus"
-required-features = ["signing", "encryption"]
 
 # See benches/harness/mod.rs.
 [[bench]]

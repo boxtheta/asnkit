@@ -10,9 +10,8 @@ as `.asni` files in `tests/fixtures`, named after the digest of what
 they were made from. So the tests need no compiler: they load the
 files with `asnkitrt`, as an application does.
 
-A file that is nonce-checked, bound, signed or encrypted is made from the
-plain one with the writer of `asnkitrt.syntax`, as the keys of the tests
-are known and nothing of the compiler is tried by it.
+A file that is bound is made from the plain one with the writer of
+`asnkitrt.syntax`, as nothing of the compiler is tried by it.
 
 A fixture that is not there is made when the binary of `asnkitcc` is
 found, in `ASNKITCC` or in `target/release` or `target/debug`:
@@ -156,18 +155,9 @@ def _sources(files: str | list[str]) -> list[tuple[str, str]]:
 def _protected(
     plain: bytes,
     metadata: Any = None,
-    nonce: int | None = None,
     bound_to: str | None = None,
-    signing_key: tuple[bytes, bytes] | None = None,
-    encryption_key: tuple[bytes, bytes] | None = None,
 ) -> bytes:
-    if (
-        metadata is None
-        and nonce is None
-        and bound_to is None
-        and signing_key is None
-        and encryption_key is None
-    ):
+    if metadata is None and bound_to is None:
         return plain
 
     if metadata is None:
@@ -176,9 +166,7 @@ def _protected(
     if bound_to is not None:
         metadata = dataclasses.replace(metadata, bound_to=bound_to)
 
-    return asnkitrt.syntax.to_asni(
-        asnkitrt.syntax.from_asni(plain), metadata, nonce, signing_key, encryption_key
-    )
+    return asnkitrt.syntax.to_asni(asnkitrt.syntax.from_asni(plain), metadata)
 
 
 def compile_string_to_asni(string: str, **options: Any) -> bytes:

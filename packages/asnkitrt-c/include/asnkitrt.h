@@ -59,7 +59,7 @@ typedef int asnkit_status;
 enum {
     ASNKIT_OK = 0,
     /* The .asni file could not be read, or was not what the load
-     * options expect: signed, encrypted, bound or with a nonce. */
+     * options expect: bound or not. */
     ASNKIT_ERROR_LOAD = 1,
     /* A value that can not be encoded as its type. */
     ASNKIT_ERROR_ENCODE = 2,
@@ -108,17 +108,9 @@ void asnkit_bytes_free(uint8_t *data, size_t length);
 typedef struct asnkit_spec asnkit_spec;
 
 /* What a file has to be to be loaded, and how it is. By default only a
- * file that is not signed, not encrypted, with no nonce and not bound is
- * loaded; see docs/file_formats.md. The setters return
+ * file that is not bound is loaded; see docs/file_formats.md. The setters return
  * ASNKIT_ERROR_ARGUMENT for a NULL argument. */
 typedef struct asnkit_load_options asnkit_load_options;
-
-/* The sizes of the ids of keys and of keys, in bytes. */
-#define ASNKIT_KEY_ID_SIZE 16
-#define ASNKIT_KEY_SIZE 32
-
-/* Tells if `nonce` is accepted, with nonzero. */
-typedef int (*asnkit_nonce_callback)(uint32_t nonce, void *context);
 
 asnkit_load_options *asnkit_load_options_new(void);
 void asnkit_load_options_free(asnkit_load_options *options);
@@ -128,36 +120,10 @@ asnkit_status asnkit_load_options_set_numeric_enums(asnkit_load_options *options
 /* DER decodes what BER allows. */
 asnkit_status asnkit_load_options_set_lenient(asnkit_load_options *options, int lenient);
 
-/* Loads a file with a nonce, only if it is this one. */
-asnkit_status asnkit_load_options_set_nonce(asnkit_load_options *options, uint32_t nonce);
-/* Loads a file with a nonce, only if `accept` accepts it. It is called
- * while asnkit_spec_load() runs, with `context`. */
-asnkit_status asnkit_load_options_set_nonce_callback(asnkit_load_options *options,
-                                                     asnkit_nonce_callback accept,
-                                                     void *context);
-/* Loads a file whatever its nonce is. */
-asnkit_status asnkit_load_options_set_accept_any_nonce(asnkit_load_options *options);
-
 /* Loads a file only if it is bound to `bound_to`, which is copied. */
 asnkit_status asnkit_load_options_set_bound_to(asnkit_load_options *options, const char *bound_to);
 /* Loads a file whatever it is bound to. */
 asnkit_status asnkit_load_options_set_accept_any_binding(asnkit_load_options *options);
-
-/* Loads a file only if it is signed by one of the Ed25519 public keys
- * added, of ASNKIT_KEY_ID_SIZE and ASNKIT_KEY_SIZE bytes, which are
- * copied. */
-asnkit_status asnkit_load_options_add_verification_key(asnkit_load_options *options,
-                                                       const uint8_t *id,
-                                                       const uint8_t *public_key);
-/* Loads a file whether it is signed or not, and does not check the
- * signature. For looking at a file. */
-asnkit_status asnkit_load_options_set_accept_any_signature(asnkit_load_options *options);
-
-/* Loads a file only if it is encrypted with one of the AES-256 keys
- * added, which are copied. */
-asnkit_status asnkit_load_options_add_decryption_key(asnkit_load_options *options,
-                                                     const uint8_t *id,
-                                                     const uint8_t *secret_key);
 
 /* Loads the `length` bytes of an .asni file for `codec`: "ber", "der",
  * "oer", "per", "uper", "jer", "xer" or "gser", or "ber"

@@ -36,22 +36,20 @@ let decoded = foo.decode("Question", &encoded)?;
   `Value::into_owned()` or `Specification::decode_owned()` give a
   `Value<'static>` to keep past them. `from_value` can borrow too, into
   a `&'a str` or a `&'a [u8]`.
-- **Protected files** (signed, encrypted, bound or with a nonce) only
-  load when the caller says what to expect; see `container::Checks`.
+- **Bound files** only load when the caller says what to expect; see
+  `container::Checks`.
 - **Untrusted input** never causes a panic: decoding returns a value or
   an error, in time and memory proportional to the input, with nesting
   limited. This applies to JSON and XML too. XML with a document type
   declaration is rejected, so there are no entities to expand.
-- **Embedded targets** build with `default-features = false`, adding
-  `signing` and `encryption` if they receive signed or encrypted files.
-  CI builds it for `thumbv7em-none-eabi`.
+- **Embedded targets** build with `default-features = false`. CI builds
+  it for `thumbv7em-none-eabi`.
 
 ## Features
 
 | Feature | Purpose | Default |
 |---|---|---|
 | `std` | `std::error::Error` and similar | yes |
-| `signing`, `encryption` | Loading signed or encrypted `.asni` files | yes |
 | `serde` | `serde_value::{to_value, from_value}` and related types | yes |
 | `jer` | JSON Encoding Rules, with no extra dependency | yes |
 | `xer` | XML Encoding Rules, using `quick-xml`; needs `std` | yes |
@@ -90,8 +88,9 @@ where the same program without the runtime is 295.5 KiB:
 | `std`, `jer`, `xer`, `gser` | 12,314 | 796.7 KiB | 501.2 KiB | +129.2 KiB |
 | default | 13,751 | 861.3 KiB | 565.8 KiB | +193.9 KiB |
 
-`xer` includes `quick-xml`, and the default features add `signing`,
-`encryption` and `bigint` with their dependencies. `serde` adds lines
+`xer` includes `quick-xml`, and the default features add `bigint` with
+its dependency. The default row was measured when the default features
+also had `signing` and `encryption`, which have since been removed. `serde` adds lines
 but nothing to a program that does not call `to_value` or
 `from_value`.
 
@@ -105,8 +104,6 @@ On a device (`thumbv7em-none-eabi`, a Cortex-M4 or M7, `opt-level =
 | `jer` | 10,693 | 229.5 KiB | +26.9 KiB |
 | `gser` | 10,641 | 232.3 KiB | +29.7 KiB |
 | `jer`, `gser` | 11,513 | 243.1 KiB | +40.5 KiB |
-| `signing`, `encryption` | 9,578 | 235.5 KiB | +32.9 KiB |
-| `signing`, `encryption`, `jer`, `gser` | 11,538 | 276.1 KiB | +73.4 KiB |
 
 `xer` and `bigint` need `std` and are not available there. These flash
 figures cover the probe, not the rest of an application or its firmware.

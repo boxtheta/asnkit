@@ -27,12 +27,7 @@ the name of the source file, which a text does not have.
 
 - `compile(specification, options)` returns the contents of an `.asni`
   file as a `Uint8Array`. The text has one module or more. The options
-  are those of `asnkitcc compile`, in camel case: `nonce`, `boundTo`,
-  `signingKey`, `signingKeyId`, `encryptionKey` and `encryptionKeyId`.
-  Keys are `Uint8Array`s of 32 bytes, and their identifiers of 16 bytes,
-  derived from the key as `asnkitcc` does if not given. The
-  initialization vector of an encrypted file comes from
-  `crypto.getRandomValues()`.
+  are those of `asnkitcc compile`, in camel case: `boundTo`.
 - `compileWithSummary(specification, options)` returns `{ asni,
   modules }`, with the `name`, `types` and `objectClasses` of each
   module.

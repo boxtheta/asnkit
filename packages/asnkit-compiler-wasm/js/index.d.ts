@@ -4,18 +4,8 @@
 
 /** How an `.asni` file is made, as the options of `asnkitcc compile`. */
 export interface CompileOptions {
-  /** A number from 0 to 2^24 - 1 the runtime is to check. */
-  nonce?: number;
   /** What the file is bound to, which the runtime is to check. */
   boundTo?: string;
-  /** The Ed25519 private key to sign with, of 32 bytes. */
-  signingKey?: Uint8Array;
-  /** Its identifier, of 16 bytes, derived from the key if not given. */
-  signingKeyId?: Uint8Array;
-  /** The AES-256 key to encrypt with, of 32 bytes. */
-  encryptionKey?: Uint8Array;
-  /** Its identifier, of 16 bytes, derived from the key if not given. */
-  encryptionKeyId?: Uint8Array;
 }
 
 /** What a compiled module has. */

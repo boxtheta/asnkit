@@ -59,27 +59,15 @@ export type Value =
   | Value[]
   | { [member: string]: Value };
 
-/** A key and its identifier, of 16 and 32 bytes. */
-export type KeyPair = [id: Uint8Array, key: Uint8Array];
-
 /** What an `.asni` file has to be to be loaded, and how. */
 export interface LoadOptions {
   /** ENUMERATED values are numbers and not names. */
   numericEnums?: boolean;
   /** DER decodes what BER allows. */
   lenient?: boolean;
-  /** The nonce the file has to have, or a function that tells if one is accepted. */
-  nonce?: number | ((nonce: number) => boolean);
-  acceptAnyNonce?: boolean;
   /** What the file has to be bound to. */
   boundTo?: string;
   acceptAnyBinding?: boolean;
-  /** The Ed25519 public keys of which one has to have signed the file. */
-  verificationKeys?: Iterable<KeyPair>;
-  /** Loads a signed file without checking the signature. */
-  acceptAnySignature?: boolean;
-  /** The AES-256 keys to decrypt the file with. */
-  decryptionKeys?: Iterable<KeyPair>;
 }
 
 export interface CodecOptions {

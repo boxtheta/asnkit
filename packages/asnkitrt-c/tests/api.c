@@ -61,35 +61,6 @@ static int text_is(const asnkit_value *value, const char *expected)
            && memcmp(text, expected, length) == 0;
 }
 
-static void hex(const char *text, uint8_t *bytes, size_t length)
-{
-    size_t i;
-    unsigned int byte;
-
-    CHECK(strlen(text) >= 2 * length);
-
-    for (i = 0; i < length; i++) {
-        CHECK(sscanf(text + 2 * i, "%2x", &byte) == 1);
-        bytes[i] = (uint8_t) byte;
-    }
-}
-
-/* The key in hexadecimal in the file `name` of the corpus. */
-static void read_key(const char *name, uint8_t key[ASNKIT_KEY_SIZE])
-{
-    char path[4096];
-    char text[2 * ASNKIT_KEY_SIZE + 1];
-    FILE *file;
-
-    snprintf(path, sizeof(path), "%s/%s", corpus, name);
-    file = fopen(path, "r");
-    CHECK(file != NULL);
-    CHECK(fread(text, 1, 2 * ASNKIT_KEY_SIZE, file) == 2 * ASNKIT_KEY_SIZE);
-    fclose(file);
-    text[2 * ASNKIT_KEY_SIZE] = '\0';
-    hex(text, key, ASNKIT_KEY_SIZE);
-}
-
 /* Round-trips a Question with `spec`, which it frees. */
 static void ask(asnkit_spec *spec)
 {
@@ -119,42 +90,6 @@ static asnkit_status load_corpus(const char *name, const asnkit_load_options *op
     }
 
     return status;
-}
-
-static asnkit_status load_bytes(const uint8_t *asni, size_t length, const asnkit_load_options *options)
-{
-    asnkit_spec *spec = NULL;
-    asnkit_status status = asnkit_spec_load(asni, length, "uper", options, &spec);
-
-    if (status == ASNKIT_OK) {
-        ask(spec);
-    }
-
-    return status;
-}
-
-/* The contents of the file `name` of the corpus, to free. */
-static uint8_t *read_corpus(const char *name, size_t *length)
-{
-    char path[4096];
-    uint8_t *data;
-    long size;
-    FILE *file;
-
-    snprintf(path, sizeof(path), "%s/%s", corpus, name);
-    file = fopen(path, "rb");
-    CHECK(file != NULL);
-    CHECK(fseek(file, 0, SEEK_END) == 0);
-    size = ftell(file);
-    CHECK(size > 0);
-    rewind(file);
-    data = malloc((size_t) size);
-    CHECK(data != NULL);
-    CHECK(fread(data, 1, (size_t) size, file) == (size_t) size);
-    fclose(file);
-    *length = (size_t) size;
-
-    return data;
 }
 
 static void test_errors(const char *types)
@@ -416,126 +351,27 @@ static void test_numeric_enums(const char *types)
     asnkit_spec_free(spec);
 }
 
-static void test_protected_files(void)
+static void test_bound_files(void)
 {
     asnkit_load_options *options;
-    uint8_t signing_id[ASNKIT_KEY_ID_SIZE];
-    uint8_t encryption_id[ASNKIT_KEY_ID_SIZE];
-    uint8_t signing_key[ASNKIT_KEY_SIZE];
-    uint8_t encryption_key[ASNKIT_KEY_SIZE];
-    uint8_t other_key[ASNKIT_KEY_SIZE];
-
-    hex("d543cae4811fc8b033704dc6e7896ff7", signing_id, ASNKIT_KEY_ID_SIZE);
-    hex("16cde2f77598fc5472df7570a510f54d", encryption_id, ASNKIT_KEY_ID_SIZE);
-    read_key("signing.pub", signing_key);
-    read_key("encryption.key", encryption_key);
-    memset(other_key, 1, sizeof(other_key));
 
     OK(load_corpus("plain.asni", NULL));
-    CHECK(load_corpus("signed.asni", NULL) == ASNKIT_ERROR_LOAD);
-    CHECK(load_corpus("encrypted.asni", NULL) == ASNKIT_ERROR_LOAD);
     CHECK(load_corpus("bound.asni", NULL) == ASNKIT_ERROR_LOAD);
 
     options = asnkit_load_options_new();
-    OK(asnkit_load_options_add_verification_key(options, signing_id, signing_key));
-    OK(load_corpus("signed.asni", options));
-    CHECK(load_corpus("plain.asni", options) == ASNKIT_ERROR_LOAD);
-    OK(asnkit_load_options_add_decryption_key(options, encryption_id, encryption_key));
     OK(asnkit_load_options_set_bound_to(options, "corpus"));
-    OK(load_corpus("signed-encrypted-bound.asni", options));
+    OK(load_corpus("bound.asni", options));
+    CHECK(load_corpus("plain.asni", options) == ASNKIT_ERROR_LOAD);
     OK(asnkit_load_options_set_bound_to(options, "elsewhere"));
-    CHECK(load_corpus("signed-encrypted-bound.asni", options) == ASNKIT_ERROR_LOAD);
+    CHECK(load_corpus("bound.asni", options) == ASNKIT_ERROR_LOAD);
+    CHECK(asnkit_load_options_set_bound_to(options, NULL) == ASNKIT_ERROR_ARGUMENT);
     asnkit_load_options_free(options);
 
     options = asnkit_load_options_new();
-    OK(asnkit_load_options_add_verification_key(options, signing_id, other_key));
-    CHECK(load_corpus("signed.asni", options) == ASNKIT_ERROR_LOAD);
-    asnkit_load_options_free(options);
-
-    options = asnkit_load_options_new();
-    OK(asnkit_load_options_set_accept_any_signature(options));
     OK(asnkit_load_options_set_accept_any_binding(options));
-    OK(load_corpus("signed.asni", options));
-    OK(load_corpus("signed-bound.asni", options));
-    CHECK(asnkit_load_options_add_verification_key(options, NULL, signing_key)
-          == ASNKIT_ERROR_ARGUMENT);
+    OK(load_corpus("plain.asni", options));
+    OK(load_corpus("bound.asni", options));
     asnkit_load_options_free(options);
-}
-
-/* What the nonce callback was called with. */
-typedef struct nonces {
-    uint32_t minimum;
-    uint32_t seen;
-    int calls;
-} nonces;
-
-static int accept_from_minimum(uint32_t nonce, void *context)
-{
-    nonces *state = context;
-
-    state->seen = nonce;
-    state->calls++;
-
-    return nonce >= state->minimum;
-}
-
-/* A file with a nonce, made as tests/corpus.rs of the runtime for Rust
- * makes it: plain.asni with the flag of a nonce and the nonce, of 24
- * bits, in its header. It is not signed, so nothing else has to change. */
-static void test_nonces(void)
-{
-    size_t length;
-    uint8_t *plain = read_corpus("plain.asni", &length);
-    uint8_t *with_nonce = malloc(length);
-    asnkit_load_options *options;
-    nonces state = { 0, 0, 0 };
-
-    CHECK(with_nonce != NULL && length > 11);
-    memcpy(with_nonce, plain, length);
-    with_nonce[7] |= 0x04;
-    with_nonce[8] = 0x01;
-    with_nonce[9] = 0x02;
-    with_nonce[10] = 0x03;
-
-    /* Rejected unless a nonce is expected. */
-    CHECK(load_bytes(with_nonce, length, NULL) == ASNKIT_ERROR_LOAD);
-    CHECK(strstr(asnkit_last_error(), "nonce") != NULL);
-
-    options = asnkit_load_options_new();
-    OK(asnkit_load_options_set_nonce(options, 0x010203));
-    OK(load_bytes(with_nonce, length, options));
-    OK(asnkit_load_options_set_nonce(options, 0x010204));
-    CHECK(load_bytes(with_nonce, length, options) == ASNKIT_ERROR_LOAD);
-    /* A file with no nonce, when one is expected. */
-    OK(asnkit_load_options_set_nonce(options, 1));
-    CHECK(load_bytes(plain, length, options) == ASNKIT_ERROR_LOAD);
-    asnkit_load_options_free(options);
-
-    /* Accepted as the callback says, which is given the nonce and the
-     * context. */
-    options = asnkit_load_options_new();
-    state.minimum = 0x010203;
-    OK(asnkit_load_options_set_nonce_callback(options, accept_from_minimum, &state));
-    OK(load_bytes(with_nonce, length, options));
-    CHECK(state.calls == 1 && state.seen == 0x010203);
-    state.minimum = 0x010204;
-    CHECK(load_bytes(with_nonce, length, options) == ASNKIT_ERROR_LOAD);
-    CHECK(state.calls == 2);
-    CHECK(asnkit_load_options_set_nonce_callback(options, NULL, &state) == ASNKIT_ERROR_ARGUMENT);
-    asnkit_load_options_free(options);
-
-    /* Any nonce, and also none. */
-    options = asnkit_load_options_new();
-    OK(asnkit_load_options_set_accept_any_nonce(options));
-    OK(load_bytes(with_nonce, length, options));
-    OK(load_bytes(plain, length, options));
-    /* The last setter of the nonce is the one. */
-    OK(asnkit_load_options_set_nonce(options, 0x010204));
-    CHECK(load_bytes(with_nonce, length, options) == ASNKIT_ERROR_LOAD);
-    asnkit_load_options_free(options);
-
-    free(with_nonce);
-    free(plain);
 }
 
 int main(int argc, const char *argv[])
@@ -550,8 +386,7 @@ int main(int argc, const char *argv[])
     test_errors(argv[1]);
     test_values(argv[1]);
     test_numeric_enums(argv[1]);
-    test_protected_files();
-    test_nonces();
+    test_bound_files();
 
     printf("ok\n");
 

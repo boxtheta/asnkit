@@ -17,7 +17,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use asnkitrt::container::{self, Checks, Signature};
+use asnkitrt::container::{self, Binding, Checks};
 use asnkitrt::node::Spec;
 use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::{self, Codec};
@@ -110,7 +110,7 @@ fn main() -> ExitCode {
     }
 
     let checks = Checks {
-        signature: Signature::Any,
+        bound_to: Binding::Any,
         ..Checks::default()
     };
 
