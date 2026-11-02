@@ -13,9 +13,10 @@ has no dependencies.
    >>> foo.decode('Question', encoded)
    {'id': 1, 'question': 'Is 1+1=3?'}
 
-The supported codecs are BER, DER, GSER, JER, OER, PER, UPER and XER.
-Each is imported only when used. A Rust runtime with the same behavior,
-and a WebAssembly one for browsers and Node.js, live in the same
+The supported codecs are BER, DER, JER, OER, PER, UPER and XER, and
+GSER for encoding only. Each is imported only when used. A Rust runtime
+with the same behavior, and WebAssembly and C runtimes built from it,
+live in the same
 `repository`_, which also documents the formats and the known
 limitations.
 

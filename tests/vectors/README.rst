@@ -35,8 +35,10 @@ per line with:
    The name of the file in ``specs``, without ``.asni``.
 
 ``codec``
-   ``ber``, ``der``, ``oer``, ``per``, ``uper``, ``jer`` or ``xer``. The
-   bytes of ``jer`` and ``xer`` are UTF-8 text.
+   ``ber``, ``der``, ``oer``, ``per``, ``uper``, ``jer``, ``xer`` or
+   ``gser``. The bytes of ``jer``, ``xer`` and ``gser`` are UTF-8 text.
+   The ``gser`` vectors are all ``encode``, as the runtime for Python
+   does not decode GSER.
 
 ``numeric_enums``, ``lenient``
    How the specification was loaded.
@@ -60,5 +62,5 @@ per line with:
 
 ``options``
    ``check_types`` and ``check_constraints`` for ``encode``, and
-   ``check_constraints`` for ``decode``. An ``encode`` of JER or XER
-   may also have ``indent``, the number of spaces for each level.
+   ``check_constraints`` for ``decode``. An ``encode`` of JER, XER or
+   GSER may also have ``indent``, the number of spaces for each level.

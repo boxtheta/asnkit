@@ -100,14 +100,14 @@ its bytes are signed two's-complement, big-endian.
 |---|---|---|
 | BOOLEAN / NULL | `bool` / `None` | `Boolean` / `Null` |
 | INTEGER / REAL | `int` / `float` | `Integer` or `BigInteger` / `Real` |
-| OCTET STRING / raw ANY | `bytes` | `Bytes(Vec<u8>)` |
-| BIT STRING | `(bytes, bit_count)` | `Bits(Vec<u8>, bit_count)` |
-| OBJECT IDENTIFIER | dotted `str` | `Text`, e.g. `"1.2.840.113549"` |
-| character strings | `str` | `Text` |
+| OCTET STRING / raw ANY | `bytes` | `Bytes(Cow<[u8]>)` |
+| BIT STRING | `(bytes, bit_count)` | `Bits(Cow<[u8]>, bit_count)` |
+| OBJECT IDENTIFIER | dotted `str` | `ObjectIdentifier`; parse with `"1.2.840.113549".parse()` |
+| character strings | `str` | `Text(Cow<str>)`; `Value::text("…")` copies |
 | ENUMERATED | name, or integer with `numeric_enums` | `Text`, or `Integer` with `numeric_enums` |
-| SEQUENCE / SET | `dict` of present members | `Map(Vec<(String, Value)>)` |
+| SEQUENCE / SET | `dict` of present members | `Map(Vec<(Cow<str>, Value)>)` |
 | SEQUENCE OF / SET OF | `list` | `List(Vec<Value>)` |
-| CHOICE | `(alternative_name, value)` | `Choice(String, Box<Value>)` |
+| CHOICE | `(alternative_name, value)` | `Choice(Cow<str>, Box<Value>)` |
 | date/time types | `datetime` date/time objects | `Date`, `Time`, `DateTime` |
 
 Omit absent OPTIONAL members; do not encode NULL in their place. A BIT

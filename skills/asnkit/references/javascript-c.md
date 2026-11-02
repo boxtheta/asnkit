@@ -35,8 +35,9 @@ const spec = await load(new Uint8Array(await response.arrayBuffer()), 'uper');
 Pass `{ module: 'Foo' }` in encode/decode options to disambiguate types.
 Use `spec.checkConstraints(name, value, options)` for standalone checks.
 All encoded output is `Uint8Array`, including text codecs; use
-`new TextDecoder().decode(encoded)` for display. Use bytes for decode
-when in doubt about a particular release's text-input convenience API.
+`new TextDecoder().decode(encoded)` for display. `decode` takes a
+`Uint8Array`, or a string for JER, XER and GSER; the `indent` encode
+option applies to the same three codecs.
 
 Represent OCTET STRING and raw ANY as `Uint8Array`, BIT STRING as
 `[Uint8Array, bitCount]`, CHOICE as `[name, value]`, SEQUENCE/SET as

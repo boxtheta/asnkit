@@ -3,10 +3,10 @@
 This is for those writing a runtime for asnkit in another language,
 or for a platform the first-party runtimes do not cover. The
 first-party runtimes are `asnkitrt` for Python, `asnkitrt` for Rust,
-and `asnkitrt` on npm, which is the one for Rust built as
-WebAssembly.
+`asnkitrt` on npm, which is the one for Rust built as WebAssembly, and
+`asnkitrt-c`, the one for Rust as a C library.
 
-> **Note:** This is a draft, like the [file formats](file_formats.md) it builds on. It is to be settled before the first release of the formats.
+> **Note:** This builds on the [file formats](file_formats.md), `.asni` 2.0 and `.asnst` 1.0. What they do not specify yet is listed under [Not yet specified](file_formats.md#not-yet-specified).
 
 ## What a runtime is
 
@@ -85,7 +85,8 @@ truncated CBOR and trailing bytes. Binding does not detect arbitrary
 changes to a file.
 
 For the codecs, `tests/vectors` has what the Rust runtime, the one of
-reference, encodes and decodes for BER, DER, OER, PER, UPER, JER and XER, with the compiled
+reference, encodes and decodes for BER, DER, OER, PER, UPER, JER and
+XER, and encodes for GSER, with the compiled
 specifications it used (see its `README.rst`). Encode and decode the same
 and the bytes and values must be the same. The types and values in
 `tests/files` are more to try. Compare with an

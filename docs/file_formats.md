@@ -593,9 +593,9 @@ Two things are still left to look up by name in version 1.0:
 
 This is for those writing a runtime. It tells what the runtimes in
 this repository do with the nodes of a compiled specification, which
-is the same in all of them. `tests/vectors` holds more than 5,300
+is the same in all of them. `tests/vectors` holds more than 5,500
 encodings and decodings by the one for Rust, the runtime of reference,
-in BER, DER, OER, PER, UPER, JER and XER, with the compiled
+in BER, DER, OER, PER, UPER, JER and XER, and encodings in GSER, with the compiled
 specifications they were made with, for a runtime to be tried against.
 
 The codecs themselves are those of the standards: X.690 for BER and

@@ -116,8 +116,8 @@ they are not device RAM requirements:
 
 | Specification | `.asni` | Kept | Peak while loading |
 |---|---:|---:|---:|
-| `examples/compiled/foo.asni` | 244 B | 3.7 KiB | 7.5 KiB |
-| `examples/compiled/information_object.asni` | 2.1 KiB | 19.8 KiB | 50.0 KiB |
+| `examples/compiled/foo.asni` | 245 B | 3.7 KiB | 7.5 KiB |
+| `examples/compiled/information_object.asni` | 2.1 KiB | 19.8 KiB | 49.8 KiB |
 | `examples/compiled/rfc5280.asni` | 12.3 KiB | 132.5 KiB | 337.3 KiB |
 
 Decoding, checking and encoding a certificate of RFC 5280 in DER takes
@@ -150,7 +150,7 @@ bits is not loaded, and a `DURATION` with a time element of more than
 encoded either way. All of these return an error; none produces a wrong
 value.
 
-It is the runtime of reference: the more than 5,300 vectors in
+It is the runtime of reference: the more than 5,500 vectors in
 [`tests/vectors`](https://github.com/boxtheta/asnkit/blob/trunk/tests/vectors) are what it encodes and decodes,
 including constraint checks, and the Python and WebAssembly runtimes
 are held to them. `tests/x509.rs` checks it against OpenSSL.

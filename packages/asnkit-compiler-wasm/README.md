@@ -57,7 +57,7 @@ npm run build
 npm test
 ```
 
-The build writes `pkg/`, with a `.wasm` file of about 525 KB (225 KB
+The build writes `pkg/`, with a `.wasm` file of about 477 KB (185 KB
 gzipped).
 
 Licensed under the Apache License 2.0 (`LICENSE-COMPILER`). What it

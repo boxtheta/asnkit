@@ -5,7 +5,7 @@ compiled to WebAssembly, with a small JavaScript API. It loads the
 `.asni` files produced by `asnkitcc` and uses them to encode and decode
 ASN.1, without parsing ASN.1 itself.
 
-The codecs are BER, DER, OER, PER, UPER, JER and XER. It can also check
+The codecs are BER, DER, OER, PER, UPER, JER, XER and GSER. It can also check
 values against their constraints, and load bound `.asni` files.
 
 ```js
@@ -54,9 +54,9 @@ them, and not those it inherits, such as the getters of a class. Values are
 converted according to their ASN.1 type, so an array is a `CHOICE` or a
 `SEQUENCE OF` as the type says, and `1` is a valid `REAL`.
 
-`encode()` always returns a `Uint8Array`, also for JER and XER, which
-`TextDecoder` turns into text. `decode()` accepts a `Uint8Array`, or a
-string for JER and XER.
+`encode()` always returns a `Uint8Array`, also for JER, XER and GSER,
+which `TextDecoder` turns into text. `decode()` accepts a `Uint8Array`,
+or a string for JER, XER and GSER.
 
 ## API
 
@@ -66,8 +66,8 @@ string for JER and XER.
   `acceptAnyBinding`.
 - `spec.encode(name, value, options)` and `spec.decode(name, data,
   options)`. The options are `checkConstraints`, `module` for a type
-  name that more than one module defines, and, for `encode()` of JER
-  and XER, `indent`, the number of spaces for each level.
+  name that more than one module defines, and, for `encode()` of JER,
+  XER and GSER, `indent`, the number of spaces for each level.
 - `spec.checkConstraints(name, value, options)`.
 - `spec.decodeWithLength(name, data)` and `spec.decodeLength(data)`, for
   BER and DER only.
@@ -100,7 +100,7 @@ npm run build
 npm test
 ```
 
-The build writes `pkg/`, with a `.wasm` file of about 590 KB (225 KB
+The build writes `pkg/`, with a `.wasm` file of about 595 KB (227 KB
 gzipped). The tests need Node.js 21 or later, and replay all the vectors
 of `tests/vectors` through the JavaScript API, as the Rust runtime does
 in Rust.

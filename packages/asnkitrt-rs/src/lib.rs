@@ -45,7 +45,7 @@
 //! # What is not done
 //!
 //! `ANY` in JER and XER, which need its type, and the types `EMBEDDED
-//! PDV`, `CHARACTER STRING` and `DURATION`.
+//! PDV` and `CHARACTER STRING`.
 
 #![no_std]
 #![forbid(unsafe_code)]
