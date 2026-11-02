@@ -17,15 +17,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-[project.optional-dependencies]
-# To load signed and encrypted .asni files. Nothing else needs it.
-signing = [
-    "cryptography>=43",
-]
-encryption = [
-    "cryptography>=43",
-]
-
 [project.urls]
 source = "https://github.com/boxtheta/asnkit"
 

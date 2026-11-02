@@ -126,18 +126,3 @@ fn the_constants_agree() {
         in_rust.keys().collect::<Vec<_>>()
     );
 }
-
-#[test]
-fn the_sizes_of_keys_agree() {
-    let header = header();
-
-    for (name, size) in [
-        ("ASNKIT_KEY_ID_SIZE", asnkitrt::container::KEY_ID_SIZE),
-        ("ASNKIT_KEY_SIZE", asnkitrt::container::KEY_SIZE),
-    ] {
-        assert!(
-            header.contains(&format!("#define {name} {size}\n")),
-            "{name}"
-        );
-    }
-}

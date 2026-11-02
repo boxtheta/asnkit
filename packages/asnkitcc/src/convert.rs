@@ -11,9 +11,8 @@
 //! asnkitcc convert -t Question -i q.ber --to jer --indent 2 foo.asn
 //! ```
 
-use asnkit_compiler::container::Protection;
 use asnkit_compiler::{Input, compile_to_asni};
-use asnkitrt::container::{self, Binding, Checks, Nonce, Signature};
+use asnkitrt::container::{Binding, Checks};
 use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 
@@ -68,7 +67,6 @@ pub struct Conversion<'a> {
     /// An `.asni` file, or `.asn` files to compile.
     pub specification: &'a [PathBuf],
     pub encoding: &'a str,
-    pub decryption_key: Option<container::Key>,
     pub verbose: bool,
 }
 
@@ -90,8 +88,7 @@ fn read_asni(conversion: &Conversion<'_>) -> Result<Vec<u8>, String> {
                 encoding: conversion.encoding.to_string(),
             };
 
-            compile_to_asni(&input, None, None, &Protection::default())
-                .map_err(|error| format!("error: {}", error.message))
+            compile_to_asni(&input, None).map_err(|error| format!("error: {}", error.message))
         }
         [path] if files.len() == 1 => {
             std::fs::read(path).map_err(|error| format!("error: {}: {error}", path.display()))
@@ -153,13 +150,9 @@ pub fn convert(conversion: &Conversion<'_>) -> Result<(), String> {
     }
 
     let asni = read_asni(conversion)?;
-    let keys: Vec<container::Key> = conversion.decryption_key.iter().cloned().collect();
-    // What the file was made with is not checked: it is converted with,
+    // What the file is bound to is not checked: it is converted with,
     // and not trusted to be what it says.
     let checks = Checks {
-        signature: Signature::Any,
-        nonce: Nonce::Any,
-        decryption_keys: (!keys.is_empty()).then_some(&keys[..]),
         bound_to: Binding::Any,
         ..Checks::default()
     };

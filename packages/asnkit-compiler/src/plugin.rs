@@ -10,12 +10,11 @@
 //! their own that is removed once the plugin is done.
 //!
 //! ```no_run
-//! use asnkit_compiler::container::Protection;
 //! use asnkit_compiler::{Input, compile_to_asni, parse_to_asnst, plugin};
 //! use std::path::Path;
 //!
 //! let input = Input::String(std::fs::read_to_string("foo.asn")?);
-//! let asni = compile_to_asni(&input, None, None, &Protection::default())?;
+//! let asni = compile_to_asni(&input, None)?;
 //! let asnst = parse_to_asnst(&input)?;
 //!
 //! plugin::run("rust", &[], Path::new("src"), &asni, &asnst)?;

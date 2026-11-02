@@ -7,7 +7,6 @@
 //! that does (`packages/asnkitcc`).
 //!
 //! ```
-//! use asnkit_compiler::container::Protection;
 //! use asnkit_compiler::{Input, compile_to_asni, parse_to_asnst};
 //!
 //! let input = Input::String(
@@ -15,7 +14,7 @@
 //! );
 //!
 //! // What a runtime loads, and the syntax tree for plugins.
-//! let asni = compile_to_asni(&input, None, None, &Protection::default())?;
+//! let asni = compile_to_asni(&input, None)?;
 //! let asnst = parse_to_asnst(&input)?;
 //!
 //! assert!(asni.starts_with(b"ASNI"));
@@ -200,49 +199,31 @@ fn summarize(nodes: &Value) -> Vec<ModuleSummary> {
 }
 
 /// The contents of the `.asni` file of an input.
-pub fn compile_to_asni(
-    input: &Input,
-    nonce: Option<u32>,
-    bound_to: Option<String>,
-    protection: &container::Protection,
-) -> Result<Vec<u8>, Error> {
-    compile_to_asni_with_summary(input, nonce, bound_to, protection).map(|(data, _)| data)
+pub fn compile_to_asni(input: &Input, bound_to: Option<String>) -> Result<Vec<u8>, Error> {
+    compile_to_asni_with_summary(input, bound_to).map(|(data, _)| data)
 }
 
 /// Same as `compile_to_asni()`, and tells what the modules have.
 pub fn compile_to_asni_with_summary(
     input: &Input,
-    nonce: Option<u32>,
     bound_to: Option<String>,
-    protection: &container::Protection,
 ) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
-    compile_to_asni_with_summary_and_options(
-        input,
-        nonce,
-        bound_to,
-        protection,
-        &CompileOptions::default(),
-    )
+    compile_to_asni_with_summary_and_options(input, bound_to, &CompileOptions::default())
 }
 
 /// Compiles a container with explicit ANY DEFINED BY mappings.
 pub fn compile_to_asni_with_options(
     input: &Input,
-    nonce: Option<u32>,
     bound_to: Option<String>,
-    protection: &container::Protection,
     options: &CompileOptions,
 ) -> Result<Vec<u8>, Error> {
-    compile_to_asni_with_summary_and_options(input, nonce, bound_to, protection, options)
-        .map(|(data, _)| data)
+    compile_to_asni_with_summary_and_options(input, bound_to, options).map(|(data, _)| data)
 }
 
 /// Compiles a container and summary with explicit ANY DEFINED BY mappings.
 pub fn compile_to_asni_with_summary_and_options(
     input: &Input,
-    nonce: Option<u32>,
     bound_to: Option<String>,
-    protection: &container::Protection,
     options: &CompileOptions,
 ) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
     let nodes = compile_with_options(input, options)?;
@@ -250,8 +231,7 @@ pub fn compile_to_asni_with_summary_and_options(
     let mut metadata = metadata_of(input, false)?;
     metadata.bound_to = bound_to;
 
-    let data =
-        container::write_asni(&metadata, &nodes, nonce, protection).map_err(container_error)?;
+    let data = container::write_asni(&metadata, &nodes).map_err(container_error)?;
 
     Ok((data, summary))
 }

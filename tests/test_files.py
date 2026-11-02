@@ -4,13 +4,9 @@
 
 import contextlib
 import dataclasses
-import hashlib
 import io
 import json
 import os
-import subprocess
-import sys
-import tempfile
 import unittest
 
 from tests import compiled as fixtures
@@ -141,11 +137,10 @@ class FilesTest(unittest.TestCase):
             syntax.Metadata(generator=None),
         )
 
-        # The magic, the version, no flags, a nonce not in use and no
-        # metadata.
-        self.assertEqual(data[:12], b"ASNI\x01\x00\x00\x00\x00\x00\x00\xa0")
+        # The magic, the version, no flags and no metadata.
+        self.assertEqual(data[:9], b"ASNI\x02\x00\x00\x00\xa0")
         self.assertEqual(
-            cbor.loads(data[12:]),
+            cbor.loads(data[9:]),
             # CompiledSpecification, modules.
             [
                 1,
@@ -184,7 +179,7 @@ class FilesTest(unittest.TestCase):
                 ],
             ],
         )
-        self.assertEqual(len(data), 62)
+        self.assertEqual(len(data), 59)
 
     def test_compact(self):
         datas = [
@@ -245,7 +240,7 @@ class FilesTest(unittest.TestCase):
         compact[1][1][2][1][2][1][1].extend([None, None, [0, "later"]])
         later = asni[:5] + b"\x01" + asni[6:header_size] + cbor.dumps(compact)
         self.assertEqual(syntax.from_asni(later), syntax.from_asni(asni))
-        self.assertEqual(syntax.read_header(later).version, (1, 1))
+        self.assertEqual(syntax.read_header(later).version, (2, 1))
 
         asnst = fixtures.parse_files_to_asnst("examples/compiled/foo.asn")
         contents = cbor.loads(asnst)
@@ -289,25 +284,46 @@ class FilesTest(unittest.TestCase):
             (syntax.from_asni, b"", "Expected an .asni or .asnst file."),
             (syntax.from_asni, b"ASN1" + asni[4:], "Expected an .asni or .asnst file."),
             (syntax.from_asni, asni[:7], "Expected an .asni or .asnst file."),
+            # Version 1, which had a nonce, a signature and encryption.
             (
                 syntax.from_asni,
-                asni[:4] + b"\x02" + asni[5:],
-                "Unsupported version 2.0, expected 1.x.",
+                asni[:4] + b"\x01" + asni[5:],
+                "Unsupported version 1.0, expected 2.x.",
             ),
-            # A flag that is not known.
             (
                 syntax.from_asni,
-                asni[:7] + b"\x10" + asni[8:],
-                "Unsupported flags 0x0010.",
+                asni[:4] + b"\x03" + asni[5:],
+                "Unsupported version 3.0, expected 2.x.",
+            ),
+            # Flags that are not known, among them those of version 1.
+            (
+                syntax.from_asni,
+                asni[:7] + b"\x02" + asni[8:],
+                "Unsupported flags 0x0002.",
+            ),
+            (
+                syntax.from_asni,
+                asni[:7] + b"\x04" + asni[8:],
+                "Unsupported flags 0x0004.",
+            ),
+            (
+                syntax.from_asni,
+                asni[:7] + b"\x08" + asni[8:],
+                "Unsupported flags 0x0008.",
+            ),
+            (
+                syntax.from_asni,
+                asni[:6] + b"\x80" + asni[7:],
+                "Unsupported flags 0x8000.",
             ),
             # Bound without telling to what.
             (
                 syntax.from_asni,
-                asni[:7] + b"\x08" + asni[8:],
+                asni[:7] + b"\x01" + asni[8:],
                 "Expected a bound file to tell what it is bound to.",
             ),
-            (syntax.from_asni, asni[:10], "Expected an .asni or .asnst file."),
-            (syntax.from_asni, asni[:11], "Out of CBOR data."),
+            (syntax.from_asni, asni[:8], "Out of CBOR data."),
+            (syntax.from_asni, asni[:9], "Out of CBOR data."),
             (syntax.from_asni, asni[:-1], "Out of CBOR data."),
             (
                 syntax.from_asni,
@@ -326,12 +342,12 @@ class FilesTest(unittest.TestCase):
             ),
             (
                 syntax.from_asni,
-                asni[:11] + b"\x00" + cbor.dumps([20]),
+                asni[:8] + b"\x00" + cbor.dumps([20]),
                 "Expected the metadata as a map.",
             ),
             (
                 syntax.from_asni,
-                asni[:11] + b"\xa0" + cbor.dumps([20]),
+                asni[:8] + b"\xa0" + cbor.dumps([20]),
                 "Expected a compiled specification.",
             ),
             (
@@ -348,12 +364,9 @@ class FilesTest(unittest.TestCase):
 
                 self.assertEqual(str(cm.exception), message)
 
-        # The nonce is not looked at without its flag.
-        self.assertEqual(asni[8:11], b"\x00\x00\x00")
-        self.assertEqual(
-            syntax.from_asni(asni[:8] + b"\x12\x34\x56" + asni[11:]),
-            syntax.from_asni(asni),
-        )
+        # The metadata follows the flags.
+        self.assertEqual(asni[:8], b"ASNI\x02\x00\x00\x00")
+        self.assertIsInstance(cbor.loads_first(asni, 8)[0], dict)
 
         # An .asnst file is CBOR and nothing else.
         contents = cbor.loads(asnst)
@@ -462,116 +475,6 @@ class FilesTest(unittest.TestCase):
         # A list is told from a node by a number no kind has.
         self.assertNotIn(wire.TUPLE, wire.KIND_NUMBERS.values())
 
-    def test_nonce(self):
-        string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
-        plain = fixtures.compile_string_to_asni(string)
-        data = fixtures.compile_string_to_asni(string, nonce=0x123456)
-        compiled = syntax.from_asni(plain)
-
-        # The flag and the number, and nothing else.
-        self.assertEqual(data[6:11], b"\x00\x04\x12\x34\x56")
-        self.assertEqual(data[:6] + b"\x00\x00\x00\x00\x00" + data[11:], plain)
-        self.assertEqual(syntax.read_header(data).nonce, 0x123456)
-        self.assertIsNone(syntax.read_header(plain).nonce)
-
-        # Read if it is the number expected, or one a function says
-        # will do.
-        seen = []
-
-        def is_greater_than_last(nonce):
-            seen.append(nonce)
-
-            return nonce > 0x123455
-
-        for nonce in [0x123456, is_greater_than_last]:
-            self.assertEqual(syntax.from_asni(data, nonce), compiled)
-            self.assertEqual(
-                repr(runtime.load_asni(data, nonce=nonce).types),
-                repr(runtime.load(compiled).types),
-            )
-            self.assertEqual(
-                repr(runtime.load(data, nonce=nonce).types),
-                repr(runtime.load(compiled).types),
-            )
-
-        self.assertEqual(seen, [0x123456] * 3)
-
-        # Zero is a nonce as any other.
-        zero = fixtures.compile_string_to_asni(string, nonce=0)
-        self.assertEqual(zero[6:11], b"\x00\x04\x00\x00\x00")
-        self.assertEqual(syntax.read_header(zero).nonce, 0)
-        self.assertEqual(syntax.from_asni(zero, 0), compiled)
-
-        # Not read otherwise, unless any nonce will do, which is not
-        # so by default.
-        datas = [
-            (
-                data,
-                {},
-                "The file has the nonce 1193046 to check, but no nonce is expected.",
-            ),
-            (data, {"nonce": 0x123457}, "Expected the nonce 1193047, but got 1193046."),
-            (
-                data,
-                {"nonce": lambda nonce: nonce > 0x123456},
-                "The nonce 1193046 of the file is not accepted.",
-            ),
-            (zero, {}, "The file has the nonce 0 to check, but no nonce is expected."),
-            (plain, {"nonce": 0}, "Expected a file with a nonce to check."),
-            (
-                plain,
-                {"nonce": lambda nonce: True},
-                "Expected a file with a nonce to check.",
-            ),
-        ]
-
-        for encoded, arguments, message in datas:
-            with self.subTest(message=message):
-                for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
-                    with self.assertRaises(syntax.ConvertError) as cm:
-                        function(encoded, **arguments)
-
-                    self.assertEqual(str(cm.exception), message)
-
-                self.assertEqual(
-                    syntax.from_asni(encoded, accept_any_nonce=True, **arguments),
-                    compiled,
-                )
-
-        # From files, too.
-        encoded = fixtures.compile_files_to_asni(
-            "examples/compiled/foo.asn", nonce=0xFFFFFF
-        )
-        self.assertEqual(syntax.read_header(encoded).nonce, 0xFFFFFF)
-        self.assertEqual(
-            syntax.from_asni(encoded, 0xFFFFFF),
-            syntax.from_asni_file("examples/compiled/foo.asni"),
-        )
-
-        with tempfile.TemporaryDirectory() as directory:
-            filename = os.path.join(directory, "a.asni")
-
-            with open(filename, "wb") as fout:
-                fout.write(data)
-
-            self.assertEqual(syntax.from_asni_file(filename, 0x123456), compiled)
-            runtime.load_asni_file(filename, nonce=0x123456)
-
-            with self.assertRaises(syntax.ConvertError):
-                runtime.load_asni_file(filename)
-
-        # A nonce is a number of 24 bits.
-        for nonce, message in [
-            (-1, "Expected a nonce of 0 to 16777215, but got -1."),
-            (0x1000000, "Expected a nonce of 0 to 16777215, but got 16777216."),
-            ("1", "Expected a nonce as an integer, but got '1'."),
-            (True, "Expected a nonce as an integer, but got True."),
-        ]:
-            with self.assertRaises(syntax.ConvertError) as cm:
-                fixtures.compile_string_to_asni(string, nonce=nonce)
-
-            self.assertEqual(str(cm.exception), message)
-
     def test_bound_to(self):
         string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
         metadata = syntax.Metadata(generator=None)
@@ -582,8 +485,8 @@ class FilesTest(unittest.TestCase):
         compiled = syntax.from_asni(plain)
 
         # The flag, and what it is bound to in the metadata.
-        self.assertEqual(data[6:8], b"\x00\x08")
-        self.assertEqual(cbor.loads_first(data, 11)[0], {"bound_to": "Thing 2"})
+        self.assertEqual(data[6:8], b"\x00\x01")
+        self.assertEqual(cbor.loads_first(data, 8)[0], {"bound_to": "Thing 2"})
         self.assertEqual(syntax.read_header(data).metadata.bound_to, "Thing 2")
         self.assertIsNone(syntax.read_header(plain).metadata.bound_to)
         self.assertEqual(
@@ -660,33 +563,15 @@ class FilesTest(unittest.TestCase):
         for arguments in [{}, {"bound_to": "a" * 256}, {"accept_any_binding": True}]:
             with self.assertRaises(syntax.ConvertError) as cm:
                 syntax.from_asni(
-                    data[:11]
+                    data[:8]
                     + cbor.dumps({"bound_to": "a" * 256})
-                    + data[11 + len(cbor.dumps({"bound_to": "Thing 2"})) :],
+                    + data[8 + len(cbor.dumps({"bound_to": "Thing 2"})) :],
                     **arguments,
                 )
 
             self.assertEqual(str(cm.exception), message)
 
-        # With a nonce as well, both are checked.
-        both = fixtures.compile_string_to_asni(string, nonce=5, bound_to="Thing 2")
-        self.assertEqual(both[6:11], b"\x00\x0c\x00\x00\x05")
-        self.assertEqual(syntax.from_asni(both, nonce=5, bound_to="Thing 2"), compiled)
-        self.assertEqual(
-            syntax.from_asni(both, accept_any_nonce=True, accept_any_binding=True),
-            compiled,
-        )
-
-        for arguments in [
-            {"nonce": 5},
-            {"bound_to": "Thing 2"},
-            {"nonce": 5, "accept_any_nonce": True},
-            {"bound_to": "Thing 2", "accept_any_binding": True},
-        ]:
-            with self.assertRaises(syntax.ConvertError):
-                syntax.from_asni(both, **arguments)
-
-        # A syntax tree is for plugins, and has neither.
+        # A syntax tree is for plugins, and is never bound.
         with self.assertRaises(syntax.ConvertError) as cm:
             syntax.to_asnst(
                 syntax.from_asnst(fixtures.parse_string_to_asnst(string)),
@@ -705,397 +590,41 @@ class FilesTest(unittest.TestCase):
             "Expected what the file is bound to as a string, but got 5.",
         )
 
-    def make_keys(self):
-        """Returns the keys of a signer and a key to encrypt with, each
-        with its identifier.
+    def test_removed_options(self):
+        """The options of what an .asni file no longer has, a nonce, a
+        signature and encryption, are not taken, so that whoever still
+        gives them is not given a file that is not what they asked for.
 
         """
 
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-            Ed25519PrivateKey,
-        )
-
-        private_key = bytes(range(32))
-        public_key = (
-            Ed25519PrivateKey.from_private_bytes(private_key)
-            .public_key()
-            .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-        )
-
-        return (
-            (b"signing key 0001", private_key),
-            {b"signing key 0001": public_key},
-            (b"encrypt key 0001", bytes(range(32, 64))),
-        )
-
-    def test_signed(self):
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
         string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
-        signing_key, verification_keys, _ = self.make_keys()
-        plain = fixtures.compile_string_to_asni(string)
-        data = fixtures.compile_string_to_asni(string, signing_key=signing_key)
-        compiled = syntax.from_asni(plain)
+        data = fixtures.compile_string_to_asni(string)
+        compiled = syntax.from_asni(data)
 
-        # The flag, the key and the signature, and nothing else.
-        self.assertEqual(data[6:8], b"\x00\x01")
-        self.assertEqual(data[11:27], b"signing key 0001")
-        self.assertEqual(len(data), len(plain) + 80)
-        self.assertEqual(data[:6] + b"\x00\x00" + data[8:11] + data[91:], plain)
-
-        # The signature is that of the SHA-256 of all but itself.
-        Ed25519PublicKey.from_public_bytes(verification_keys[signing_key[0]]).verify(
-            data[27:91], hashlib.sha256(data[:27] + data[91:]).digest()
-        )
-
-        header = syntax.read_header(data)
-        self.assertEqual(header.signed_by, b"signing key 0001")
-        self.assertIsNone(header.encrypted_with)
-        self.assertIsNone(syntax.read_header(plain).signed_by)
-
-        # Read if signed by a key that is trusted.
-        self.assertEqual(
-            syntax.from_asni(data, verification_keys=verification_keys), compiled
-        )
-
-        for function in [runtime.load_asni, runtime.load]:
-            self.assertEqual(
-                repr(function(data, verification_keys=verification_keys).types),
-                repr(runtime.load(compiled).types),
-            )
-
-        # Not read otherwise.
-        other_keys = {b"signing key 0002": verification_keys[b"signing key 0001"]}
-        wrong_keys = {b"signing key 0001": bytes(32)}
-        datas = [
-            (data, {}, "The file is signed, but no keys to verify it with are given."),
-            (
-                data,
-                {"verification_keys": {}},
-                "The file is signed with the key 7369676e696e67206b65792030303031, "
-                "which is not among those given.",
-            ),
-            (
-                data,
-                {"verification_keys": other_keys},
-                "The file is signed with the key 7369676e696e67206b65792030303031, "
-                "which is not among those given.",
-            ),
-            (
-                data,
-                {"verification_keys": wrong_keys},
-                "The signature of the file is wrong.",
-            ),
-            (
-                data,
-                {"verification_keys": {b"signing key 0001": b"short"}},
-                "Expected the key 7369676e696e67206b65792030303031 as 32 bytes.",
-            ),
-            (
-                plain,
-                {"verification_keys": verification_keys},
-                "Expected a signed file.",
-            ),
-            (plain, {"verification_keys": {}}, "Expected a signed file."),
-        ]
-
-        for encoded, arguments, message in datas:
-            with self.subTest(message=message):
-                for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
-                    with self.assertRaises(syntax.ConvertError) as cm:
-                        function(encoded, **arguments)
-
-                    self.assertEqual(str(cm.exception), message)
-
-        # Any change to the file shows, wherever it is.
-        for offset in [0, 5, 7, 8, 10, 11, 26, 27, 90, 91, len(data) - 1]:
-            changed = bytearray(data)
-            changed[offset] ^= 0x10
-
-            with self.assertRaises(syntax.ConvertError):
-                syntax.from_asni(bytes(changed), verification_keys=verification_keys)
-
-        for changed in [data[:-1], data + b"\x00", data[:60]]:
-            with self.assertRaises(syntax.ConvertError):
-                syntax.from_asni(changed, verification_keys=verification_keys)
-
-        # Without the flag it is no .asni file at all, as the
-        # signature is where the metadata is expected.
-        with self.assertRaises(syntax.ConvertError):
-            syntax.from_asni(data[:6] + b"\x00\x00" + data[8:])
-
-        # Only looked at, the signature is not checked.
-        self.assertEqual(syntax.from_asni(data, accept_any_signature=True), compiled)
-        self.assertEqual(syntax.from_asni(plain, accept_any_signature=True), compiled)
-        self.assertEqual(
-            syntax.from_asni(
-                data, verification_keys=wrong_keys, accept_any_signature=True
-            ),
-            compiled,
-        )
-
-        # The nonce and what the file is bound to are signed.
-        data = fixtures.compile_string_to_asni(
-            string, nonce=7, bound_to="Thing 2", signing_key=signing_key
-        )
-        self.assertEqual(data[6:11], b"\x00\x0d\x00\x00\x07")
-        arguments = {
-            "nonce": 7,
-            "bound_to": "Thing 2",
-            "verification_keys": verification_keys,
-        }
-        self.assertEqual(syntax.from_asni(data, **arguments), compiled)
-        changed = data[:10] + b"\x08" + data[11:]
-
-        with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asni(changed, **dict(arguments, nonce=8))
-
-        self.assertEqual(str(cm.exception), "The signature of the file is wrong.")
-
-        # A key is its identifier of 16 bytes and 32 bytes of key.
-        for key in [
-            (b"short", bytes(32)),
-            (bytes(16), bytes(31)),
-            (bytes(16), bytes(32), b""),
-            [bytes(16), bytes(32)],
-            ("signing key 0001", bytes(32)),
-            bytes(48),
+        for name in [
+            "nonce",
+            "accept_any_nonce",
+            "verification_keys",
+            "accept_any_signature",
+            "decryption_keys",
         ]:
-            with self.assertRaises(syntax.ConvertError) as cm:
-                fixtures.compile_string_to_asni(string, signing_key=key)
-
-            self.assertEqual(
-                str(cm.exception),
-                "Expected the key to sign with as its identifier of 16 bytes and "
-                "the key of 32 bytes.",
-            )
-
-    def test_encrypted(self):
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-        string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
-        signing_key, verification_keys, encryption_key = self.make_keys()
-        decryption_keys = {encryption_key[0]: encryption_key[1]}
-        plain = fixtures.compile_string_to_asni(string)
-        data = fixtures.compile_string_to_asni(string, encryption_key=encryption_key)
-        compiled = syntax.from_asni(plain)
-
-        # The flag, the key, 12 bytes that are never the same twice
-        # and the tag, before the metadata and the nodes encrypted.
-        self.assertEqual(data[6:8], b"\x00\x02")
-        self.assertEqual(data[11:27], b"encrypt key 0001")
-        self.assertEqual(len(data), len(plain) + 44)
-        self.assertNotIn(b"generator", data)
-        self.assertNotEqual(
-            data[27:39],
-            fixtures.compile_string_to_asni(string, encryption_key=encryption_key)[
-                27:39
-            ],
-        )
-
-        # AES-256 in Galois/Counter Mode, with all before the tag as
-        # what is not encrypted but can not be changed either.
-        self.assertEqual(
-            AESGCM(encryption_key[1]).decrypt(
-                data[27:39], data[55:] + data[39:55], data[:39]
-            ),
-            plain[11:],
-        )
-
-        header = syntax.read_header(data)
-        self.assertEqual(header.encrypted_with, b"encrypt key 0001")
-        self.assertIsNone(header.signed_by)
-        self.assertIsNone(header.metadata)
-        self.assertIsNone(syntax.read_header(plain).encrypted_with)
-
-        # Read with the key.
-        self.assertEqual(
-            syntax.from_asni(data, decryption_keys=decryption_keys), compiled
-        )
-
-        for function in [runtime.load_asni, runtime.load]:
-            self.assertEqual(
-                repr(function(data, decryption_keys=decryption_keys).types),
-                repr(runtime.load(compiled).types),
-            )
-
-        # Not read otherwise.
-        failed = (
-            "The file is not what was encrypted, or the key is not the one it "
-            "was encrypted with."
-        )
-        datas = [
-            (
-                data,
-                {},
-                "The file is encrypted, but no keys to decrypt it with are given.",
-            ),
-            (
-                data,
-                {"decryption_keys": {b"encrypt key 0002": encryption_key[1]}},
-                "The file is encrypted with the key "
-                "656e6372797074206b65792030303031, which is not among those given.",
-            ),
-            (data, {"decryption_keys": {encryption_key[0]: bytes(32)}}, failed),
-            (
-                plain,
-                {"decryption_keys": decryption_keys},
-                "Expected an encrypted file.",
-            ),
-            (data, {"accept_any_signature": True}, None),
-            (data, {"accept_any_nonce": True, "accept_any_binding": True}, None),
-        ]
-
-        for encoded, arguments, message in datas:
-            with self.subTest(arguments=arguments):
+            with self.subTest(name=name):
                 for function in [syntax.from_asni, runtime.load_asni, runtime.load]:
-                    with self.assertRaises(syntax.ConvertError) as cm:
-                        function(encoded, **arguments)
+                    with self.assertRaises(TypeError):
+                        function(data, **{name: None})
 
-                    if message is not None:
-                        self.assertEqual(str(cm.exception), message)
+        for name in ["nonce", "signing_key", "encryption_key"]:
+            with self.subTest(name=name):
+                with self.assertRaises(TypeError):
+                    syntax.to_asni(compiled, **{name: None})
 
-        # Any change to the file shows, wherever it is.
-        for offset in [5, 7, 8, 10, 27, 38, 39, 54, 55, len(data) - 1]:
-            changed = bytearray(data)
-            changed[offset] ^= 0x10
+        # Nor given in their place, as the options after the data are
+        # given by name.
+        with self.assertRaises(TypeError):
+            syntax.from_asni(data, 5)
 
-            with self.assertRaises(syntax.ConvertError):
-                syntax.from_asni(bytes(changed), decryption_keys=decryption_keys)
-
-        with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asni(data[:-1], decryption_keys=decryption_keys)
-
-        self.assertEqual(str(cm.exception), failed)
-
-        # Signed as well, with a nonce and bound to something: what
-        # it is bound to is not seen without the key.
-        data = fixtures.compile_string_to_asni(
-            string,
-            nonce=7,
-            bound_to="Thing 2",
-            signing_key=signing_key,
-            encryption_key=encryption_key,
-        )
-        self.assertEqual(data[6:11], b"\x00\x0f\x00\x00\x07")
-        self.assertEqual(data[11:27], b"signing key 0001")
-        self.assertEqual(data[91:107], b"encrypt key 0001")
-        self.assertNotIn(b"Thing 2", data)
-        header = syntax.read_header(data)
-        self.assertEqual(header.signed_by, b"signing key 0001")
-        self.assertEqual(header.encrypted_with, b"encrypt key 0001")
-        self.assertEqual(header.nonce, 7)
-        arguments = {
-            "nonce": 7,
-            "bound_to": "Thing 2",
-            "verification_keys": verification_keys,
-            "decryption_keys": decryption_keys,
-        }
-        self.assertEqual(syntax.from_asni(data, **arguments), compiled)
-
-        for name in arguments:
-            with self.assertRaises(syntax.ConvertError):
-                syntax.from_asni(
-                    data, **{key: arguments[key] for key in arguments if key != name}
-                )
-
-        with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asni(data, **dict(arguments, bound_to="Thing 1"))
-
-        self.assertEqual(
-            str(cm.exception),
-            "Expected a file bound to 'Thing 1', but it is bound to 'Thing 2'.",
-        )
-
-        # The signature is checked first, without the key to decrypt
-        # with.
-        changed = data[:-1] + bytes([data[-1] ^ 1])
-
-        with self.assertRaises(syntax.ConvertError) as cm:
-            syntax.from_asni(changed, verification_keys=verification_keys)
-
-        self.assertEqual(str(cm.exception), "The signature of the file is wrong.")
-
-        with self.assertRaises(syntax.ConvertError) as cm:
-            fixtures.compile_string_to_asni(string, encryption_key=(b"k", bytes(32)))
-
-        self.assertEqual(
-            str(cm.exception),
-            "Expected the key to encrypt with as its identifier of 16 bytes and "
-            "the key of 32 bytes.",
-        )
-
-    def test_signed_and_encrypted_without_cryptography(self):
-        """Nothing but a signed or encrypted file needs the
-        cryptography package, and one that does tells so.
-
-        """
-
-        signing_key, verification_keys, encryption_key = self.make_keys()
-        string = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
-        script = """
-import sys
-
-sys.modules["cryptography"] = None
-
-from tests import compiled as fixtures
-from asnkitrt import runtime, syntax
-
-string = sys.argv[1]
-plain = fixtures.compile_string_to_asni(string, nonce=1, bound_to="a")
-runtime.load_asni(plain, nonce=1, bound_to="a")
-files = dict(zip(["signed", "encrypted"], sys.stdin.buffer.read().split(b"\\n--\\n")))
-key = (bytes(16), bytes(32))
-keys = {b"signing key 0001": bytes(32), b"encrypt key 0001": bytes(32)}
-messages = []
-
-for function in [
-    lambda: fixtures.compile_string_to_asni(string, signing_key=key),
-    lambda: fixtures.compile_string_to_asni(string, encryption_key=key),
-    lambda: runtime.load_asni(files["signed"], verification_keys=keys),
-    lambda: runtime.load_asni(files["encrypted"], decryption_keys=keys),
-]:
-    try:
-        function()
-    except syntax.ConvertError as e:
-        messages.append(str(e))
-
-print("\\n".join(messages))
-print(syntax.read_header(files["signed"]).signed_by.decode())
-print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
-"""
-        signed = fixtures.compile_string_to_asni(string, signing_key=signing_key)
-        encrypted = fixtures.compile_string_to_asni(
-            string, encryption_key=encryption_key
-        )
-        self.assertNotIn(b"\n--\n", signed + encrypted)
-        result = subprocess.run(
-            [sys.executable, "-c", script, string],
-            input=signed + b"\n--\n" + encrypted,
-            capture_output=True,
-            env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),
-        )
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
-        signed_message = (
-            "A signed file needs the cryptography package, which is installed "
-            "with the extra 'signing' of this package."
-        )
-        encrypted_message = (
-            "An encrypted file needs the cryptography package, which is "
-            "installed with the extra 'encryption' of this package."
-        )
-        self.assertEqual(
-            result.stdout.decode().splitlines(),
-            [
-                signed_message,
-                encrypted_message,
-                signed_message,
-                encrypted_message,
-                "signing key 0001",
-                "encrypt key 0001",
-            ],
-        )
+        with self.assertRaises(TypeError):
+            syntax.to_asni(compiled, None, 5)
 
     def test_examples(self):
         """The example files are those compiled from the specifications
@@ -1138,66 +667,33 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
             self.assertEqual(foo.decode("Question", encoded), decoded)
 
     def test_corpus(self):
-        def read(name):
-            with open("examples/corpus/" + name, "r") as fin:
-                return bytes.fromhex(fin.read().strip())
-
-        verification_keys = {
-            bytes.fromhex("d543cae4811fc8b033704dc6e7896ff7"): read("signing.pub")
-        }
-        decryption_keys = {
-            bytes.fromhex("16cde2f77598fc5472df7570a510f54d"): read("encryption.key")
-        }
         decoded = {"id": 1, "question": "Is 1+1=3?"}
-        names = []
 
-        for signed in [False, True]:
-            for encrypted in [False, True]:
-                for bound in [False, True]:
-                    name = "-".join(
-                        [
-                            word
-                            for word, is_set in [
-                                ("signed", signed),
-                                ("encrypted", encrypted),
-                                ("bound", bound),
-                            ]
-                            if is_set
-                        ]
-                        or ["plain"]
-                    )
-                    names.append(name)
+        for name, bound in [("plain", False), ("bound", True)]:
+            with self.subTest(name=name):
+                path = "examples/corpus/{}.asni".format(name)
 
-                    with self.subTest(name=name):
-                        path = "examples/corpus/{}.asni".format(name)
+                with open(path, "rb") as fin:
+                    header = syntax.read_header(fin.read())
 
-                        with open(path, "rb") as fin:
-                            header = syntax.read_header(fin.read())
+                self.assertEqual(header.version, (2, 0))
+                self.assertEqual(header.metadata.bound_to, "corpus" if bound else None)
 
-                        self.assertEqual(header.signed_by is not None, signed)
-                        self.assertEqual(header.encrypted_with is not None, encrypted)
-
-                        foo = runtime.load_asni_file(
-                            path,
-                            "ber",
-                            bound_to="corpus" if bound else None,
-                            accept_any_binding=not bound,
-                            verification_keys=verification_keys if signed else None,
-                            accept_any_signature=not signed,
-                            decryption_keys=decryption_keys if encrypted else None,
-                        )
-                        self.assertEqual(
-                            foo.decode("Question", foo.encode("Question", decoded)),
-                            decoded,
-                        )
+                foo = runtime.load_asni_file(
+                    path, "ber", bound_to="corpus" if bound else None
+                )
+                self.assertEqual(
+                    foo.decode("Question", foo.encode("Question", decoded)),
+                    decoded,
+                )
 
         self.assertEqual(
-            sorted(names),
             sorted(
                 os.path.splitext(name)[0]
                 for name in os.listdir("examples/corpus")
                 if name.endswith(".asni")
             ),
+            ["bound", "plain"],
         )
 
     def test_load_real_specification_example(self):
@@ -1241,8 +737,9 @@ print(syntax.read_header(files["encrypted"]).encrypted_with.decode())
 
         header = json.loads(run(["--header", "examples/compiled/foo.asni"]))
         self.assertEqual(header["kind"], "asni")
-        self.assertEqual(header["version"], [1, 0])
+        self.assertEqual(header["version"], [2, 0])
         self.assertEqual(header["metadata"]["sources"][0]["name"], "foo.asn")
+        self.assertEqual(list(header), ["kind", "version", "metadata"])
 
 
 if __name__ == "__main__":

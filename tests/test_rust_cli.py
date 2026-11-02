@@ -2,15 +2,14 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""The files the Rust compiler signs and encrypts are read by the runtime
-of Python, which is the other side of what the Rust compiler writes.
+"""The files the Rust compiler writes are read by the runtime of Python,
+which is the other side of what the Rust compiler writes.
 
 Give the path of the binary in ASNKIT_RUST_BINARY, as built with
 ``cargo build --release --bin asnkitcc``. Without it the tests are skipped.
 
 """
 
-import hashlib
 import os
 import stat
 import subprocess
@@ -28,30 +27,11 @@ SPECIFICATION = "A DEFINITIONS ::= BEGIN B ::= INTEGER END"
 
 
 @unittest.skipIf(BINARY is None, "ASNKIT_RUST_BINARY is not set.")
-class RustCompilerProtectionTest(unittest.TestCase):
+class RustCompilerTest(unittest.TestCase):
     def setUp(self) -> None:
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-            Ed25519PrivateKey,
-        )
-
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-
-        self.signing_key = bytes(range(32))
-        self.encryption_key = bytes(range(100, 132))
-        self.public_key = (
-            Ed25519PrivateKey.from_private_bytes(self.signing_key)
-            .public_key()
-            .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-        )
-        self.signing_id = hashlib.sha256(self.public_key).digest()[:16]
-        self.encryption_id = hashlib.sha256(self.encryption_key).digest()[:16]
-
         self.write("a.asn", SPECIFICATION.encode())
-        # A key is given as bytes or as hexadecimal digits.
-        self.write("signing.key", self.signing_key)
-        self.write("encryption.key", self.encryption_key.hex().encode() + b"\n")
 
     def path(self, name: str) -> str:
         return os.path.join(self.directory.name, name)
@@ -80,76 +60,44 @@ class RustCompilerProtectionTest(unittest.TestCase):
             self.path("a.asni"), "der", **kwargs
         ).encode("B", 5)
 
-    def test_signed(self) -> None:
-        result = self.compile("--signing-key-file", self.path("signing.key"))
+    def test_plain(self) -> None:
+        result = self.compile()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.read(), b"\x02\x01\x05")
+
+        with open(self.path("a.asni"), "rb") as fin:
+            self.assertEqual(fin.read(8), b"ASNI\x02\x00\x00\x00")
+
+    def test_bound(self) -> None:
+        result = self.compile("--bound-to", "corpus")
         self.assertEqual(result.returncode, 0, result.stderr)
 
-        self.assertEqual(
-            self.read(verification_keys={self.signing_id: self.public_key}),
-            b"\x02\x01\x05",
-        )
+        self.assertEqual(self.read(bound_to="corpus"), b"\x02\x01\x05")
 
         with self.assertRaises(asnkitrt.Error):
             self.read()
 
         with self.assertRaises(asnkitrt.Error):
-            self.read(verification_keys={self.signing_id: bytes(32)})
+            self.read(bound_to="elsewhere")
 
-    def test_encrypted(self) -> None:
-        result = self.compile("--encryption-key-file", self.path("encryption.key"))
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_the_options_of_a_nonce_and_keys_are_refused(self) -> None:
+        self.write("key", bytes(32))
 
-        self.assertEqual(
-            self.read(decryption_keys={self.encryption_id: self.encryption_key}),
-            b"\x02\x01\x05",
-        )
+        for option in [
+            ["--nonce", "1"],
+            ["--signing-key-file", self.path("key")],
+            ["--signing-key-id", "00" * 16],
+            ["--encryption-key-file", self.path("key")],
+            ["--encryption-key-id", "00" * 16],
+        ]:
+            with self.subTest(option=option[0]):
+                result = self.compile(*option)
 
-        with self.assertRaises(asnkitrt.Error):
-            self.read(decryption_keys={self.encryption_id: bytes(32)})
-
-    def test_signed_encrypted_with_nonce_and_binding(self) -> None:
-        result = self.compile(
-            "--signing-key-file",
-            self.path("signing.key"),
-            "--signing-key-id",
-            "00" * 16,
-            "--encryption-key-file",
-            self.path("encryption.key"),
-            "--nonce",
-            "7",
-            "--bound-to",
-            "corpus",
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-        arguments = dict(
-            verification_keys={bytes(16): self.public_key},
-            decryption_keys={self.encryption_id: self.encryption_key},
-            nonce=7,
-            bound_to="corpus",
-        )
-
-        self.assertEqual(self.read(**arguments), b"\x02\x01\x05")
-
-        arguments["nonce"] = 8
-
-        with self.assertRaises(asnkitrt.Error):
-            self.read(**arguments)
-
-    def test_a_new_iv_each_time(self) -> None:
-        arguments = ["--encryption-key-file", self.path("encryption.key")]
-        self.compile(*arguments)
-
-        with open(self.path("a.asni"), "rb") as fin:
-            first = fin.read()
-
-        self.compile(*arguments)
-
-        with open(self.path("a.asni"), "rb") as fin:
-            second = fin.read()
-
-        # The initialization vector follows the header and the key id.
-        self.assertNotEqual(first[27:39], second[27:39])
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    option[0].encode() + b" is no longer supported", result.stderr
+                )
+                self.assertFalse(os.path.exists(self.path("a.asni")))
 
     def test_verbose_tells_on_stderr_and_not_otherwise(self) -> None:
         quiet = self.compile()
@@ -159,17 +107,14 @@ class RustCompilerProtectionTest(unittest.TestCase):
         with open(self.path("a.asni"), "rb") as fin:
             quiet_file = fin.read()
 
-        result = self.compile(
-            "-v", "--signing-key-file", self.path("signing.key"), "--nonce", "3"
-        )
+        result = self.compile("-v", "--bound-to", "corpus")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, b"")
         text = result.stderr.decode()
 
         self.assertIn("Reading ", text)
         self.assertIn("Module A: 1 types, 0 object classes.", text)
-        self.assertIn("Signed with the key " + self.signing_id.hex(), text)
-        self.assertIn("Nonce 3.", text)
+        self.assertIn("Bound to 'corpus'.", text)
         self.assertIn("Wrote ", text)
 
         # What is written is not changed by telling of it.
@@ -250,16 +195,10 @@ class RustCompilerProtectionTest(unittest.TestCase):
         self.assertIn(b"is not found", result.stderr)
 
     def test_generate_refuses_what_a_file_that_is_embedded_can_not_have(self) -> None:
-        for option in [
-            ["--nonce", "1"],
-            ["--bound-to", "x"],
-            ["--signing-key-file", self.path("signing.key")],
-            ["--encryption-key-file", self.path("encryption.key")],
-        ]:
-            result = self.generate("--plugin", "python", *option)
+        result = self.generate("--plugin", "python", "--bound-to", "x")
 
-            self.assertNotEqual(result.returncode, 0, option)
-            self.assertIn(b"does not sign", result.stderr)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"does not bind", result.stderr)
 
         result = self.generate()
         self.assertIn(b"needs --plugin", result.stderr)
@@ -277,24 +216,6 @@ class RustCompilerProtectionTest(unittest.TestCase):
         module = importlib.import_module("a")
 
         self.assertEqual(module.decode_b(module.encode_b(5, "der"), "der"), 5)
-
-    def test_bad_key_options(self) -> None:
-        result = self.compile("--signing-key-id", "00" * 16)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b"--signing-key-file", result.stderr)
-
-        result = self.compile("--signing-key-file", self.path("a.asn"))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b"32 bytes or 64 hexadecimal digits", result.stderr)
-
-        result = self.compile(
-            "--encryption-key-file",
-            self.path("encryption.key"),
-            "--encryption-key-id",
-            "zz",
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(b"32 hexadecimal digits", result.stderr)
 
 
 CONVERT_SPECIFICATION = """

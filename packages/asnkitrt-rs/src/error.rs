@@ -80,27 +80,6 @@ pub enum Error {
     UnsupportedVersion,
     /// A flag that is not known.
     UnsupportedFlags,
-    /// A file that is signed or encrypted, with this package built
-    /// without the feature to read it.
-    FeatureMissing,
-    /// A signed file, and the reader is set up with no keys.
-    NoVerificationKeys,
-    /// An unsigned file, and the reader is set up with keys.
-    NotSigned,
-    /// The key of the signature is not among those given.
-    UnknownSigner,
-    /// The signature is wrong.
-    BadSignature,
-    /// The nonce is not what the reader expects.
-    BadNonce,
-    /// An encrypted file, and the reader is set up with no keys.
-    NoDecryptionKeys,
-    /// An unencrypted file, and the reader is set up with keys.
-    NotEncrypted,
-    /// The key of the encryption is not among those given.
-    UnknownEncryptionKey,
-    /// The tag is wrong: the file or the key is not the one.
-    BadTag,
     /// What the file is bound to is not what the reader expects.
     BadBinding,
     /// The metadata is not what it has to be.
@@ -136,22 +115,6 @@ impl fmt::Display for Error {
             Error::NotAsni => "Expected an .asni file.",
             Error::UnsupportedVersion => "Unsupported major version.",
             Error::UnsupportedFlags => "Unsupported flags.",
-            Error::FeatureMissing => {
-                "The file is signed or encrypted, which this build can not read."
-            }
-            Error::NoVerificationKeys => "The file is signed, but no keys to verify it with are given.",
-            Error::NotSigned => "Expected a signed file.",
-            Error::UnknownSigner => "The file is signed with a key that is not among those given.",
-            Error::BadSignature => "The signature of the file is wrong.",
-            Error::BadNonce => "The nonce of the file is not accepted.",
-            Error::NoDecryptionKeys => "The file is encrypted, but no keys to decrypt it with are given.",
-            Error::NotEncrypted => "Expected an encrypted file.",
-            Error::UnknownEncryptionKey => {
-                "The file is encrypted with a key that is not among those given."
-            }
-            Error::BadTag => {
-                "The file is not what was encrypted, or the key is not the one it was encrypted with."
-            }
             Error::BadBinding => "The file is not bound to what is expected.",
             Error::BadMetadata => "Bad metadata.",
             Error::Encode(what, location)
@@ -168,7 +131,10 @@ impl fmt::Display for Error {
             | Error::Unsupported(what, _) => what,
             Error::NoSuchType => "The type is not found in the specification.",
             Error::BufferTooSmall(needed) => {
-                return write!(f, "The buffer is too small: the encoding is {needed} bytes.");
+                return write!(
+                    f,
+                    "The buffer is too small: the encoding is {needed} bytes."
+                );
             }
             Error::Decode(what, _, _) => what,
         })

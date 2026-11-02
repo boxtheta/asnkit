@@ -275,13 +275,9 @@ def load(
     compiled: Any,
     codec: CodecType = "ber",
     numeric_enums: bool = False,
-    nonce: syntax.NonceCheck = None,
-    accept_any_nonce: bool = False,
+    *,
     bound_to: str | None = None,
     accept_any_binding: bool = False,
-    verification_keys: syntax.Keys | None = None,
-    accept_any_signature: bool = False,
-    decryption_keys: syntax.Keys | None = None,
     lenient: bool = False,
 ) -> Specification:
     """Return a `Specification` object that can be used to
@@ -311,11 +307,8 @@ def load(
     DER whatever `lenient` is, and no other codec looks at it. What is
     left after the data, as in `decode`, is never accepted.
 
-    `nonce`, `accept_any_nonce`, `bound_to`, `accept_any_binding`,
-    `verification_keys`, `accept_any_signature` and `decryption_keys`
-    tell which files to read, as for
-    `from_asni()`. A file that is signed,
-    encrypted, bound to something or has a nonce to check is not read
+    `bound_to` and `accept_any_binding` tell which files to read, as
+    for `from_asni()`. A file that is bound to something is not read
     unless told what to expect.
 
     ```python
@@ -328,13 +321,8 @@ def load(
     if isinstance(compiled, (bytes, bytearray)):
         compiled = syntax.from_asni(
             compiled,
-            nonce,
-            accept_any_nonce,
-            bound_to,
-            accept_any_binding,
-            verification_keys,
-            accept_any_signature,
-            decryption_keys,
+            bound_to=bound_to,
+            accept_any_binding=accept_any_binding,
         )
 
     if not isinstance(compiled, syntax.CompiledSpecification):
@@ -347,13 +335,9 @@ def load_asni(
     data: bytes | bytearray,
     codec: CodecType = "ber",
     numeric_enums: bool = False,
-    nonce: syntax.NonceCheck = None,
-    accept_any_nonce: bool = False,
+    *,
     bound_to: str | None = None,
     accept_any_binding: bool = False,
-    verification_keys: syntax.Keys | None = None,
-    accept_any_signature: bool = False,
-    decryption_keys: syntax.Keys | None = None,
     lenient: bool = False,
 ) -> Specification:
     """Same as `load()`, but for given contents of an `.asni`
@@ -368,13 +352,8 @@ def load_asni(
     return load(
         syntax.from_asni(
             data,
-            nonce,
-            accept_any_nonce,
-            bound_to,
-            accept_any_binding,
-            verification_keys,
-            accept_any_signature,
-            decryption_keys,
+            bound_to=bound_to,
+            accept_any_binding=accept_any_binding,
         ),
         codec,
         numeric_enums,
@@ -386,13 +365,9 @@ def load_asni_file(
     filename: str,
     codec: CodecType = "ber",
     numeric_enums: bool = False,
-    nonce: syntax.NonceCheck = None,
-    accept_any_nonce: bool = False,
+    *,
     bound_to: str | None = None,
     accept_any_binding: bool = False,
-    verification_keys: syntax.Keys | None = None,
-    accept_any_signature: bool = False,
-    decryption_keys: syntax.Keys | None = None,
     lenient: bool = False,
 ) -> Specification:
     """Same as `load()`, but for the `.asni` file with given
@@ -407,13 +382,8 @@ def load_asni_file(
     return load(
         syntax.from_asni_file(
             filename,
-            nonce,
-            accept_any_nonce,
-            bound_to,
-            accept_any_binding,
-            verification_keys,
-            accept_any_signature,
-            decryption_keys,
+            bound_to=bound_to,
+            accept_any_binding=accept_any_binding,
         ),
         codec,
         numeric_enums,

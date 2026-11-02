@@ -59,25 +59,13 @@ def main(arguments: Sequence[str] | None = None) -> None:
     header = read_header(data)
 
     if args.header:
-        # The identifier of a key as hexadecimal digits.
-        print(
-            json.dumps(
-                dataclasses.asdict(header), indent=args.indent, default=bytes.hex
-            )
-        )
+        print(json.dumps(dataclasses.asdict(header), indent=args.indent))
 
         return
 
-    # Whatever its nonce and what it is bound to, as it is only
-    # looked at.
+    # Whatever it is bound to, as it is only looked at.
     if header.kind == "asni":
-        # Who signed it does not matter either.
-        tree = from_asni(
-            data,
-            accept_any_nonce=True,
-            accept_any_binding=True,
-            accept_any_signature=True,
-        )
+        tree = from_asni(data, accept_any_binding=True)
     else:
         tree = from_asnst(data)
 

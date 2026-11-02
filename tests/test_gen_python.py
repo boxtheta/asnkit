@@ -64,7 +64,7 @@ def runtime_can_load(asni: bytes) -> bool:
 
 class NotEmbeddedTest(unittest.TestCase):
     """A module made with ``embed=false`` does not have the specification in
-    it, and is given one, as a file that is signed, encrypted and bound.
+    it, and is given one, as a file it is sent that is bound.
 
     """
 
@@ -74,10 +74,6 @@ class NotEmbeddedTest(unittest.TestCase):
             read("examples/corpus/plain.asni"), ["foo.asn"], "uper", embed=False
         )
         cls.foo = load_module(cls.text)
-
-    def corpus_key(self, name: str) -> bytes:
-        with open("examples/corpus/" + name) as fin:
-            return bytes.fromhex(fin.read().strip())
 
     def test_the_specification_is_not_in_it(self) -> None:
         self.assertNotIn("_ASNI", self.text)
@@ -91,20 +87,7 @@ class NotEmbeddedTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             question.encode()
 
-        self.foo.use_asni(
-            read("examples/corpus/signed-encrypted-bound.asni"),
-            bound_to="corpus",
-            verification_keys={
-                bytes.fromhex("d543cae4811fc8b033704dc6e7896ff7"): self.corpus_key(
-                    "signing.pub"
-                )
-            },
-            decryption_keys={
-                bytes.fromhex("16cde2f77598fc5472df7570a510f54d"): self.corpus_key(
-                    "encryption.key"
-                )
-            },
-        )
+        self.foo.use_asni(read("examples/corpus/bound.asni"), bound_to="corpus")
 
         for codec in ["ber", "uper", "jer"]:
             self.assertEqual(
@@ -113,7 +96,7 @@ class NotEmbeddedTest(unittest.TestCase):
 
     def test_a_file_that_fails_its_checks_is_not_used(self) -> None:
         with self.assertRaises(asnkitrt.Error):
-            self.foo.use_asni(read("examples/corpus/signed.asni"))
+            self.foo.use_asni(read("examples/corpus/bound.asni"))
 
 
 class GeneratedFooTest(unittest.TestCase):
@@ -396,11 +379,11 @@ class GeneratedX509Test(unittest.TestCase):
 
 
 class GenerateErrorsTest(unittest.TestCase):
-    def test_a_file_that_needs_keys_is_not_embedded(self) -> None:
+    def test_a_file_that_is_bound_is_not_embedded(self) -> None:
         from tests import compiled as fixtures
 
         with self.assertRaises(GenerateError):
-            generate(fixtures.compile_string_to_asni(SHAPES, nonce=1))
+            generate(fixtures.compile_string_to_asni(SHAPES, bound_to="x"))
 
     def test_two_things_with_one_name_in_python_is_an_error(self) -> None:
         from tests import compiled as fixtures

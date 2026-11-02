@@ -68,7 +68,7 @@ impl std::error::Error for Error {}
 impl From<asnkitrt::Error> for Error {
     fn from(error: asnkitrt::Error) -> Error {
         Error(format!(
-            "Expected a compiled specification that is not signed, encrypted, bound to something or has a nonce, but: {error}"
+            "Expected a compiled specification that is not bound to something, but: {error}"
         ))
     }
 }
@@ -105,7 +105,7 @@ pub struct Options {
     pub integer: Integer,
     /// The compiled specification is in the module, with `load()` and
     /// `load_with()`. Without it, the specification is loaded by the code
-    /// that uses the module, as from a file that is signed or encrypted.
+    /// that uses the module, as from a file it is sent.
     pub embed: bool,
 }
 
@@ -1105,25 +1105,16 @@ fn format_bytes(data: &[u8]) -> String {
 }
 
 /// The Rust module for the contents of an `.asni` file, which must not
-/// be signed, encrypted, bound to something or have a nonce to check,
-/// as it may be embedded in the module and loaded without any of those.
+/// be bound to something, as it may be embedded in the module and
+/// loaded without checking that.
 /// Returns it with the names of the files it was made from.
 pub fn generate(asni: &[u8], options: Options) -> Result<(String, Vec<String>), Error> {
     let file = container::read(asni, &Checks::default())?;
 
-    if file.header.signed_by.is_some()
-        || file.header.encrypted_with.is_some()
-        || file.header.nonce.is_some()
-        || file.metadata.bound_to.is_some()
-    {
-        return fail(
-            "Expected a compiled specification that is not signed, encrypted, bound to something or has a nonce."
-                .to_string(),
-        );
-    }
-
+    // The default checks reject a file that is bound.
     let specification = Specification::from_nodes(&file.nodes, runtime::Options::new(Codec::Ber))?;
     let sources: Vec<String> = file
+        .header
         .metadata
         .sources
         .iter()

@@ -13,13 +13,15 @@ tree can be serialized without knowing anything about Python.
 from dataclasses import dataclass, field
 from typing import Any, Tuple, Union
 
-# Version of the layout of the nodes, as (major, minor). It is found
-# in the header of a file holding them.
+# Version of an .asnst file, as (major, minor), which is that of the
+# layout of its nodes. An .asni file has its own, ASNI_VERSION of
+# .container, as its header changed without its nodes changing.
 #
 # Increment minor when adding a field to a node, which goes last in
 # its fields in the compact form, as that is all a reader of an
 # earlier minor can ignore. Increment major on any other change, such
-# as a new kind of node.
+# as a new kind of node. Either way, increment that of an .asni file
+# too.
 SCHEMA_VERSION = (1, 0)
 
 # Where something is found in the ASN.1 files a syntax tree was made

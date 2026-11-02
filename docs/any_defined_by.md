@@ -216,13 +216,10 @@ Existing entry points keep their behavior. Use `CompileOptions` with
 
 ```rust
 use asnkit_compiler::{CompileOptions, Input, compile_to_asni_with_options};
-use asnkit_compiler::container::Protection;
 
 let options = CompileOptions::from_toml(&std::fs::read_to_string("choices.toml")?)?;
 let input = Input::String(std::fs::read_to_string("protocol.asn")?);
-let asni = compile_to_asni_with_options(
-    &input, None, None, &Protection::default(), &options,
-)?;
+let asni = compile_to_asni_with_options(&input, None, &options)?;
 std::fs::write("protocol.asni", asni)?;
 ```
 

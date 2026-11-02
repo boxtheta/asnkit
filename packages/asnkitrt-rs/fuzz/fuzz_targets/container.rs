@@ -4,19 +4,17 @@
 
 #![no_main]
 
-use asnkitrt::container::{self, Binding, Checks, Nonce, Signature};
+use asnkitrt::container::{self, Binding, Checks};
 use asnkitrt::node::Spec;
 use libfuzzer_sys::fuzz_target;
 
 // An .asni file that is anything, read by a reader that accepts any
-// signature, nonce and binding, which is as far as it can be taken, and
+// binding, which is as far as it can be taken, and
 // the nodes of it, which are lowered for every codec.
 fuzz_target!(|data: &[u8]| {
     let _ = container::read_header(data);
 
     let checks = Checks {
-        signature: Signature::Any,
-        nonce: Nonce::Any,
         bound_to: Binding::Any,
         ..Checks::default()
     };

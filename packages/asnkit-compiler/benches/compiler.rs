@@ -11,7 +11,6 @@
 mod harness;
 
 use asnkit_compiler::Input;
-use asnkit_compiler::container::Protection;
 
 const SPECIFICATIONS: [(&str, &str); 2] = [
     (
@@ -37,7 +36,7 @@ fn main() {
             asnkit_compiler::compile(&input).unwrap()
         });
         benches.run(&format!("asni/{name}"), || {
-            asnkit_compiler::compile_to_asni(&input, Some(0), None, &Protection::default()).unwrap()
+            asnkit_compiler::compile_to_asni(&input, None).unwrap()
         });
     }
 }

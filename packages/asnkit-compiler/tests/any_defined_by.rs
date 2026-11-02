@@ -1,7 +1,6 @@
 // Copyright (c) 2025 BoxTheta
 // SPDX-License-Identifier: Apache-2.0
 
-use asnkit_compiler::container::Protection;
 use asnkit_compiler::{
     CompileOptions, Input, compile, compile_to_asni_with_options, compile_with_options,
 };
@@ -26,14 +25,7 @@ member = "{member}"
 }
 
 fn container(source: &str, options: &CompileOptions) -> Vec<u8> {
-    compile_to_asni_with_options(
-        &Input::String(source.into()),
-        None,
-        None,
-        &Protection::default(),
-        options,
-    )
-    .unwrap()
+    compile_to_asni_with_options(&Input::String(source.into()), None, options).unwrap()
 }
 
 fn message<'a>(key: Value<'a>, payload: Value<'a>) -> Value<'a> {

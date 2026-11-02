@@ -12,11 +12,11 @@
 //! here that take or give a value their names without `_`, and the
 //! values as they are in JavaScript and not as buffers.
 
-use asnkitrt::container::{Binding, Checks, KEY_ID_SIZE, KEY_SIZE, Key, Nonce, Signature};
+use asnkitrt::container::{Binding, Checks};
 use asnkitrt::runtime::{Options, Specification as Inner};
 use asnkitrt::types::{Codec, TypeId};
 use asnkitrt::value::Value;
-use js_sys::{Array, Function, Uint8Array};
+use js_sys::{Array, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 mod convert;
@@ -143,37 +143,30 @@ fn text(options: &JsValue, key: &str) -> Result<Option<String>, JsValue> {
         .ok_or_else(|| type_error(&format!("Expected '{key}' to be a string.")))
 }
 
-fn bytes_of<const N: usize>(value: &JsValue, what: &str) -> Result<[u8; N], JsValue> {
-    value
-        .dyn_ref::<Uint8Array>()
-        .and_then(|bytes| bytes.to_vec().try_into().ok())
-        .ok_or_else(|| type_error(&format!("Expected {what} to be a Uint8Array of {N} bytes.")))
-}
+/// The options of what `.asni` files no longer have: a nonce, a
+/// signature and encryption. They are rejected rather than ignored, so
+/// that nobody loads a file that is not signed when they asked for one
+/// that is.
+const REMOVED_OPTIONS: [&str; 5] = [
+    "nonce",
+    "acceptAnyNonce",
+    "verificationKeys",
+    "acceptAnySignature",
+    "decryptionKeys",
+];
 
-/// Keys given as `[id, key]` pairs, as a `Map` or an array of them.
-fn keys(options: &JsValue, key: &str) -> Result<Option<Vec<Key>>, JsValue> {
-    let value = option(options, key)?;
+fn reject_removed(options: &JsValue) -> Result<(), JsValue> {
+    for key in REMOVED_OPTIONS {
+        let value = option(options, key)?;
 
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
+        if !value.is_undefined() && !value.is_null() {
+            return Err(type_error(&format!(
+                "'{key}' is no longer supported: .asni files have no nonce and are not signed or encrypted."
+            )));
+        }
     }
 
-    let iterator = js_sys::try_iter(&value)?
-        .ok_or_else(|| type_error(&format!("Expected '{key}' to be [id, key] pairs.")))?;
-    let mut found = Vec::new();
-
-    for pair in iterator {
-        let pair: Array = pair?
-            .dyn_into()
-            .map_err(|_| type_error(&format!("Expected '{key}' to be [id, key] pairs.")))?;
-
-        found.push(Key {
-            id: bytes_of::<KEY_ID_SIZE>(&pair.get(0), "a key id")?,
-            key: bytes_of::<KEY_SIZE>(&pair.get(1), "a key")?,
-        });
-    }
-
-    Ok(Some(found))
+    Ok(())
 }
 
 fn data_of(data: &JsValue) -> Result<Vec<u8>, JsValue> {
@@ -201,10 +194,7 @@ impl Specification {
     /// Loads the contents of an `.asni` file for `codec`, `ber` if not
     /// given. The options are those of `asnkitrt.load_asni()` of the
     /// runtime for Python, in camel case: `numericEnums`, `lenient`,
-    /// `nonce` (a number, or a function that tells if a nonce is
-    /// accepted), `acceptAnyNonce`, `boundTo`, `acceptAnyBinding`,
-    /// `verificationKeys`, `acceptAnySignature` and `decryptionKeys`. Keys
-    /// are `[id, key]` pairs of `Uint8Array`s, as a `Map` or an array.
+    /// `boundTo` and `acceptAnyBinding`.
     #[wasm_bindgen(constructor)]
     pub fn new(
         asni: &[u8],
@@ -217,50 +207,15 @@ impl Specification {
         load.numeric_enums = flag(&options, "numericEnums")?;
         load.lenient = flag(&options, "lenient")?;
 
-        let verification_keys = keys(&options, "verificationKeys")?;
-        let decryption_keys = keys(&options, "decryptionKeys")?;
-        let bound_to = text(&options, "boundTo")?;
-        let nonce = option(&options, "nonce")?;
-        let accept = nonce.dyn_ref::<Function>().cloned();
-        let accept_nonce = |value: u32| {
-            accept.as_ref().is_some_and(|accept| {
-                accept
-                    .call1(&JsValue::NULL, &JsValue::from(value))
-                    .is_ok_and(|accepted| accepted.is_truthy())
-            })
-        };
-        let signature = match &verification_keys {
-            Some(keys) => Signature::Keys(keys),
-            None if flag(&options, "acceptAnySignature")? => Signature::Any,
-            None => Signature::None,
-        };
-        let binding = match &bound_to {
-            Some(bound_to) => Binding::To(bound_to),
-            None if flag(&options, "acceptAnyBinding")? => Binding::Any,
-            None => Binding::None,
-        };
-        let nonce = if accept.is_some() {
-            Nonce::Accept(&accept_nonce)
-        } else if let Some(nonce) = nonce.as_f64() {
-            if !(0.0..=f64::from(u32::MAX)).contains(&nonce) || nonce.fract() != 0.0 {
-                return Err(type_error(
-                    "Expected 'nonce' to be an unsigned 32-bit integer.",
-                ));
-            }
+        reject_removed(&options)?;
 
-            Nonce::Exact(nonce as u32)
-        } else if !nonce.is_undefined() && !nonce.is_null() {
-            return Err(type_error("Expected 'nonce' to be a number or a function."));
-        } else if flag(&options, "acceptAnyNonce")? {
-            Nonce::Any
-        } else {
-            Nonce::None
-        };
+        let bound_to = text(&options, "boundTo")?;
         let checks = Checks {
-            signature,
-            nonce,
-            decryption_keys: decryption_keys.as_deref(),
-            bound_to: binding,
+            bound_to: match &bound_to {
+                Some(bound_to) => Binding::To(bound_to),
+                None if flag(&options, "acceptAnyBinding")? => Binding::Any,
+                None => Binding::None,
+            },
             ..Checks::default()
         };
 
