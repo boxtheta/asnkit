@@ -454,6 +454,7 @@ pub fn lower(spec: &Spec, codec: Codec, numeric_enums: bool, lenient: bool) -> R
         type_index: Vec::new(),
         constraints: alloc::vec![Constraints::default()],
         sorted: alloc::vec![0],
+        depth: 0,
     };
 
     // The first of a name is the one that is found.
@@ -476,7 +477,7 @@ pub fn lower(spec: &Spec, codec: Codec, numeric_enums: bool, lenient: bool) -> R
             module
                 .types
                 .iter()
-                .map(|assignment| 1 + lowering.count_inside(&assignment.ty, index))
+                .map(|assignment| 1 + lowering.count_inside(&assignment.ty, index, 0))
                 .sum::<usize>()
         })
         .sum();
@@ -615,7 +616,16 @@ struct Lowering<'a> {
     /// that are there already. See [`intern`].
     constraints: Vec<Constraints>,
     sorted: Vec<u32>,
+    /// How many types are being lowered, each in the one before it.
+    depth: usize,
 }
+
+/// How deep types are lowered, each in the one before it. The types of
+/// a file are as deep as its nodes, which `cbor::DEFAULT_MAX_DEPTH`
+/// limits, but a field of an object class is lowered where it is used,
+/// and may hold itself or another field, without end, as the compiler
+/// never makes it.
+const MAX_DEPTH: usize = 128;
 
 /// A bound that does not fit in an `i128`, which `bigint` takes.
 const TOO_LARGE: &str =
@@ -858,7 +868,7 @@ impl<'a> Lowering<'a> {
 
     /// How many nodes [`Lowering::lower_type`] adds for `ty`, as it
     /// lowers it.
-    fn count_type(&self, ty: &Type, module: usize) -> usize {
+    fn count_type(&self, ty: &Type, module: usize, depth: usize) -> usize {
         if let Body::Referenced(name) = &ty.body
             && !has_own(ty)
             && !name.contains('&')
@@ -866,23 +876,31 @@ impl<'a> Lowering<'a> {
             return 0;
         }
 
-        1 + self.count_inside(ty, module)
+        1 + self.count_inside(ty, module, depth)
     }
 
     /// How many nodes [`Lowering::lower_node`] adds for what is in `ty`,
-    /// as it lowers it, but for the node of `ty` itself. A type that can
-    /// not be lowered adds none, as lowering stops at it.
-    fn count_inside(&self, ty: &Type, module: usize) -> usize {
+    /// as it lowers it, but for the node of `ty` itself, `depth` deep. A
+    /// type that can not be lowered adds none, as lowering stops at it,
+    /// as it does at [`MAX_DEPTH`].
+    fn count_inside(&self, ty: &Type, module: usize, depth: usize) -> usize {
+        if depth >= MAX_DEPTH {
+            return 0;
+        }
+
+        let depth = depth + 1;
         let module = self.module_of(ty, module);
         let members = |items: &[MemberItem]| -> usize {
             items
                 .iter()
                 .map(|item| match item {
-                    MemberItem::Member(member) => self.count_type(&member.ty, module),
+                    MemberItem::Member(member) => self.count_type(&member.ty, module, depth),
                     MemberItem::Group(group) => group
                         .iter()
                         .map(|item| match item {
-                            MemberItem::Member(member) => self.count_type(&member.ty, module),
+                            MemberItem::Member(member) => {
+                                self.count_type(&member.ty, module, depth)
+                            }
                             _ => 0,
                         })
                         .sum(),
@@ -896,17 +914,17 @@ impl<'a> Lowering<'a> {
             Body::Builtin(Builtin::External) => 7,
             Body::Referenced(name) if name.contains('&') => {
                 match self.field_type(name, module, ty.module_name.as_ref()) {
-                    Ok((field, class_module)) => 1 + self.count_inside(field, class_module),
+                    Ok((field, class_module)) => 1 + self.count_inside(field, class_module, depth),
                     Err(_) => 0,
                 }
             }
             Body::Sequence(items) | Body::Set(items) | Body::Choice(items) => members(items),
             Body::SequenceOf { element, .. } | Body::SetOf { element, .. } => {
-                self.count_type(element, module)
+                self.count_type(element, module, depth)
             }
             Body::AnyDefinedBy { choices, .. } => choices
                 .iter()
-                .map(|choice| self.count_type(&choice.ty, module))
+                .map(|choice| self.count_type(&choice.ty, module, depth))
                 .sum(),
             _ => 0,
         }
@@ -966,7 +984,25 @@ impl<'a> Lowering<'a> {
             .unwrap_or(module)
     }
 
+    /// Lowers `ty`, in the types being lowered, of which there may be
+    /// [`MAX_DEPTH`].
     fn lower_node(&mut self, ty: &Type, module: usize) -> Result<TypeNode> {
+        if self.depth >= MAX_DEPTH {
+            return bad(
+                "Types are nested too deeply, or fields of object classes hold each other.",
+            );
+        }
+
+        self.depth += 1;
+
+        let node = self.lower_node_in(ty, module);
+
+        self.depth -= 1;
+
+        node
+    }
+
+    fn lower_node_in(&mut self, ty: &Type, module: usize) -> Result<TypeNode> {
         let module = self.module_of(ty, module);
         let mut node = placeholder();
 

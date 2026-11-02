@@ -31,6 +31,14 @@ security fixes.
   `MemberInfo::default` is a `Box<Value>`. `MemberInfo::size` is no
   more, as the type of the member has it.
 
+### Fixed
+
+- `asnkitrt`: a specification in which fields of object classes hold
+  each other, as `&x` holding `C.&y` and `&y` holding `C.&x`, or a field
+  that is itself, used up the stack while it was loaded, which aborted
+  the program. Types are now lowered at most 128 deep, and loading such
+  a specification is an error.
+
 ## [2.0.0-rc3] - 2026-10-26
 
 ### Added
