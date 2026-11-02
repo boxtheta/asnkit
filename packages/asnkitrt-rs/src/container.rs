@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
-//! Reads an `.asni` file: its header, what it is bound to, its metadata
-//! and its nodes, in the order of `docs/file_formats.md`.
+//! Reads an `.asni` file: its header, its checksum, its metadata and its
+//! nodes, in the order of `docs/file_formats.md`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -11,42 +11,61 @@ use alloc::vec::Vec;
 use crate::cbor::{self, Cbor};
 use crate::{Error, Result};
 
-pub const HEADER_SIZE: usize = 8;
-
-/// Of what a file is bound to, in bytes as UTF-8.
-pub const BOUND_TO_MAXIMUM_SIZE: usize = 255;
+/// The magic, the version and the CRC-32 of the rest of the file.
+pub const HEADER_SIZE: usize = 10;
 
 const MAGIC: &[u8; 4] = b"ASNI";
 const MAJOR_VERSION: u8 = 2;
 
-const FLAG_BOUND: u16 = 0x0001;
-const SUPPORTED_FLAGS: u16 = FLAG_BOUND;
+/// The table of CRC-32 as zlib, gzip and PNG compute it (CRC-32/ISO-HDLC:
+/// the polynomial 0x04C11DB7 reflected, starting from and ended with all
+/// ones), a byte at a time.
+const CRC32_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut index = 0;
 
-/// How a reader treats what a file is bound to.
-#[derive(Clone, Copy, Default)]
-pub enum Binding<'a> {
-    /// Rejects every file that is bound.
-    #[default]
-    None,
-    /// Rejects every file that is not bound to this.
-    To(&'a str),
-    /// Reads a file whatever it is bound to.
-    Any,
+    while index < 256 {
+        let mut crc = index as u32;
+        let mut bit = 0;
+
+        while bit < 8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xedb8_8320
+            } else {
+                crc >> 1
+            };
+            bit += 1;
+        }
+
+        table[index] = crc;
+        index += 1;
+    }
+
+    table
+};
+
+/// The CRC-32 of `data`, as zlib, gzip and PNG compute it: that of
+/// `b"123456789"` is `0xcbf43926`.
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+
+    for &byte in data {
+        crc = CRC32_TABLE[((crc ^ u32::from(byte)) & 0xff) as usize] ^ (crc >> 8);
+    }
+
+    !crc
 }
 
-/// What a file has to be to be read. Reads nothing by default but a
-/// file that is not bound.
+/// What a file has to be to be read.
 #[derive(Clone, Copy)]
-pub struct Checks<'a> {
-    pub bound_to: Binding<'a>,
+pub struct Checks {
     /// How deep the CBOR may be nested.
     pub max_depth: usize,
 }
 
-impl Default for Checks<'_> {
+impl Default for Checks {
     fn default() -> Self {
         Checks {
-            bound_to: Binding::None,
             max_depth: cbor::DEFAULT_MAX_DEPTH,
         }
     }
@@ -65,8 +84,6 @@ pub struct Source {
 pub struct Metadata {
     pub generator: Option<String>,
     pub sources: Vec<Source>,
-    /// Only there in a file that is bound.
-    pub bound_to: Option<String>,
     pub other: Option<Cbor>,
 }
 
@@ -85,14 +102,9 @@ pub struct Asni {
     pub nodes: Cbor,
 }
 
-/// The version and the flags of a file, which are all of its header
-/// but its metadata.
-struct Prefix {
-    version: (u8, u8),
-    flags: u16,
-}
-
-fn read_prefix(data: &[u8]) -> Result<Prefix> {
+/// Checks the header of `data` and the CRC-32 of the rest, and returns
+/// the version.
+fn read_prefix(data: &[u8]) -> Result<(u8, u8)> {
     if data.len() < HEADER_SIZE || &data[..4] != MAGIC {
         return Err(Error::NotAsni);
     }
@@ -101,16 +113,13 @@ fn read_prefix(data: &[u8]) -> Result<Prefix> {
         return Err(Error::UnsupportedVersion);
     }
 
-    let flags = u16::from_be_bytes([data[6], data[7]]);
+    let expected = u32::from_be_bytes([data[6], data[7], data[8], data[9]]);
 
-    if flags & !SUPPORTED_FLAGS != 0 {
-        return Err(Error::UnsupportedFlags);
+    if crc32(&data[HEADER_SIZE..]) != expected {
+        return Err(Error::BadChecksum);
     }
 
-    Ok(Prefix {
-        version: (data[4], data[5]),
-        flags,
-    })
+    Ok((data[4], data[5]))
 }
 
 fn read_text(map: &Cbor, key: &str) -> Result<Option<String>> {
@@ -121,25 +130,15 @@ fn read_text(map: &Cbor, key: &str) -> Result<Option<String>> {
     }
 }
 
-fn read_metadata(primitive: &Cbor, is_bound: bool) -> Result<Metadata> {
+fn read_metadata(primitive: &Cbor) -> Result<Metadata> {
     if !matches!(primitive, Cbor::Map(_)) {
         return Err(Error::BadMetadata);
     }
 
-    let mut metadata = Metadata::default();
-
-    // Only looked at in a bound file.
-    if is_bound {
-        let bound_to = read_text(primitive, "bound_to")?.ok_or(Error::BadMetadata)?;
-
-        if bound_to.len() > BOUND_TO_MAXIMUM_SIZE {
-            return Err(Error::BadMetadata);
-        }
-
-        metadata.bound_to = Some(bound_to);
-    }
-
-    metadata.generator = read_text(primitive, "generator")?;
+    let mut metadata = Metadata {
+        generator: read_text(primitive, "generator")?,
+        ..Metadata::default()
+    };
 
     match primitive.get("sources") {
         None => {}
@@ -165,42 +164,25 @@ fn read_metadata(primitive: &Cbor, is_bound: bool) -> Result<Metadata> {
     Ok(metadata)
 }
 
-/// Returns the header of `data`. Nothing of the file is checked but
-/// its version and its flags, and not what it is bound to.
+/// Returns the header of `data`, after checking its version and the
+/// CRC-32 of the file. The nodes are not read.
 pub fn read_header(data: &[u8]) -> Result<Header> {
-    let prefix = read_prefix(data)?;
+    let version = read_prefix(data)?;
     let (primitive, _) = cbor::parse_first(data, HEADER_SIZE, cbor::DEFAULT_MAX_DEPTH)?;
 
     Ok(Header {
-        version: prefix.version,
-        metadata: read_metadata(&primitive, prefix.flags & FLAG_BOUND != 0)?,
+        version,
+        metadata: read_metadata(&primitive)?,
     })
-}
-
-fn check_binding(bound_to: Option<&str>, expected: Binding<'_>) -> Result<()> {
-    match (expected, bound_to) {
-        (Binding::Any, _) | (Binding::None, None) => Ok(()),
-        // Byte for byte as UTF-8, and no more of them than there can be.
-        (Binding::To(expected), Some(bound_to))
-            if expected.len() <= BOUND_TO_MAXIMUM_SIZE && expected == bound_to =>
-        {
-            Ok(())
-        }
-        _ => Err(Error::BadBinding),
-    }
 }
 
 /// Reads the `.asni` file in `data`, after the checks.
 ///
-/// Nothing of the nodes is read as CBOR before what the file is bound
-/// to is checked.
-pub fn read(data: &[u8], checks: &Checks<'_>) -> Result<Asni> {
-    let prefix = read_prefix(data)?;
+/// Nothing of the file is read as CBOR before its CRC-32 is checked.
+pub fn read(data: &[u8], checks: &Checks) -> Result<Asni> {
+    let version = read_prefix(data)?;
     let (primitive, offset) = cbor::parse_first(data, HEADER_SIZE, checks.max_depth)?;
-    let metadata = read_metadata(&primitive, prefix.flags & FLAG_BOUND != 0)?;
-
-    check_binding(metadata.bound_to.as_deref(), checks.bound_to)?;
-
+    let metadata = read_metadata(&primitive)?;
     let (nodes, offset) = cbor::parse_first(data, offset, checks.max_depth)?;
 
     if offset != data.len() {
@@ -208,10 +190,22 @@ pub fn read(data: &[u8], checks: &Checks<'_>) -> Result<Asni> {
     }
 
     Ok(Asni {
-        header: Header {
-            version: prefix.version,
-            metadata,
-        },
+        header: Header { version, metadata },
         nodes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::crc32;
+
+    #[test]
+    fn crc32_is_that_of_zlib() {
+        assert_eq!(crc32(b""), 0);
+        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
+        assert_eq!(
+            crc32(b"The quick brown fox jumps over the lazy dog"),
+            0x414f_a339
+        );
+    }
 }

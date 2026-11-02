@@ -14,7 +14,7 @@
 //! );
 //!
 //! // What a runtime loads, and the syntax tree for plugins.
-//! let asni = compile_to_asni(&input, None)?;
+//! let asni = compile_to_asni(&input)?;
 //! let asnst = parse_to_asnst(&input)?;
 //!
 //! assert!(asni.starts_with(b"ASNI"));
@@ -150,15 +150,7 @@ fn metadata_of(input: &Input, include_text: bool) -> Result<container::Metadata,
             env!("CARGO_PKG_VERSION")
         )),
         sources,
-        bound_to: None,
     })
-}
-
-fn container_error(message: String) -> Error {
-    Error {
-        kind: "Error".to_string(),
-        message,
-    }
 }
 
 /// What a compiled module has, for those who want to tell of it.
@@ -199,41 +191,33 @@ fn summarize(nodes: &Value) -> Vec<ModuleSummary> {
 }
 
 /// The contents of the `.asni` file of an input.
-pub fn compile_to_asni(input: &Input, bound_to: Option<String>) -> Result<Vec<u8>, Error> {
-    compile_to_asni_with_summary(input, bound_to).map(|(data, _)| data)
+pub fn compile_to_asni(input: &Input) -> Result<Vec<u8>, Error> {
+    compile_to_asni_with_summary(input).map(|(data, _)| data)
 }
 
 /// Same as `compile_to_asni()`, and tells what the modules have.
-pub fn compile_to_asni_with_summary(
-    input: &Input,
-    bound_to: Option<String>,
-) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
-    compile_to_asni_with_summary_and_options(input, bound_to, &CompileOptions::default())
+pub fn compile_to_asni_with_summary(input: &Input) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
+    compile_to_asni_with_summary_and_options(input, &CompileOptions::default())
 }
 
 /// Compiles a container with explicit ANY DEFINED BY mappings.
 pub fn compile_to_asni_with_options(
     input: &Input,
-    bound_to: Option<String>,
     options: &CompileOptions,
 ) -> Result<Vec<u8>, Error> {
-    compile_to_asni_with_summary_and_options(input, bound_to, options).map(|(data, _)| data)
+    compile_to_asni_with_summary_and_options(input, options).map(|(data, _)| data)
 }
 
 /// Compiles a container and summary with explicit ANY DEFINED BY mappings.
 pub fn compile_to_asni_with_summary_and_options(
     input: &Input,
-    bound_to: Option<String>,
     options: &CompileOptions,
 ) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
     let nodes = compile_with_options(input, options)?;
     let summary = summarize(&nodes);
-    let mut metadata = metadata_of(input, false)?;
-    metadata.bound_to = bound_to;
+    let metadata = metadata_of(input, false)?;
 
-    let data = container::write_asni(&metadata, &nodes).map_err(container_error)?;
-
-    Ok((data, summary))
+    Ok((container::write_asni(&metadata, &nodes), summary))
 }
 
 /// The contents of the `.asnst` file of an input, which has the text of
@@ -242,7 +226,7 @@ pub fn parse_to_asnst(input: &Input) -> Result<Vec<u8>, Error> {
     let tree = parse(input)?;
     let metadata = metadata_of(input, true)?;
 
-    container::write_asnst(&metadata, &tree).map_err(container_error)
+    Ok(container::write_asnst(&metadata, &tree))
 }
 
 /// Parses an input to its syntax tree, in the readable form of a node

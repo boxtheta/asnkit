@@ -55,22 +55,22 @@ mod tests {
     /// why.
     const DIFFERENT: &[(&str, &str, &str)] = &[
         (
-            "c8b38e849837f002",
+            "9a615c33283dca88",
             "Sequence12",
             "a SEQUENCE that is not extensible with more in it is not decoded",
         ),
         (
-            "afda0b2a37120055",
+            "745a36f7b2613db3",
             "Fie",
             "an ANY DEFINED BY is any value, not one of those of its table",
         ),
         (
-            "b413d84123e50194",
+            "2926dfeb2098c288",
             "Fie",
             "an ANY DEFINED BY is any value, not one of those of its table",
         ),
         (
-            "1f5a011b6e9dd641",
+            "5275d9b4e2f76516",
             "Fie",
             "an ANY DEFINED BY is any value, not one of those of its table",
         ),

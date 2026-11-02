@@ -276,8 +276,6 @@ def load(
     codec: CodecType = "ber",
     numeric_enums: bool = False,
     *,
-    bound_to: str | None = None,
-    accept_any_binding: bool = False,
     lenient: bool = False,
 ) -> Specification:
     """Return a `Specification` object that can be used to
@@ -307,9 +305,8 @@ def load(
     DER whatever `lenient` is, and no other codec looks at it. What is
     left after the data, as in `decode`, is never accepted.
 
-    `bound_to` and `accept_any_binding` tell which files to read, as
-    for `from_asni()`. A file that is bound to something is not read
-    unless told what to expect.
+    An `.asni` file whose CRC-32 does not match is corrupt, and is not
+    loaded.
 
     ```python
     >>> with open('foo.asni', 'rb') as fin:
@@ -319,11 +316,7 @@ def load(
     """
 
     if isinstance(compiled, (bytes, bytearray)):
-        compiled = syntax.from_asni(
-            compiled,
-            bound_to=bound_to,
-            accept_any_binding=accept_any_binding,
-        )
+        compiled = syntax.from_asni(compiled)
 
     if not isinstance(compiled, syntax.CompiledSpecification):
         raise CompileError("Expected a compiled specification.")
@@ -336,8 +329,6 @@ def load_asni(
     codec: CodecType = "ber",
     numeric_enums: bool = False,
     *,
-    bound_to: str | None = None,
-    accept_any_binding: bool = False,
     lenient: bool = False,
 ) -> Specification:
     """Same as `load()`, but for given contents of an `.asni`
@@ -350,11 +341,7 @@ def load_asni(
     """
 
     return load(
-        syntax.from_asni(
-            data,
-            bound_to=bound_to,
-            accept_any_binding=accept_any_binding,
-        ),
+        syntax.from_asni(data),
         codec,
         numeric_enums,
         lenient=lenient,
@@ -366,8 +353,6 @@ def load_asni_file(
     codec: CodecType = "ber",
     numeric_enums: bool = False,
     *,
-    bound_to: str | None = None,
-    accept_any_binding: bool = False,
     lenient: bool = False,
 ) -> Specification:
     """Same as `load()`, but for the `.asni` file with given
@@ -380,11 +365,7 @@ def load_asni_file(
     """
 
     return load(
-        syntax.from_asni_file(
-            filename,
-            bound_to=bound_to,
-            accept_any_binding=accept_any_binding,
-        ),
+        syntax.from_asni_file(filename),
         codec,
         numeric_enums,
         lenient=lenient,

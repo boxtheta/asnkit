@@ -63,9 +63,8 @@ def main(arguments: Sequence[str] | None = None) -> None:
 
         return
 
-    # Whatever it is bound to, as it is only looked at.
     if header.kind == "asni":
-        tree = from_asni(data, accept_any_binding=True)
+        tree = from_asni(data)
     else:
         tree = from_asnst(data)
 

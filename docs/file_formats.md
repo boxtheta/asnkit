@@ -39,7 +39,7 @@ An `.asnst` file has the suffix `+cbor`, as it is nothing but CBOR
 and anything that reads CBOR can read it. An `.asni` file has no
 suffix: its header comes before the CBOR.
 
-A file has the same media type whatever its version or binding. One
+A file has the same media type whatever its version. One
 that sends a file, as over HTTP, gives its media type. One that receives
 it does not rely on the media type, nor on the extension, but on what
 is in the file: an `.asni` file begins with the four bytes
@@ -56,90 +56,62 @@ than one byte have the most significant byte first.
 | 0 | 4 | `ASNI` in ASCII. |
 | 4 | 1 | Major version, currently 2. |
 | 5 | 1 | Minor version, currently 0. |
-| 6 | 2 | [Flags](#flags). |
-| 8 | variable | The [metadata](#metadata), as one CBOR map. |
+| 6 | 4 | The [CRC-32](#crc-32) of every byte from offset 10 to the end. |
+| 10 | variable | The [metadata](#metadata), as one CBOR map. |
 | after metadata | variable | The [nodes](#nodes), as one CBOR item. |
 
-The fixed header is 8 bytes. Nothing follows the nodes. A reader rejects
-a file with anything after them.
+The fixed header is 10 bytes. Nothing follows the nodes. A reader
+rejects a file with anything after them.
 
 Version 1 files are rejected as an unsupported version. Recompile the
-ASN.1 sources to make version 2 files. Signing, encryption and nonces
-are no longer part of the format. Authentication, confidentiality and
+ASN.1 sources to make version 2 files. Signing, encryption, nonces and
+binding are not part of the format. Authentication, confidentiality and
 replay protection belong in the system that distributes the file, such
 as a firmware update or patching system.
 
-## Flags
+> **Note:** 2.0.0-rc4 wrote version 2.0 files with two bytes of flags
+> at offset 6, and the metadata at offset 8. Those files are not
+> version 2.0 files as told here, and a reader rejects them, most often
+> as corrupt. Recompile them. Release candidates of a new major version
+> make no promise of compatibility with each other.
 
-| Bit | Name | What |
-|---|---|---|
-| 0 | bound | The file is only for those its metadata tells. See [Bound files](#bound-files). |
-| 1-15 | -- | Not in use. Zero. |
+## CRC-32
 
-Bit 0 is the least significant, so a bound file has the flags `00 01`.
-An unbound file has `00 00`.
+The four bytes at offset 6 are the CRC-32 of the rest of the file, the
+metadata and the nodes, as an unsigned number with its most
+significant byte first. It is the CRC-32 of zlib, gzip and PNG
+(CRC-32/ISO-HDLC): the polynomial `0x04C11DB7`, reflected, starting
+from `0xFFFFFFFF`, and with the result XORed with `0xFFFFFFFF`. The
+CRC-32 of the nine bytes `123456789` is `0xCBF43926`. Python has it as
+`zlib.crc32()`.
 
-A reader rejects a file with a flag set that it does not know of or
-does not support. It never ignores one. Version 2 assigns bit 0 to
-binding; version 1 flag meanings do not apply to it.
+A reader computes the CRC-32 of every byte after offset 10, and
+rejects the file if it is not the one in the header, before it reads
+any of the CBOR. A file that is cut short, has bytes added to it or has
+any of them changed after the header is so rejected as corrupt, and
+never parsed.
 
-Only an `.asni` file has flags. An `.asnst` file has no binding and
-keeps version 1.0, as its format has not changed.
+The magic and the version are not covered: a reader checks them
+itself, and a later minor version of a file stays readable without the
+CRC-32 changing.
 
-## Bound files
-
-With the bound flag set, the file is only for those it is bound to,
-and its [metadata](#metadata) tells which in `bound_to`: a text string of at
-most 255 bytes as UTF-8. What is in it is up to those making the
-file. It may be the name of a product, or anything else.
-
-A reader is set up with the string it accepts. It rejects a bound
-file if `bound_to` is not that string, byte for byte as UTF-8, or
-if there is no `bound_to`. A reader that is not set up with a
-string rejects every bound file. A reader that is set up with one
-rejects every file that is not bound.
-
-A reader can also be set up to accept any binding. It then reads a
-file whatever it is bound to, and whether it is bound or not. That is
-never how a reader is set up unless asked to be.
-
-A reader rejects a `bound_to` of more than 255 bytes whatever it is
-set up to accept, and compares no more bytes than that.
-
-A reader that reads a file as it receives it never keeps
-`bound_to`. The length of a text string comes before its bytes in
-CBOR, so it first rejects a `bound_to` of more than 255 bytes, or
-of another length than that of its own string, and then compares the
-bytes as it reads them. How much memory it uses so never depends on
-how long `bound_to` is.
-
-A reader that is given a whole file in memory may read `bound_to`
-before it checks its length, as the reader of this package does. It
-then uses no more memory for it than the file is long.
-
-It is a flag, and not only something in the metadata, because a
-reader ignores what it does not know of in the metadata, but never a
-flag. A reader that knows nothing of bound files rejects them all.
-
-Binding keeps a reader from loading a file made for something else by
-mistake. It does not authenticate the file or prevent anyone from
-changing its binding. The metadata is readable in every file.
+The CRC-32 tells a file that is corrupt, as by a bad storage or
+transfer. It is not authentication: anyone who changes a file can
+compute its CRC-32 again. A reader treats a file as being as trusted as
+where it came from.
 
 ## Order of checks
 
 A reader checks a file in this order, and stops at the first check
 that fails:
 
-1. The fixed header: its length, the four first bytes, the major version
-   and the flags.
-2. The metadata as CBOR, including the presence, type and length of
-   `bound_to` when the bound flag is set.
-3. What the file is bound to, against the reader's expected binding.
+1. The fixed header: its length, the four first bytes and the major
+   version.
+2. The CRC-32 of the rest of the file.
+3. The metadata as CBOR.
 4. The nodes as CBOR, then that nothing follows them.
 
-The nodes are not read before the binding check. Parsing limits apply
-to both the metadata and the nodes. The default reader accepts only
-unbound files; accepting any binding is an explicit option.
+Parsing limits apply to both the metadata and the nodes.
 
 ## Syntax tree files
 
@@ -158,9 +130,8 @@ another major version.
 
 ## Metadata
 
-The metadata is a CBOR map with text strings as keys. Keys are optional
-except for `bound_to` in a bound file. A reader ignores those it does not
-know of.
+The metadata is a CBOR map with text strings as keys. Keys are
+optional. A reader ignores those it does not know of.
 
 - `generator` — A text string naming what wrote the file and its version.
 
@@ -174,14 +145,11 @@ know of.
   - `text` — Its text. An `.asnst` file has it unless told otherwise. An
     `.asni` file never does.
 
-- `bound_to` — What the file is bound to, as a text string of at most 255 bytes
-  as UTF-8. Only looked at in a bound `.asni` file. See [Bound files](#bound-files).
-
 - `other` — A map of anything else those making the file want it to tell.
 
 A reader rejects a file with one of these keys of another type than
-told here, but for `bound_to` in a file that is not bound, which it
-does not look at.
+told here. `bound_to`, which 2.0.0-rc4 wrote, is a key it does not
+know of, and ignores.
 
 ## CBOR
 
@@ -1267,9 +1235,6 @@ reader rejects a file of another major version.
 
 A number of a kind and a place of a field are never given to
 something else.
-
-The flags are not part of the version. A flag is added without a new
-version, as a reader rejects a file with a flag it does not know of.
 
 ## Not yet specified
 

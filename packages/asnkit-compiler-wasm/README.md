@@ -26,8 +26,8 @@ the name of the source file, which a text does not have.
 ## API
 
 - `compile(specification, options)` returns the contents of an `.asni`
-  file as a `Uint8Array`. The text has one module or more. The options
-  are those of `asnkitcc compile`, in camel case: `boundTo`.
+  file as a `Uint8Array`. The text has one module or more. There are no
+  options yet; those that were removed, as `boundTo`, are refused.
 - `compileWithSummary(specification, options)` returns `{ asni,
   modules }`, with the `name`, `types` and `objectClasses` of each
   module.
@@ -38,8 +38,7 @@ the name of the source file, which a text does not have.
 - `ready()` loads the WebAssembly, which the other functions do too.
 
 Errors are thrown as `Error`s named `ParseError` and `CompileError`,
-with the line and the column, as `Error` for what the format does not
-allow, such as a binding longer than 255 UTF-8 bytes, or as a `TypeError` for wrong
+with the line and the column, or as a `TypeError` for wrong
 arguments. There are no plugins, which are programs to run. TypeScript
 types are in `js/index.d.ts`.
 

@@ -1027,8 +1027,8 @@ pub fn load_with(
 
 /// What a module says of its specification when it is not in it.
 const NOT_EMBEDDED: &str = r#"// The compiled specification is not in this module. Load the .asni file
-// it was made from with asnkitrt::runtime::Specification::from_asni(), with
-// the checks the file needs, and give it to the functions below.
+// it was made from with asnkitrt::runtime::Specification::from_asni(), which
+// checks its CRC-32, and give it to the functions below.
 "#;
 
 /// The `impl` of the constants of a struct or an enum, if it has any.
@@ -1104,14 +1104,11 @@ fn format_bytes(data: &[u8]) -> String {
         .join("\n")
 }
 
-/// The Rust module for the contents of an `.asni` file, which must not
-/// be bound to something, as it may be embedded in the module and
-/// loaded without checking that.
+/// The Rust module for the contents of an `.asni` file, which may be
+/// embedded in the module.
 /// Returns it with the names of the files it was made from.
 pub fn generate(asni: &[u8], options: Options) -> Result<(String, Vec<String>), Error> {
     let file = container::read(asni, &Checks::default())?;
-
-    // The default checks reject a file that is bound.
     let specification = Specification::from_nodes(&file.nodes, runtime::Options::new(Codec::Ber))?;
     let sources: Vec<String> = file
         .header

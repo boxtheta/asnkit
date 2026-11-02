@@ -17,7 +17,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use asnkitrt::container::{self, Binding, Checks};
+use asnkitrt::container::{self, Checks};
 use asnkitrt::node::Spec;
 use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::{self, Codec};
@@ -109,10 +109,7 @@ fn main() -> ExitCode {
         }
     }
 
-    let checks = Checks {
-        bound_to: Binding::Any,
-        ..Checks::default()
-    };
+    let checks = Checks::default();
 
     for path in arguments {
         let data = match std::fs::read(&path) {

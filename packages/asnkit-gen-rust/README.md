@@ -48,9 +48,8 @@ Options, given with `--plugin-opt KEY=VALUE`:
 : `false` to leave the compiled specification out of the module, as for
   one distributed separately. The module then has no `load()` and
   `load_with()`: load the `.asni` file with
-  `asnkitrt::runtime::Specification::from_asni()`, with the
-  `asnkitrt::container::Checks` it needs, and give it to the methods as
-  any other. The file has to be compiled from the same specification.
+  `asnkitrt::runtime::Specification::from_asni()`, which checks its
+  CRC-32, and give it to the methods as any other. The file has to be compiled from the same specification.
   Default: `true`.
 
 ## Type mapping

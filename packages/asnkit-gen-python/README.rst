@@ -31,10 +31,8 @@ Options, given with ``--plugin-opt KEY=VALUE``:
 ``embed``
    ``false`` to leave the compiled specification out of the module, as
    for one distributed separately. The module then has
-   ``use_asni(data, *, bound_to=None, accept_any_binding=False)``, which
-   takes the contents of a version 2 ``.asni`` file, checks its binding
-   once and uses it for every codec. By default it accepts only unbound
-   files; give ``bound_to`` for an expected binding. Until it
+   ``use_asni(data)``, which takes the contents of a version 2 ``.asni``
+   file, checks its CRC-32 once and uses it for every codec. Until it
    is called, encoding and decoding raise ``RuntimeError``. The file has
    to be compiled from the same specification. Default: ``true``.
 

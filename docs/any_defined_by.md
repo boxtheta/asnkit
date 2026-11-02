@@ -219,7 +219,7 @@ use asnkit_compiler::{CompileOptions, Input, compile_to_asni_with_options};
 
 let options = CompileOptions::from_toml(&std::fs::read_to_string("choices.toml")?)?;
 let input = Input::String(std::fs::read_to_string("protocol.asn")?);
-let asni = compile_to_asni_with_options(&input, None, &options)?;
+let asni = compile_to_asni_with_options(&input, &options)?;
 std::fs::write("protocol.asni", asni)?;
 ```
 

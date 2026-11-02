@@ -14,8 +14,9 @@ runtime loads, also on small devices, so it is:
   knows, ignoring the fields of nodes it does not know of in a later
   one.
 
-- Two bytes of flags, the most significant first, telling if the
-  file is bound to what its metadata tells.
+- Four bytes of the CRC-32 of the rest of the file, the most
+  significant first, as :func:`zlib.crc32` computes it, which tells a
+  file that is corrupt.
 
 - The metadata as a CBOR map.
 
@@ -34,6 +35,7 @@ See :mod:`.wire` for the two forms of nodes.
 
 import dataclasses
 import hashlib
+import zlib
 from typing import Any, Dict, Mapping, Tuple
 
 from ..version import __version__
@@ -51,15 +53,8 @@ FORMAT_ASNST = "asnst"
 # minor). That of an .asnst file is SCHEMA_VERSION.
 ASNI_VERSION = (2, 0)
 
-HEADER_SIZE = 8
-
-# Of what a file is bound to, in bytes as UTF-8.
-BOUND_TO_MAXIMUM_SIZE = 255
-
-# The file is only for what its metadata tells it is bound to.
-FLAG_BOUND = 0x0001
-
-SUPPORTED_FLAGS = FLAG_BOUND
+# The magic, the version and the CRC-32 of the rest of the file.
+HEADER_SIZE = 10
 
 
 @dataclasses.dataclass(frozen=True, kw_only=True)
@@ -97,16 +92,10 @@ class Metadata:
     anything else as strings, numbers, lists and dictionaries with
     strings as keys in `other`.
 
-    `bound_to` is what an ``.asni`` file is only for, as any string of
-    at most 255 bytes as UTF-8, or ``None`` for a file that is not
-    bound. A reader only reads a bound file if told to expect that
-    string. An ``.asnst`` file is never bound.
-
     """
 
     generator: str | None = "asnkit " + __version__
     sources: Tuple[Source, ...] = ()
-    bound_to: str | None = None
     other: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
 
@@ -139,47 +128,17 @@ def _metadata_to_primitive(metadata: Metadata) -> Dict[str, Any]:
             for source in metadata.sources
         ]
 
-    if metadata.bound_to is not None:
-        if not isinstance(metadata.bound_to, str):
-            raise ConvertError(
-                "Expected what the file is bound to as a string, but got {!r}.".format(
-                    metadata.bound_to
-                )
-            )
-
-        if len(metadata.bound_to.encode("utf-8")) > BOUND_TO_MAXIMUM_SIZE:
-            raise ConvertError(
-                "Expected what the file is bound to as at most {} bytes as "
-                "UTF-8.".format(BOUND_TO_MAXIMUM_SIZE)
-            )
-
-        primitive["bound_to"] = metadata.bound_to
-
     if metadata.other:
         primitive["other"] = dict(metadata.other)
 
     return primitive
 
 
-def _metadata_from_primitive(primitive: Any, is_bound: bool) -> Metadata:
+def _metadata_from_primitive(primitive: Any) -> Metadata:
     if not isinstance(primitive, dict):
         raise ConvertError("Expected the metadata as a map.")
 
     names = {field.name for field in dataclasses.fields(Source)}
-    bound_to = None
-
-    # Only looked at in a bound file.
-    if is_bound:
-        bound_to = primitive.get("bound_to")
-
-        if not isinstance(bound_to, str):
-            raise ConvertError("Expected a bound file to tell what it is bound to.")
-
-        if len(bound_to.encode("utf-8")) > BOUND_TO_MAXIMUM_SIZE:
-            raise ConvertError(
-                "Expected what the file is bound to as at most {} bytes as "
-                "UTF-8.".format(BOUND_TO_MAXIMUM_SIZE)
-            )
 
     # Anything not known is that of a later minor version.
     return Metadata(
@@ -188,7 +147,6 @@ def _metadata_from_primitive(primitive: Any, is_bound: bool) -> Metadata:
             Source(**{name: value for name, value in source.items() if name in names})
             for source in primitive.get("sources", [])
         ),
-        bound_to=bound_to,
         other=primitive.get("other", {}),
     )
 
@@ -197,19 +155,10 @@ def _write_asni(metadata: Metadata | None, nodes: Any) -> bytes:
     if metadata is None:
         metadata = Metadata()
 
-    flags = 0
-
-    if metadata.bound_to is not None:
-        flags |= FLAG_BOUND
+    rest = cbor.dumps(_metadata_to_primitive(metadata)) + cbor.dumps(nodes)
 
     return b"".join(
-        [
-            MAGIC_ASNI,
-            bytes(ASNI_VERSION),
-            flags.to_bytes(2, "big"),
-            cbor.dumps(_metadata_to_primitive(metadata)),
-            cbor.dumps(nodes),
-        ]
+        [MAGIC_ASNI, bytes(ASNI_VERSION), zlib.crc32(rest).to_bytes(4, "big"), rest]
     )
 
 
@@ -222,9 +171,9 @@ def _check_version(version: Tuple[int, int], expected: Tuple[int, int]) -> None:
         )
 
 
-def _read_flags(data: bytes) -> int:
-    """Returns the flags of an .asni file, after checking its version
-    and that they are known.
+def _check_prefix(data: bytes) -> None:
+    """Checks the version of an .asni file and the CRC-32 of the rest
+    of it, before any of its CBOR is read.
 
     """
 
@@ -232,23 +181,20 @@ def _read_flags(data: bytes) -> int:
         raise ConvertError("Expected an .asni or .asnst file.")
 
     _check_version((data[4], data[5]), ASNI_VERSION)
-    flags = int.from_bytes(data[6:HEADER_SIZE], "big")
 
-    if flags & ~SUPPORTED_FLAGS:
-        raise ConvertError("Unsupported flags 0x{:04x}.".format(flags))
-
-    return flags
+    if zlib.crc32(data[HEADER_SIZE:]) != int.from_bytes(data[6:HEADER_SIZE], "big"):
+        raise ConvertError(
+            "The CRC-32 of the file does not match: the file is corrupt."
+        )
 
 
 def _read_asni_header(data: bytes) -> Header:
-    flags = _read_flags(data)
+    _check_prefix(data)
 
     return Header(
         kind="asni",
         version=(data[4], data[5]),
-        metadata=_metadata_from_primitive(
-            cbor.loads_first(data, HEADER_SIZE)[0], bool(flags & FLAG_BOUND)
-        ),
+        metadata=_metadata_from_primitive(cbor.loads_first(data, HEADER_SIZE)[0]),
     )
 
 
@@ -281,49 +227,13 @@ def _read_asnst(data: bytes) -> Tuple[Header, Any]:
         Header(
             kind="asnst",
             version=(version[0], version[1]),
-            metadata=_metadata_from_primitive(contents.get("metadata", {}), False),
+            metadata=_metadata_from_primitive(contents.get("metadata", {})),
         ),
         contents.get("tree"),
     )
 
 
-def _check_binding(
-    bound_to: str | None, expected: str | None, accept_any: bool
-) -> None:
-    """Raises an exception if what a file is bound to, which is None
-    if it is not bound, is not what it has to be.
-
-    """
-
-    if accept_any:
-        return
-
-    if expected is None:
-        if bound_to is not None:
-            raise ConvertError(
-                "The file is bound to '{}', but no binding is expected.".format(
-                    bound_to
-                )
-            )
-    elif bound_to is None:
-        raise ConvertError("Expected a file bound to '{}'.".format(expected))
-    elif bound_to.encode("utf-8") != expected.encode("utf-8"):
-        raise ConvertError(
-            "Expected a file bound to '{}', but it is bound to '{}'.".format(
-                expected, bound_to
-            )
-        )
-
-
-@dataclasses.dataclass(frozen=True, kw_only=True)
-class _Checks:
-    """What an .asni file has to be to be read."""
-
-    bound_to: str | None = None
-    accept_any_binding: bool = False
-
-
-def _read_asni(data: bytes | bytearray, checks: _Checks) -> Any:
+def _read_asni(data: bytes | bytearray) -> Any:
     data = bytes(data)
 
     if data[:4] != MAGIC_ASNI:
@@ -332,12 +242,9 @@ def _read_asni(data: bytes | bytearray, checks: _Checks) -> Any:
 
         raise ConvertError("Expected an .asni file, but got an .asnst file.")
 
-    flags = _read_flags(data)
+    _check_prefix(data)
     metadata, offset = cbor.loads_first(data, HEADER_SIZE)
-    metadata = _metadata_from_primitive(metadata, bool(flags & FLAG_BOUND))
-
-    # Before the nodes are looked at.
-    _check_binding(metadata.bound_to, checks.bound_to, checks.accept_any_binding)
+    _metadata_from_primitive(metadata)
     nodes, offset = cbor.loads_first(data, offset)
 
     if offset != len(data):
@@ -351,8 +258,8 @@ def _read_asni(data: bytes | bytearray, checks: _Checks) -> Any:
 def read_header(data: bytes | bytearray) -> Header:
     """Returns the header of given contents of an ``.asni`` or
     ``.asnst`` file, with its metadata. Nothing of an ``.asni`` file
-    is checked but its version and its flags, and not what it is
-    bound to.
+    is checked but its version and its CRC-32, and its nodes are not
+    read.
 
     >>> asnkitrt.syntax.read_header(data).metadata.sources
     (Source(name='foo.asn', sha256='8c3f...', text=None),)
@@ -378,9 +285,6 @@ def to_asnst(tree: SyntaxTree, metadata: Metadata | None = None) -> bytes:
 
     if metadata is None:
         metadata = Metadata()
-
-    if metadata.bound_to is not None:
-        raise ConvertError("Only an .asni file can be bound to something.")
 
     return cbor.dumps(
         {
@@ -431,8 +335,8 @@ def to_asni(
     metadata: Metadata | None = None,
 ) -> bytes:
     """Encode given compiled specification as the contents of an
-    ``.asni`` file, with given metadata. The file is bound to what
-    the metadata tells, if anything.
+    ``.asni`` file, with given metadata, and the CRC-32 of both in its
+    header.
 
     >>> with open('foo.asni', 'wb') as fout:
     ...     fout.write(asnkitrt.syntax.to_asni(compiled))
@@ -442,30 +346,16 @@ def to_asni(
     return _write_asni(metadata, to_compact(compiled))
 
 
-def from_asni(
-    data: bytes | bytearray,
-    *,
-    bound_to: str | None = None,
-    accept_any_binding: bool = False,
-) -> CompiledSpecification:
+def from_asni(data: bytes | bytearray) -> CompiledSpecification:
     """Decode given contents of an ``.asni`` file, as returned by
-    :func:`to_asni()`, to a compiled specification.
-
-    `bound_to` is what the file has to be bound to. A file that is
-    not bound is then not read. A bound file is not read if `bound_to`
-    is not given. With `accept_any_binding` as ``True`` a file is read
-    whatever it is bound to, and whether it is bound or not.
+    :func:`to_asni()`, to a compiled specification. A file whose
+    CRC-32 does not match is corrupt, and is not read.
 
     >>> compiled = asnkitrt.syntax.from_asni(data)
 
     """
 
-    compiled = from_compact(
-        _read_asni(
-            data,
-            _Checks(bound_to=bound_to, accept_any_binding=accept_any_binding),
-        )
-    )
+    compiled = from_compact(_read_asni(data))
 
     if not isinstance(compiled, CompiledSpecification):
         raise ConvertError("Expected a compiled specification.")
@@ -473,12 +363,7 @@ def from_asni(
     return compiled
 
 
-def from_asni_file(
-    filename: str,
-    *,
-    bound_to: str | None = None,
-    accept_any_binding: bool = False,
-) -> CompiledSpecification:
+def from_asni_file(filename: str) -> CompiledSpecification:
     """Same as :func:`from_asni()`, but for the ``.asni`` file with
     given name.
 
@@ -487,6 +372,4 @@ def from_asni_file(
     """
 
     with open(filename, "rb") as fin:
-        return from_asni(
-            fin.read(), bound_to=bound_to, accept_any_binding=accept_any_binding
-        )
+        return from_asni(fin.read())

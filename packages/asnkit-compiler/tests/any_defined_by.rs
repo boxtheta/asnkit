@@ -25,7 +25,7 @@ member = "{member}"
 }
 
 fn container(source: &str, options: &CompileOptions) -> Vec<u8> {
-    compile_to_asni_with_options(&Input::String(source.into()), None, options).unwrap()
+    compile_to_asni_with_options(&Input::String(source.into()), options).unwrap()
 }
 
 fn message<'a>(key: Value<'a>, payload: Value<'a>) -> Value<'a> {

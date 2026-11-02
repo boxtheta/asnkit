@@ -67,7 +67,7 @@ which one it got, and `asnkitrt.native_version()` which bindings are
 installed, or `None`, for bug reports.
 
 What `load()` reads stays in Python: `syntax.from_asni()` checks the
-version 2 container header, metadata and binding. The native backend
+version 2 container header, its CRC-32 and the metadata. The native backend
 is given the nodes it returns, as CBOR (`Specification::from_nodes()`
 of the runtime for Rust), so that there is one place where files are
 checked. Signing, encryption and nonces are no longer part of loading

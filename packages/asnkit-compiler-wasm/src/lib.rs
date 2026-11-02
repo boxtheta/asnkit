@@ -50,36 +50,28 @@ fn absent(value: &JsValue) -> bool {
     value.is_undefined() || value.is_null()
 }
 
-fn text(options: &JsValue, key: &str) -> Result<Option<String>, JsValue> {
-    let value = option(options, key)?;
-
-    if absent(&value) {
-        return Ok(None);
-    }
-
-    value
-        .as_string()
-        .map(Some)
-        .ok_or_else(|| type_error(&format!("Expected '{key}' to be a string.")))
-}
+const UNSIGNED: &str = ".asni files have no nonce and are not signed or encrypted.";
+const UNBOUND: &str =
+    ".asni files are not bound to anything. They have a CRC-32, which tells a corrupt file.";
 
 /// The options of what `.asni` files no longer have: a nonce, a
-/// signature and encryption. They are rejected rather than ignored, so
-/// that nobody is given a file that is not signed when they asked for
-/// one that is.
-const REMOVED_OPTIONS: [&str; 5] = [
-    "nonce",
-    "signingKey",
-    "signingKeyId",
-    "encryptionKey",
-    "encryptionKeyId",
+/// signature, encryption and a binding, with why. They are rejected
+/// rather than ignored, so that nobody is given a file that is not what
+/// they asked for.
+const REMOVED_OPTIONS: [(&str, &str); 6] = [
+    ("nonce", UNSIGNED),
+    ("signingKey", UNSIGNED),
+    ("signingKeyId", UNSIGNED),
+    ("encryptionKey", UNSIGNED),
+    ("encryptionKeyId", UNSIGNED),
+    ("boundTo", UNBOUND),
 ];
 
 fn reject_removed(options: &JsValue) -> Result<(), JsValue> {
-    for key in REMOVED_OPTIONS {
+    for (key, why) in REMOVED_OPTIONS {
         if !absent(&option(options, key)?) {
             return Err(type_error(&format!(
-                "'{key}' is no longer supported: .asni files have no nonce and are not signed or encrypted."
+                "'{key}' is no longer supported: {why}"
             )));
         }
     }
@@ -93,8 +85,7 @@ fn compile_to_asni(
 ) -> Result<(Vec<u8>, Vec<ModuleSummary>), JsValue> {
     reject_removed(options)?;
 
-    compile_to_asni_with_summary(&Input::String(specification), text(options, "boundTo")?)
-        .map_err(compiler_error)
+    compile_to_asni_with_summary(&Input::String(specification)).map_err(compiler_error)
 }
 
 /// Compiles the text of a specification, of one module or more, to the
@@ -128,8 +119,8 @@ pub fn compile_with_summary(specification: String, options: JsValue) -> Result<O
 }
 
 /// Compiles the text of a specification, of one module or more, to the
-/// contents of an `.asni` file. The options are those of `asnkitcc
-/// compile`, in camel case: `boundTo`.
+/// contents of an `.asni` file. No options are taken yet; `options` is
+/// checked for those that were removed.
 #[wasm_bindgen]
 pub fn compile(specification: String, options: JsValue) -> Result<Vec<u8>, JsValue> {
     Ok(compile_to_asni(specification, &options)?.0)

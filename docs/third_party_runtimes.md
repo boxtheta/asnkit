@@ -22,8 +22,9 @@ files, which are for plugins of the compiler.
 
 The parts of a runtime, in the order they are best made:
 
-1. The container: the 8-byte header, the flags, the metadata and
-   the binding, as told in [file formats](file_formats.md), with the checks in the order given there.
+1. The container: the 10-byte header, the CRC-32 of the rest of the
+   file and the metadata, as told in [file formats](file_formats.md),
+   with the checks in the order given there.
 
 2. The nodes of an `.asni` file, in the compact form, and the
    types they make.
@@ -37,24 +38,22 @@ The parts of a runtime, in the order they are best made:
    on what it decodes, but must then say so.
 
 A runtime reads version 2 `.asni` files and rejects version 1 files.
-Only the bound flag (bit 0) is defined. A runtime that does not support
-binding rejects files with that flag; every runtime rejects unknown
-flags. Signing, encryption and nonces are outside the format.
+It rejects a file whose CRC-32 does not match before it reads any of
+its CBOR. Signing, encryption, nonces and binding are outside the
+format.
 
 ## Being secure by default
 
 A runtime loads files that may come from anywhere, and is often found
 where nobody can update it. So:
 
-- It checks the header before parsing metadata, checks the binding
-  before parsing nodes, and rejects trailing data.
+- It checks the header and the CRC-32 before parsing anything, and
+  rejects trailing data.
 
-- A reader accepts only unbound files by default. Accepting any binding
-  requires an explicit option with a name that makes it plain.
-
-- Binding is not authentication. Applications that need authenticity,
-  confidentiality or replay protection provide it outside the runtime,
-  before handing the file to it.
+- The CRC-32 tells a corrupt file, not one that was changed on
+  purpose. Applications that need authenticity, confidentiality or
+  replay protection provide it outside the runtime, before handing the
+  file to it.
 
 - It limits what untrusted data can make it use: the depth of
   nesting, the size of anything it allocates from a length it was
@@ -75,14 +74,12 @@ keep it small and well tested.
 
 ## Testing a runtime
 
-`examples/corpus` has two version 2 `.asni` files: `plain.asni` and
-`bound.asni`, which is bound to `corpus`. A default reader loads the
-plain file and rejects the bound one. A reader expecting `corpus` loads
-the bound file and rejects the plain one or a different binding. An
-explicit accept-any-binding option loads both. Also test rejection of
-version 1, unknown flags, malformed metadata, oversized bindings,
-truncated CBOR and trailing bytes. Binding does not detect arbitrary
-changes to a file.
+`examples/corpus` has two version 2 `.asni` files: `plain.asni`, which
+a reader loads, and `corrupt.asni`, the same file with one bit flipped
+and its CRC-32 left as it was, which a reader rejects. Also test
+rejection of version 1, of a file cut short or with bytes added, and,
+with the CRC-32 made to match, of malformed metadata, truncated CBOR
+and trailing bytes.
 
 For the codecs, `tests/vectors` has what the Rust runtime, the one of
 reference, encodes and decodes for BER, DER, OER, PER, UPER, JER and

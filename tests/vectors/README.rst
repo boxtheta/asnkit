@@ -27,8 +27,9 @@ has the runtime for Rust do each of them
 not support is left out. ``values.py`` says how a value is written as
 JSON.
 
-``specs/`` holds the compiled specifications (unbound version 2
-``.asni`` files, named by their SHA-256 digests) and ``vectors.jsonl.gz`` holds one JSON object
+``specs/`` holds the compiled specifications (version 2 ``.asni``
+files with no metadata, named by the first 16 hexadecimal digits of
+their SHA-256 digests) and ``vectors.jsonl.gz`` holds one JSON object
 per line with:
 
 ``spec``

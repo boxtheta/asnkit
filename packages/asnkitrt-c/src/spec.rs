@@ -10,7 +10,7 @@
 
 use std::ffi::{CString, c_char, c_int};
 
-use asnkitrt::container::{Binding, Checks};
+use asnkitrt::container::Checks;
 use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 use asnkitrt::value::Value;
@@ -20,13 +20,11 @@ use crate::{
     guard_handle, handle, optional_text, out, text,
 };
 
-/// What a file has to be to be loaded, as `Checks`, and how.
+/// How a file is loaded.
 #[derive(Default)]
 pub struct LoadOptions {
     numeric_enums: bool,
     lenient: bool,
-    bound_to: Option<String>,
-    accept_any_binding: bool,
 }
 
 /// A specification loaded for a codec.
@@ -42,8 +40,8 @@ pub struct CodecOptions {
     /// name.
     pub module: *const c_char,
     pub check_constraints: c_int,
-    /// The number of spaces for each level of JER and XER, or negative
-    /// for none.
+    /// The number of spaces for each level of JER, XER and GSER, or
+    /// negative for none.
     pub indent: c_int,
 }
 
@@ -97,7 +95,7 @@ unsafe fn options_mut<'a>(options: *mut LoadOptions) -> Result<&'a mut LoadOptio
         .ok_or_else(|| failure(ASNKIT_ERROR_ARGUMENT, "Expected the load options."))
 }
 
-/// New load options, that load only a file that is not bound.
+/// New load options, of the defaults.
 #[unsafe(no_mangle)]
 pub extern "C" fn asnkit_load_options_new() -> *mut LoadOptions {
     guard_handle(|| Ok(Box::into_raw(Box::default())))
@@ -132,29 +130,6 @@ pub unsafe extern "C" fn asnkit_load_options_set_lenient(
     })
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_set_bound_to(
-    options: *mut LoadOptions,
-    bound_to: *const c_char,
-) -> c_int {
-    guard(|| {
-        let bound_to = unsafe { text(bound_to, "what the file is bound to") }?;
-
-        unsafe { options_mut(options) }?.bound_to = Some(bound_to.into());
-        Ok(())
-    })
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn asnkit_load_options_set_accept_any_binding(
-    options: *mut LoadOptions,
-) -> c_int {
-    guard(|| {
-        unsafe { options_mut(options) }?.accept_any_binding = true;
-        Ok(())
-    })
-}
-
 fn load(asni: &[u8], codec: Option<&str>, options: &LoadOptions) -> Result<Spec> {
     let codec = codec.unwrap_or("ber");
     let mut load = Options::new(codec_of(codec)?);
@@ -162,17 +137,8 @@ fn load(asni: &[u8], codec: Option<&str>, options: &LoadOptions) -> Result<Spec>
     load.numeric_enums = options.numeric_enums;
     load.lenient = options.lenient;
 
-    let checks = Checks {
-        bound_to: match &options.bound_to {
-            Some(bound_to) => Binding::To(bound_to),
-            None if options.accept_any_binding => Binding::Any,
-            None => Binding::None,
-        },
-        ..Checks::default()
-    };
-
     Ok(Spec {
-        inner: Specification::from_asni(asni, &checks, load)?,
+        inner: Specification::from_asni(asni, &Checks::default(), load)?,
         codec: CString::new(codec).expect("a codec has no NUL"),
     })
 }

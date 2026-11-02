@@ -99,7 +99,7 @@ fn is_written_as_python_writes_it() {
 fn members_are_in_the_order_they_are_defined_in() {
     // F ::= SEQUENCE { a BOOLEAN, ..., b BOOLEAN, ..., c BOOLEAN }, where
     // the other codecs have b, the addition, last.
-    let data = fs::read(common::folder().join("specs/77462f96eadaf8b4.asni")).unwrap();
+    let data = fs::read(common::folder().join("specs/df7760a12c751b17.asni")).unwrap();
     let spec =
         Specification::from_asni(&data, &Checks::default(), Options::new(Codec::Gser)).unwrap();
     let value = Value::Map(vec![
@@ -452,7 +452,7 @@ fn omitted_optional_and_default_members() {
 
 #[test]
 fn omitted_extension_group_with_trailing_root_members() {
-    let data = fs::read(common::folder().join("specs/77462f96eadaf8b4.asni")).unwrap();
+    let data = fs::read(common::folder().join("specs/df7760a12c751b17.asni")).unwrap();
     let spec =
         Specification::from_asni(&data, &Checks::default(), Options::new(Codec::Gser)).unwrap();
     assert_eq!(
@@ -471,7 +471,7 @@ fn extension_groups_are_required_only_when_present() {
         types::{Addition, Kind},
     };
 
-    let data = fs::read(common::folder().join("specs/77462f96eadaf8b4.asni")).unwrap();
+    let data = fs::read(common::folder().join("specs/df7760a12c751b17.asni")).unwrap();
     let spec =
         Specification::from_asni(&data, &Checks::default(), Options::new(Codec::Gser)).unwrap();
     let mut types = spec.types().clone();

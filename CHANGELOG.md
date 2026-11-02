@@ -10,6 +10,51 @@ security fixes.
 
 ## [Unreleased]
 
+## [2.0.0-rc5] - 2026-11-02
+
+Release candidates of a new major version make no promise of
+compatibility with each other. The `.asni` files of 2.0.0-rc4 are not
+read by this release: compile them again.
+
+### Changed
+
+- `.asni` format 2.0: the two bytes of flags at offset 6 are now the
+  CRC-32 of the rest of the file (that of zlib, gzip and PNG), in four
+  bytes, most significant first, so the header is 10 bytes and the
+  metadata begins at offset 10. Every runtime checks it before it
+  parses any CBOR, and rejects a file that is corrupt, cut short or
+  added to. The magic and the version are not covered. It detects
+  corruption, not tampering.
+- `asnkit-compiler`: `compile_to_asni` and `compile_to_asni_with_summary`
+  take `(input)`, and the options variants `(input, &CompileOptions)`.
+- `asnkitrt` (Rust): `Checks` holds only `max_depth`, and has no
+  lifetime. `container::HEADER_SIZE` is 10, and `container::crc32()`
+  computes the CRC-32. `Error::BadChecksum` is what a corrupt file
+  gives, and `container::read_header()` checks the CRC-32 too.
+- `asnkitrt` (Python): `syntax.from_asni()` and `syntax.from_asni_file()`
+  take only the file, and `load()`, `load_asni()` and `load_asni_file()`
+  no longer take `bound_to` or `accept_any_binding`. A corrupt file
+  raises `ConvertError`.
+- `asnkit-gen-python`: `use_asni()` of a module made with `embed=false`
+  takes only the file.
+- `examples/corpus` has `plain.asni` and `corrupt.asni`, one bit of it
+  flipped, in place of `bound.asni`.
+- The specifications of `tests/vectors` have the new header, and so new
+  names; the vectors are the same.
+
+### Removed
+
+- Binding of `.asni` files: `asnkitcc compile --bound-to`, the
+  `boundTo` option of the WebAssembly compiler, the `boundTo` and
+  `acceptAnyBinding` options of the WebAssembly runtime,
+  `asnkit_load_options_set_bound_to()` and
+  `asnkit_load_options_set_accept_any_binding()` of the C API,
+  `container::Binding`, `Metadata::bound_to`, `Error::BadBinding` and
+  `Error::UnsupportedFlags` in Rust, and `Metadata.bound_to` in Python.
+  The command line and the WebAssembly packages fail on the old options
+  instead of ignoring them. A `bound_to` in the metadata of a file is a
+  key that is not known, and is ignored.
+
 ## [2.0.0-rc4] - 2026-11-02
 
 ### Changed
@@ -337,6 +382,7 @@ WebAssembly runtime on npm.
   `application/vnd.asnkit.asnst+cbor`, guidelines for third-party
   runtimes, a corpus of `.asni` files and more than 5,300 test vectors.
 
+[2.0.0-rc5]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc5
 [2.0.0-rc4]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc4
 [2.0.0-rc3]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc3
 [2.0.0-rc2]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc2

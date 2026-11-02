@@ -12,7 +12,7 @@
 //! ```
 
 use asnkit_compiler::{Input, compile_to_asni};
-use asnkitrt::container::{Binding, Checks};
+use asnkitrt::container::Checks;
 use asnkitrt::runtime::{Options, Specification};
 use asnkitrt::types::Codec;
 
@@ -88,7 +88,7 @@ fn read_asni(conversion: &Conversion<'_>) -> Result<Vec<u8>, String> {
                 encoding: conversion.encoding.to_string(),
             };
 
-            compile_to_asni(&input, None).map_err(|error| format!("error: {}", error.message))
+            compile_to_asni(&input).map_err(|error| format!("error: {}", error.message))
         }
         [path] if files.len() == 1 => {
             std::fs::read(path).map_err(|error| format!("error: {}: {error}", path.display()))
@@ -150,12 +150,7 @@ pub fn convert(conversion: &Conversion<'_>) -> Result<(), String> {
     }
 
     let asni = read_asni(conversion)?;
-    // What the file is bound to is not checked: it is converted with,
-    // and not trusted to be what it says.
-    let checks = Checks {
-        bound_to: Binding::Any,
-        ..Checks::default()
-    };
+    let checks = Checks::default();
     let load = |codec: Codec| {
         let mut options = Options::new(codec);
         options.lenient = conversion.lenient;

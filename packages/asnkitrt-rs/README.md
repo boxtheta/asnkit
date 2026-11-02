@@ -36,8 +36,8 @@ let decoded = foo.decode("Question", &encoded)?;
   `Value::into_owned()` or `Specification::decode_owned()` give a
   `Value<'static>` to keep past them. `from_value` can borrow too, into
   a `&'a str` or a `&'a [u8]`.
-- **Bound files** only load when the caller says what to expect; see
-  `container::Checks`.
+- **Corrupt files** do not load: the CRC-32 in the header of an `.asni`
+  file is checked before any of it is parsed; see `container::read`.
 - **Untrusted input** never causes a panic: decoding returns a value or
   an error, in time and memory proportional to the input, with nesting
   limited. This applies to JSON and XML too. XML with a document type

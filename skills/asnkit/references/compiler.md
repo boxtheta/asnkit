@@ -43,11 +43,11 @@ Codecs can be inferred from extensions (`.json` → JER, `.xml` → XER),
 but explicit `--from` and `--to` are clearer in pipelines. Use
 `Module.Type` when names are ambiguous.
 
-Conversion accepts any container binding and does not validate constraints.
-Use the runtime API for an expected binding or explicit constraint validation.
-`compile --bound-to LABEL` sets the binding. The old `--nonce`,
-`--signing-key-*` and `--encryption-key-*` options are no longer supported;
-there is no signed or encrypted output mode.
+Conversion does not validate constraints; use the runtime API for
+explicit constraint validation. The old `--bound-to`, `--nonce`,
+`--signing-key-*` and `--encryption-key-*` options are no longer
+supported; there is no bound, signed or encrypted output mode. Every
+`.asni` file carries a CRC-32 that runtimes check.
 
 ## Compiler inside a Rust application
 
@@ -60,18 +60,18 @@ use asnkit_compiler::{Input, compile_to_asni};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source = std::fs::read_to_string("foo.asn")?;
-    let asni = compile_to_asni(&Input::String(source), None)?;
+    let asni = compile_to_asni(&Input::String(source))?;
     std::fs::write("foo.asni", asni)?;
     Ok(())
 }
 ```
 
 For multiple files use `Input::Files { paths, encoding: "utf-8".into() }`.
-The `None` argument means no binding; use `Some("device-family".into())`
-for a bound schema. The result is container bytes; `compile()` instead
-returns the compiled node structure. `compile_to_asni_with_options` takes
-`(input, bound_to, &options)`; the summary variants use the same arguments
-as their counterparts and also return module summaries. `Protection` and
+The result is container bytes, with the CRC-32 in the header;
+`compile()` instead returns the compiled node structure.
+`compile_to_asni_with_options` takes `(input, &options)`; the summary
+variants use the same arguments as their counterparts and also return
+module summaries. There is no binding argument, and `Protection` and
 `derive_key_id` no longer exist. See `packages/asnkit-compiler/src/lib.rs`
 and `docs/file_formats.md` for the current API and format.
 
@@ -126,10 +126,8 @@ Useful `--plugin-opt KEY=VALUE` options:
   the default `i64`; `no_std=true` generates code requiring only `alloc`.
 
 With `embed=false`, compile the same schema separately. Python requires
-`use_asni(data, bound_to=..., accept_any_binding=...)` before model use;
-omit the keyword options for an unbound schema. Rust omits `load()`; pass
-a `Specification::from_asni(...)` result with the expected binding to the
-models.
+`use_asni(data)` before model use. Rust omits `load()`; pass a
+`Specification::from_asni(...)` result to the models.
 
 For embedded Rust, install the published plugin from crates.io with
 `cargo install asnkit-gen-rust-codec --version "<version>" --locked`,

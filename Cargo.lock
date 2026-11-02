@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "asnkit-compiler"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "asnkitrt",
  "flate2",
@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "asnkit-compiler-wasm"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "asnkit-compiler",
  "js-sys",
@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "asnkit-gen-rust"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "asnkitrt",
  "serde",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "asnkit-gen-rust-codec"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "asnkit-gen-rust",
  "asnkitrt",
@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "asnkitcc"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "asnkit-compiler",
  "asnkitrt",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "asnkitrt"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "flate2",
  "num-bigint",
@@ -72,14 +72,14 @@ dependencies = [
 
 [[package]]
 name = "asnkitrt-c"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "asnkitrt",
 ]
 
 [[package]]
 name = "asnkitrt-wasm"
-version = "2.0.0-rc4"
+version = "2.0.0-rc5"
 dependencies = [
  "asnkitrt",
  "js-sys",
