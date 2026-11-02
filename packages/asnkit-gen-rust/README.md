@@ -46,7 +46,7 @@ Options, given with `--plugin-opt KEY=VALUE`:
 
 `embed`
 : `false` to leave the compiled specification out of the module, as for
-  one sent signed or encrypted. The module then has no `load()` and
+  one distributed separately. The module then has no `load()` and
   `load_with()`: load the `.asni` file with
   `asnkitrt::runtime::Specification::from_asni()`, with the
   `asnkitrt::container::Checks` it needs, and give it to the methods as

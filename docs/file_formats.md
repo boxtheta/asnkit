@@ -6,7 +6,7 @@ writing them without this package, in C, Rust or anything else.
 
 > **Note:** This document, with its code blocks, is licensed under the Apache License 2.0. See `LICENSE-COMPILER` in the root of the repository.
 
-> **Note:** This is a draft of version 1.0 of the formats. Nothing has been released with them yet, so anything in here may still change without a new major version. [Not yet specified](#not-yet-specified) lists what is missing.
+> **Note:** This describes version 2.0 of `.asni` and version 1.0 of `.asnst`. [Not yet specified](#not-yet-specified) lists what is missing.
 
 ## The two files
 
@@ -37,156 +37,54 @@ and are not registered with IANA yet. Neither takes parameters.
 
 An `.asnst` file has the suffix `+cbor`, as it is nothing but CBOR
 and anything that reads CBOR can read it. An `.asni` file has no
-suffix: its header comes before the CBOR, and the CBOR is not
-readable at all when the file is encrypted.
+suffix: its header comes before the CBOR.
 
-A file has the same media type whatever its version, and whether or
-not it is signed, encrypted, bound or has a nonce: the header tells
-all of that. One that sends a file, as over HTTP, gives its media
-type. One that receives it does not rely on the media type, nor on
-the extension, but on what is in the file: an `.asni` file begins
-with the four bytes `41 53 4E 49` (`ASNI` in ASCII), and an `.asnst`
-file is a CBOR map whose `format` is `asnst`.
+A file has the same media type whatever its version or binding. One
+that sends a file, as over HTTP, gives its media type. One that receives
+it does not rely on the media type, nor on the extension, but on what
+is in the file: an `.asni` file begins with the four bytes
+`41 53 4E 49` (`ASNI` in ASCII), and an `.asnst` file is a CBOR map
+whose `format` is `asnst`.
 
 ## Layout
 
-This is the layout of an `.asni` file. All numbers of more than one
-byte have the most significant byte first.
+This is the layout of a version 2.0 `.asni` file. All numbers of more
+than one byte have the most significant byte first.
 
 | Offset | Bytes | What |
 |---|---|---|
 | 0 | 4 | `ASNI` in ASCII. |
-| 4 | 1 | Major version, currently 1. |
+| 4 | 1 | Major version, currently 2. |
 | 5 | 1 | Minor version, currently 0. |
 | 6 | 2 | [Flags](#flags). |
-| 8 | 3 | [Nonce](#nonce). Always there, and zero unless the nonce flag is set. |
-| 11 | 80 | [Signature](#signature). Only if the signed flag is set. |
-|  | 44 | [Encryption](#encryption) parameters. Only if the encrypted flag is set. |
-|  | variable | The [metadata](#metadata), as one CBOR map. |
-|  | variable | The [nodes](#nodes), as one CBOR item. |
+| 8 | variable | The [metadata](#metadata), as one CBOR map. |
+| after metadata | variable | The [nodes](#nodes), as one CBOR item. |
 
-Nothing follows the nodes. A reader rejects a file with anything
-after them.
+The fixed header is 8 bytes. Nothing follows the nodes. A reader rejects
+a file with anything after them.
+
+Version 1 files are rejected as an unsupported version. Recompile the
+ASN.1 sources to make version 2 files. Signing, encryption and nonces
+are no longer part of the format. Authentication, confidentiality and
+replay protection belong in the system that distributes the file, such
+as a firmware update or patching system.
 
 ## Flags
 
 | Bit | Name | What |
 |---|---|---|
-| 0 | signed | The file has a [signature](#signature). |
-| 1 | encrypted | The metadata and the nodes are [encrypted](#encryption). |
-| 2 | nonce | The [nonce](#nonce) is to be checked. |
-| 3 | bound | The file is only for those its metadata tells. See [Bound files](#bound-files). |
-| 4-15 | -- | Not in use. Zero. |
+| 0 | bound | The file is only for those its metadata tells. See [Bound files](#bound-files). |
+| 1-15 | -- | Not in use. Zero. |
 
-Bit 0 is the least significant, so a signed file that is not
-encrypted has the flags `00 01`.
+Bit 0 is the least significant, so a bound file has the flags `00 01`.
+An unbound file has `00 00`.
 
 A reader rejects a file with a flag set that it does not know of or
-does not support. It never ignores one.
+does not support. It never ignores one. Version 2 assigns bit 0 to
+binding; version 1 flag meanings do not apply to it.
 
-Only an `.asni` file has flags, as it is the one sent to devices.
-An `.asnst` file is never signed, encrypted or bound, and has no
-nonce.
-
-What the flags are for is giving a device in the field a new or changed
-protocol without new firmware: it is sent a compiled specification,
-which it only loads if signed by someone it trusts, made for it and
-not sent before, and which nobody else can read if encrypted. So all
-of it is made to be checked by a small device, as the file is
-received and, but for what it is bound to, before anything in it is
-read as CBOR.
-
-## Signature
-
-A signed file has 80 bytes at offset 11:
-
-| Offset | Bytes | What |
-|---|---|---|
-| 11 | 16 | The identifier of the key it is signed with. What it means is up to those giving out keys. |
-| 27 | 64 | An Ed25519 signature (RFC 8032). |
-
-What is signed is the SHA-256 digest of the whole file but the 64
-bytes of the signature itself. So the flags, the nonce, the
-identifier of the key, the encryption parameters, the metadata and
-the nodes can not be changed without it showing.
-
-```text
-digest    = SHA-256(file[0:27] || file[91:])
-signature = Ed25519-Sign(private key, digest)
-```
-
-This is plain Ed25519 with the 32 bytes of the digest as its message.
-It is not Ed25519ph, which hashes with SHA-512. The digest can be
-computed as a file is read, without keeping all of it in memory.
-
-A reader verifies the signature as RFC 8032 (5.1.7) says, with the
-equation without the cofactor, `[S]B = R + [k]A`, and also rejects a
-public key `A` or an `R` of small order, as `verify_strict` of the
-Rust crate `ed25519-dalek` does. Libraries of Ed25519 differ in what
-they accept beyond RFC 8032, so a reader that checks less would accept
-signatures that others reject.
-
-A file that is both signed and encrypted is encrypted first and then
-signed, so the signature is checked without the key to decrypt it. A
-reader checks the signature before it does anything else with a
-file.
-
-A reader is set up with the public keys of those it trusts, each
-with its identifier. It rejects a signed file if it has no key with
-the identifier in the file, or if the signature is not that of the
-file with that key. A reader that is set up with keys rejects every
-file that is not signed. A reader that is not set up with keys
-rejects every signed file.
-
-A reader can also be set up to accept any signature. It then reads a
-file without checking its signature, and whether it is signed or
-not. That is for looking at a file, and never how a reader is set up
-unless asked to be.
-
-How the public keys are given to a reader is not part of this
-specification.
-
-## Nonce
-
-The three bytes at offset 8 are a number of 24 bits. They are there
-in every file, so that everything after them is at the same place
-whether or not they are in use.
-
-With the nonce flag set, a reader checks the number and rejects the
-file if the check fails. What the check is, is not part of the file.
-It is how the reader is set up, as one of:
-
-- The number is the one the reader expects. That is for a device
-  that makes up a number and sends it when asking for a file, so that
-  a file made for an earlier request can not be sent to it again.
-
-- The number is greater than that of the last file the reader
-  accepted. That is for a device that is sent files without asking,
-  so that an old file can not be sent to it again.
-
-A reader that is not set up to check the nonce rejects every file
-with the flag set. A reader that is set up to check it rejects every
-file without the flag, as there is nothing to check.
-
-A reader that keeps the nonce of the last file it accepted only does
-so once all of a file is checked and loaded, and never as part of
-checking the nonce. The nonce comes before the tag of an encrypted
-file, so until the tag is checked it may be any number. A reader that
-kept it sooner could be made to keep the greatest number there is,
-and would then accept no file ever again.
-
-A reader can also be set up to accept any nonce. It then reads a file
-whatever the number is, and whether the flag is set or not. That is
-never how a reader is set up unless asked to be.
-
-Without the flag, a writer writes zero and a reader does not look at
-the number.
-
-The nonce flag can be set in a file that is not signed. The nonce
-then keeps a reader from loading a file that is old or not the one it
-asked for by mistake, as when files are mixed up or sent twice. It
-does not keep anyone from changing the number on purpose. For that
-the file has to be signed, as the nonce is part of what is signed.
+Only an `.asni` file has flags. An `.asnst` file has no binding and
+keeps version 1.0, as its format has not changed.
 
 ## Bound files
 
@@ -223,74 +121,25 @@ It is a flag, and not only something in the metadata, because a
 reader ignores what it does not know of in the metadata, but never a
 flag. A reader that knows nothing of bound files rejects them all.
 
-The bound flag can be set in a file that is not signed. It then
-keeps a reader from loading a file made for something else by
-mistake. It does not keep anyone from changing what the file is bound
-to on purpose. For that the file has to be signed, as the metadata is
-part of what is signed.
-
-In an encrypted file the metadata is encrypted, so what the file is
-bound to is not known until it is decrypted.
-
-## Encryption
-
-An encrypted file has 44 bytes of encryption parameters after the
-signature, at offset 91, or at offset 11 if it is not signed. The
-offsets below are from where they start:
-
-| Offset | Bytes | What |
-|---|---|---|
-| 0 | 16 | The identifier of the key. What it means is up to those giving out keys. |
-| 16 | 12 | The initialization vector. Never used twice with the same key. |
-| 28 | 16 | The authentication tag. |
-
-The metadata and the nodes are encrypted as one with AES-256 in
-Galois/Counter Mode (NIST SP 800-38D). The encrypted bytes take the
-place of the metadata and the nodes in the file, and are as many.
-
-The additional authenticated data is the first 11 bytes of the file
-followed by the identifier of the key and the initialization vector,
-so that none of them can be changed without the tag failing.
-
-```text
-aad             = file[0:11] || key id || iv
-ciphertext, tag = AES-256-GCM-Encrypt(key, iv, metadata || nodes, aad)
-```
-
-As the metadata is encrypted too, nothing but what comes before it
-is known about an encrypted file without its key: the kind of file,
-its version, its flags, its nonce and the identifiers of its keys.
-
-A reader is set up with the keys it decrypts with, each with its
-identifier. It rejects an encrypted file if it has no key with the
-identifier in the file, or if the tag is not that of the file with
-that key. A reader that is set up with keys rejects every file that
-is not encrypted. A reader that is not set up with keys rejects every
-encrypted file.
-
-How keys are given to a reader is not part of this specification.
+Binding keeps a reader from loading a file made for something else by
+mistake. It does not authenticate the file or prevent anyone from
+changing its binding. The metadata is readable in every file.
 
 ## Order of checks
 
 A reader checks a file in this order, and stops at the first check
 that fails:
 
-1. The four first bytes, the major version and the flags.
+1. The fixed header: its length, the four first bytes, the major version
+   and the flags.
+2. The metadata as CBOR, including the presence, type and length of
+   `bound_to` when the bound flag is set.
+3. What the file is bound to, against the reader's expected binding.
+4. The nodes as CBOR, then that nothing follows them.
 
-2. The signature, if the file is signed or the reader expects it to
-   be.
-
-3. The nonce, if the nonce flag is set or the reader expects it to
-   be.
-
-4. The tag, as the file is decrypted, if the file is encrypted or the
-   reader expects it to be.
-
-5. What the file is bound to, if the bound flag is set or the reader
-   expects it to be.
-
-Only then are the nodes read. Nothing of the metadata or the nodes is
-read as CBOR before the signature is checked.
+The nodes are not read before the binding check. Parsing limits apply
+to both the metadata and the nodes. The default reader accepts only
+unbound files; accepting any binding is an explicit option.
 
 ## Syntax tree files
 
@@ -309,8 +158,9 @@ another major version.
 
 ## Metadata
 
-The metadata is a CBOR map with text strings as keys. All keys are
-optional, and a reader ignores those it does not know of.
+The metadata is a CBOR map with text strings as keys. Keys are optional
+except for `bound_to` in a bound file. A reader ignores those it does not
+know of.
 
 - `generator` — A text string naming what wrote the file and its version.
 
@@ -1430,18 +1280,8 @@ version, as a reader rejects a file with a flag it does not know of.
 - Files to test a reader of the container with beyond the corpus of
   `examples/corpus`.
 
-- Whether the metadata is to be left readable in an encrypted file.
-
-- Whether the encrypted bytes are to be split in parts, each with a
-  tag, for a device that can not keep a whole file in memory until
-  its tag is checked.
-
 - Whether the size of the file is to be part of it, for a device
   that is not told by what it receives it over.
-
-- Whether AES-256 in Galois/Counter Mode is right for the devices in
-  mind. AES-128, or ChaCha20-Poly1305 where there is no AES hardware,
-  are the other candidates.
 
 - Compression. A file of RRC 14.4.0 is 441 kB, and 72 kB with
   Zstandard.

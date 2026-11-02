@@ -69,9 +69,15 @@ Do not treat proposal documents as implemented APIs.
   `generate` for explicit mappings; fallback types and runtime load-time overrides remain unsupported.
 - DER decoding is strict by default. Use lenient mode only when accepting
   BER-compatible input is an intentional requirement.
-- Protected `.asni` containers need the expected verification/decryption
-  keys, nonce and binding. Do not fix a load failure by silently disabling
-  those checks. The CLI converter does not verify signatures, nonce or
-  binding; use runtime loading checks when authenticity is required.
+- `.asni` is version 2.0: an 8-byte header (`ASNI`, major/minor version,
+  two-byte flags), followed by metadata and nodes. Binding is flag bit 0;
+  other flag bits are rejected. Version 1 files must be recompiled from
+  source. `.asnst` remains version 1.0.
+- Signing, encryption and nonces are removed. Handle authenticity and
+  confidentiality outside asnkit, in the firmware update/patching layer
+  where applicable. Binding is a label check, not cryptographic protection.
+  Runtime loads reject bound files by default; supply the expected binding
+  explicitly. Do not silently bypass it to fix a load failure. The CLI
+  converter accepts any binding.
 - Type support varies by runtime and features. Check the relevant package
   README and API before promising support for unusual ASN.1 constructs.

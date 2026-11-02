@@ -12,6 +12,20 @@ security fixes.
 
 ### Changed
 
+- `.asni` is now format 2.0, with an 8-byte header followed directly by
+  metadata and nodes. Binding is flag bit 0; all other bits are rejected.
+  Version 1 files must be recompiled from ASN.1 source. `.asnst` remains
+  format 1.0.
+- `asnkit-compiler`: `compile_to_asni` and its summary variant take
+  `(input, bound_to)`; the options variants take an additional
+  `&CompileOptions`. `Protection` and `derive_key_id` are removed.
+- `asnkitrt` (Rust): `Checks` holds only `bound_to` and `max_depth`.
+  Metadata is always at `Asni.header.metadata`; `Asni.metadata` is removed.
+  Container parsing reads the input in place instead of copying it.
+- `asnkitrt` (Python): load options after `numeric_enums` are keyword-only;
+  syntax loading options after the data are keyword-only. Generated
+  `use_asni` accepts only `bound_to` and `accept_any_binding` options.
+
 - `asnkitrt`: a loaded specification keeps about a fifth of the heap it
   did, and loading takes about a third at its peak: RFC 5280 keeps
   132.5 KiB where it kept 615.4 KiB, and takes 337.3 KiB at its peak
@@ -30,6 +44,17 @@ security fixes.
   `Kind::Choice` and `Kind::External` are a `Box<Members>`, and
   `MemberInfo::default` is a `Box<Value>`. `MemberInfo::size` is no
   more, as the type of the member has it.
+
+### Removed
+
+- Signing, encryption and nonces in `.asni` files, their dependencies,
+  Rust features and Python extras. Cryptographic protection moves to the
+  firmware update and patching project. Binding remains a label check,
+  not authentication.
+- Nonce, key and signature options in the CLI and WASM packages. Old
+  options fail explicitly instead of being ignored. The C API removes
+  the corresponding setters and `ASNKIT_KEY_*` constants; Rust removes
+  the corresponding check types and error variants.
 
 ### Fixed
 

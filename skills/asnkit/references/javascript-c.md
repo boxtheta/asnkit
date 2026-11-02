@@ -63,6 +63,12 @@ This compiler package may need building from the checkout; do not assume
 it is published wherever the runtime is. It cannot run executable code
 generation plugins. Use its `compileWithSummary` when the UI needs module
 and type names. See `packages/asnkit-compiler-wasm/README.md` for builds.
+The compiler accepts `{ boundTo: 'device-family' }`; load the result with
+`load(asni, 'uper', { boundTo: 'device-family' })`. Runtime loads expect
+unbound files by default; `acceptAnyBinding: true` explicitly bypasses the
+binding check. Both WASM packages reject removed nonce/signing/encryption
+options with `TypeError`, rather than silently ignoring them.
+
 For WASM source builds, match the `wasm-bindgen-cli` version to the crate
 version in the project's lockfile.
 
@@ -90,6 +96,9 @@ Ownership is part of the API:
 - Check statuses/NULL handles and capture `asnkit_last_error()` and
   `asnkit_last_error_offset()` when diagnosing failures.
 
-Use the load options for expected container protections and the codec
-options for constraint checks. Do not pass allocator-owned buffers to
+Load options expect unbound files by default. Use
+`asnkit_load_options_set_bound_to` for an expected binding, or explicitly
+use `asnkit_load_options_set_accept_any_binding` to bypass that check.
+Nonce/key/signature setters and `ASNKIT_KEY_*` constants are removed.
+Use codec options for constraint checks. Do not pass allocator-owned buffers to
 C's `free`; use the library's matching destructor.
