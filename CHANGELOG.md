@@ -10,6 +10,43 @@ security fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `asnkit-compiler`: warnings, of what is valid ASN.1 but likely to
+  cause trouble. The first is `RecursiveType`, of types that refer to
+  themselves, whose values nest as deep as the data has them, which the
+  decoders limit to 128 levels. `compile_to_asni_with_warnings()` gives
+  them, with the `.asni` file and the summary of the modules, as a
+  `Compiled`.
+- `asnkitcc`: `compile` and `generate` print the warnings on standard
+  error, as `warning: ...`, and still write what they make.
+- `asnkit-compiler` (WebAssembly): `compileWithSummary()` returns the
+  warnings too, as `warnings`, each with its `kind` and `message`. The
+  playground shows them.
+
+### Changed
+
+- `asnkit-compiler`: a type defined by itself alone, through
+  references, as `A ::= B` and `B ::= [0] A`, or through `COMPONENTS
+  OF`, is a `CompileError`. The runtimes already refused such a
+  specification when loading it.
+- `asnkit-compiler`: a type of which every value would hold another,
+  as `Never ::= SEQUENCE { next Never }`, is a `CompileError`, as none
+  of its values could be encoded or decoded.
+- `asnkit-compiler`: constraints that permit no value, as
+  `INTEGER (5..1)`, or `(10..20)` on a type that is `(0..5)`, are a
+  `CompileError`. They were written as an empty constraint, which the
+  runtimes took for no constraint, and so accepted any value, even one
+  that the type referred to does not permit. A root that permits no
+  value but is extensible, as `(5..1, ...)`, is still accepted.
+
+### Fixed
+
+- `asnkit-compiler`: a reference defined by itself, with a constraint
+  or as the type of a member with a `DEFAULT`, was followed without
+  end, and `COMPONENTS OF` itself used up the stack, which aborted the
+  program.
+
 ## [2.0.0-rc5] - 2026-11-02
 
 Release candidates of a new major version make no promise of

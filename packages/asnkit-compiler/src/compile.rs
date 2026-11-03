@@ -24,6 +24,9 @@ mod effective;
 #[path = "any_defined_by.rs"]
 pub mod any_defined_by;
 
+#[path = "checks.rs"]
+mod checks;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Section {
     Types,
@@ -103,6 +106,9 @@ fn is_object_class_type_name(name: &str) -> bool {
 
 pub struct Compiler {
     pub modules: Vec<Module>,
+    /// The names of the files the modules are in, by the index of a
+    /// location, to tell where something is. None for a text.
+    pub files: Option<Vec<String>>,
 }
 
 /// Where an assignment is found: the module and its place among the
@@ -1390,8 +1396,15 @@ impl Compiler {
         Ok(())
     }
 
-    /// `pre_process()` and then the resolver.
+    /// `pre_process()` and then the resolver. A type defined by itself
+    /// alone is refused first, as the resolver would follow it without
+    /// end, and again once parameterized types are what they are, and a
+    /// constraint that permits no value and a type with no finite value
+    /// once constraints are worked out, which a SEQUENCE OF needs to tell
+    /// if it may be empty.
     pub fn resolve(&mut self) -> CompileResult<()> {
+        self.check_definitions()?;
+
         for module in 0..self.modules.len() {
             self.pre_process_components_of(module)?;
             self.pre_process_extensibility_implied(module);
@@ -1407,7 +1420,10 @@ impl Compiler {
             self.parameterization_step_2(module);
         }
 
-        self.resolve_all()
+        self.check_definitions()?;
+        self.resolve_all()?;
+        self.check_constraints()?;
+        self.check_finite()
     }
 }
 

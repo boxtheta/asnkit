@@ -35,6 +35,15 @@ An `ANY` is
 copied as the bytes it was decoded from, so it can only be converted
 between BER and DER.
 
+`compile` and `generate` print warnings on standard error, of what is
+valid ASN.1 but likely to cause trouble, as types that refer to
+themselves, and still write what they make. A type defined by itself
+alone, as `A ::= B` and `B ::= A`, is an error, and so are a type of
+which every value would hold another and a constraint that permits no
+value, as `INTEGER (5..1)`. See the
+[README](https://github.com/boxtheta/asnkit#command-line) of the
+repository for the warnings.
+
 The compiler writes version 2 `.asni` files, with the CRC-32 of the
 file in their header, which runtimes check. Signing, encryption, nonces
 and binding are no longer supported; their old options, as

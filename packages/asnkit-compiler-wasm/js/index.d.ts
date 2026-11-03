@@ -12,6 +12,16 @@ export interface ModuleSummary {
   objectClasses: number;
 }
 
+/**
+ * Something that is valid ASN.1 but likely to cause trouble. The kind is
+ * `RecursiveType` for now, and the message tells where, as that of an
+ * error does.
+ */
+export interface Warning {
+  kind: string;
+  message: string;
+}
+
 /** Loads the WebAssembly, which the other functions do too. */
 export function ready(): Promise<void>;
 
@@ -22,11 +32,14 @@ export function ready(): Promise<void>;
  */
 export function compile(specification: string, options?: CompileOptions): Promise<Uint8Array>;
 
-/** The same as `compile()`, and tells what the modules have. */
+/**
+ * The same as `compile()`, and tells what the modules have and what is
+ * likely to cause trouble, in the order of the types.
+ */
 export function compileWithSummary(
   specification: string,
   options?: CompileOptions,
-): Promise<{ asni: Uint8Array; modules: ModuleSummary[] }>;
+): Promise<{ asni: Uint8Array; modules: ModuleSummary[]; warnings: Warning[] }>;
 
 /** Parses the text of a specification to the contents of an `.asnst` file. */
 export function parse(specification: string): Promise<Uint8Array>;

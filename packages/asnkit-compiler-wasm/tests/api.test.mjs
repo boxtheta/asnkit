@@ -79,6 +79,26 @@ describe('compile', () => {
     assert.deepEqual(modules, [{ name: 'Foo', types: 2, objectClasses: 0 }]);
   });
 
+  test('with what is likely to cause trouble', async () => {
+    assert.deepEqual((await compileWithSummary(FOO_TEXT)).warnings, []);
+
+    const { warnings } = await compileWithSummary(
+      'Foo DEFINITIONS ::= BEGIN\nList ::= SEQUENCE { tail List OPTIONAL }\nEND\n',
+    );
+
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].kind, 'RecursiveType');
+    assert.match(warnings[0].message, /^Type 'List' in module 'Foo' refers to itself, at line 2/);
+  });
+
+  test('refuses a type defined by itself', async () => {
+    await rejectsWith(
+      compile('Foo DEFINITIONS ::= BEGIN A ::= A END'),
+      'CompileError',
+      /Type 'A' in module 'Foo' is defined by itself/,
+    );
+  });
+
   test('tells the version of the compiler it writes', async () => {
     const asni = Buffer.from(await compile(FOO_TEXT));
 

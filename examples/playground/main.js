@@ -164,7 +164,7 @@ async function compileSpecification() {
 
   try {
     const started = performance.now();
-    const { asni, modules } = await compiler.compileWithSummary(text);
+    const { asni, modules, warnings } = await compiler.compileWithSummary(text);
     const compiled = performance.now() - started;
     const specs = {};
     const loadStarted = performance.now();
@@ -180,10 +180,14 @@ async function compileSpecification() {
     state.asni = asni;
     state.name = modules[0]?.name ?? 'specification';
 
+    // What is valid but likely to cause trouble is told under it.
     showStatus(
       status,
-      `Compiled in ${compiled.toFixed(1)} ms to ${asni.length.toLocaleString()} bytes of .asni, loaded in ${loaded.toFixed(1)} ms for ${CODECS.length} codecs.`,
-      'ok',
+      [
+        `Compiled in ${compiled.toFixed(1)} ms to ${asni.length.toLocaleString()} bytes of .asni, loaded in ${loaded.toFixed(1)} ms for ${CODECS.length} codecs.`,
+        ...warnings.map((warning) => `Warning: ${warning.message}`),
+      ].join('\n'),
+      warnings.length ? 'warning' : 'ok',
     );
 
     $('modules').replaceChildren(

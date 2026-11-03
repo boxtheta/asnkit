@@ -363,9 +363,27 @@ python -m asnkitrt.syntax foo.asni    # Prints a file as JSON.
 `convert` decodes a value with one codec and encodes it with another,
 with an `.asni` file or ASN.1 files it compiles first; see
 [`packages/asnkitcc`](packages/asnkitcc/README.md). `asnkitcc` prints
-nothing on success. Its output is checked against the
+nothing on success but warnings. Its output is checked against the
 cases in `packages/asnkit-compiler/tests/golden`, recorded from the
 Python compiler it replaced.
+
+The compiler warns, on standard error, of what is valid ASN.1 but
+likely to cause trouble, and still writes the file. For now that is
+`RecursiveType`: types that refer to themselves, as
+`List ::= SEQUENCE { tail List OPTIONAL }`. Their values nest as deep
+as the data has them; the decoders stop at 128 levels, and other tools
+may not support them.
+
+It refuses, as errors, what no runtime could use:
+
+- A type defined by itself alone, through references, as `A ::= B` and
+  `B ::= [0] A`, or through `COMPONENTS OF`, which no runtime loads.
+- A type of which every value would hold another, as
+  `Never ::= SEQUENCE { next Never }`, so none can be encoded or
+  decoded.
+- Constraints that permit no value, as `INTEGER (5..1)`, or `(10..20)`
+  on a type that is `(0..5)`, which the runtimes would take for no
+  constraint.
 
 `.asni` uses format 2.0, with a 10-byte header that ends with the
 CRC-32 of the rest of the file. Every runtime checks it before it

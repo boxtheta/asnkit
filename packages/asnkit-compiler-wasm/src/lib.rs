@@ -11,7 +11,9 @@
 //! JavaScript of `js/` gives it the text and does what it wants with
 //! what it makes.
 
-use asnkit_compiler::{Input, ModuleSummary, compile_to_asni_with_summary, parse_to_asnst};
+use asnkit_compiler::{
+    CompileOptions, Compiled, Input, compile_to_asni_with_warnings, parse_to_asnst,
+};
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -79,21 +81,24 @@ fn reject_removed(options: &JsValue) -> Result<(), JsValue> {
     Ok(())
 }
 
-fn compile_to_asni(
-    specification: String,
-    options: &JsValue,
-) -> Result<(Vec<u8>, Vec<ModuleSummary>), JsValue> {
+fn compile_to_asni(specification: String, options: &JsValue) -> Result<Compiled, JsValue> {
     reject_removed(options)?;
 
-    compile_to_asni_with_summary(&Input::String(specification)).map_err(compiler_error)
+    compile_to_asni_with_warnings(&Input::String(specification), &CompileOptions::default())
+        .map_err(compiler_error)
 }
 
 /// Compiles the text of a specification, of one module or more, to the
-/// contents of an `.asni` file, and tells what its modules have. The
-/// options are those of `compile()`.
+/// contents of an `.asni` file, and tells what its modules have and what
+/// in it is likely to cause trouble. The options are those of
+/// `compile()`.
 #[wasm_bindgen(js_name = compileWithSummary)]
 pub fn compile_with_summary(specification: String, options: JsValue) -> Result<Object, JsValue> {
-    let (asni, summary) = compile_to_asni(specification, &options)?;
+    let Compiled {
+        asni,
+        modules: summary,
+        warnings: found,
+    } = compile_to_asni(specification, &options)?;
 
     let modules = Array::new();
 
@@ -110,10 +115,21 @@ pub fn compile_with_summary(specification: String, options: JsValue) -> Result<O
         modules.push(&entry);
     }
 
+    let warnings = Array::new();
+
+    for warning in found {
+        let entry = Object::new();
+
+        Reflect::set(&entry, &"kind".into(), &warning.kind.into())?;
+        Reflect::set(&entry, &"message".into(), &warning.message.into())?;
+        warnings.push(&entry);
+    }
+
     let result = Object::new();
 
     Reflect::set(&result, &"asni".into(), &Uint8Array::from(asni.as_slice()))?;
     Reflect::set(&result, &"modules".into(), &modules)?;
+    Reflect::set(&result, &"warnings".into(), &warnings)?;
 
     Ok(result)
 }
@@ -123,7 +139,7 @@ pub fn compile_with_summary(specification: String, options: JsValue) -> Result<O
 /// checked for those that were removed.
 #[wasm_bindgen]
 pub fn compile(specification: String, options: JsValue) -> Result<Vec<u8>, JsValue> {
-    Ok(compile_to_asni(specification, &options)?.0)
+    Ok(compile_to_asni(specification, &options)?.asni)
 }
 
 /// Parses the text of a specification to the contents of an `.asnst`

@@ -16,6 +16,26 @@ let asni = compile_to_asni(&input)?;
 std::fs::write("foo.asni", asni)?;
 ```
 
+`compile_to_asni_with_warnings()` also tells what is valid ASN.1 but
+likely to cause trouble, as types that refer to themselves:
+
+```rust
+use asnkit_compiler::{CompileOptions, Input, compile_to_asni_with_warnings};
+
+let compiled = compile_to_asni_with_warnings(&input, &CompileOptions::default())?;
+
+for warning in &compiled.warnings {
+    eprintln!("warning: {}", warning.message);
+}
+
+std::fs::write("foo.asni", compiled.asni)?;
+```
+
+A type defined by itself alone, as `A ::= B` and `B ::= A`, is a
+`CompileError`, as the runtimes refuse it, and so are a type of which
+every value would hold another and a constraint that permits no value,
+as `INTEGER (5..1)`.
+
 The command [`asnkitcc`](https://crates.io/crates/asnkitcc) is made
 with it.
 
