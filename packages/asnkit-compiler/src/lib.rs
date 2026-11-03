@@ -88,6 +88,23 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Something that is valid ASN.1 but likely to cause trouble, as its
+/// kind and its message, which tells where in the specification as that
+/// of an error does. The one kind for now is `RecursiveType`: types that
+/// refer to themselves, whose values nest as deep as the data has them,
+/// which decoders limit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Warning {
+    pub kind: String,
+    pub message: String,
+}
+
+impl fmt::Display for Warning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.kind, self.message)
+    }
+}
+
 fn parse_error(message: String) -> Error {
     Error {
         kind: "ParseError".to_string(),
@@ -190,6 +207,17 @@ fn summarize(nodes: &Value) -> Vec<ModuleSummary> {
         .unwrap_or_default()
 }
 
+/// What compiling an input to an `.asni` file makes, and tells.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Compiled {
+    /// The contents of the `.asni` file.
+    pub asni: Vec<u8>,
+    /// What each module has.
+    pub modules: Vec<ModuleSummary>,
+    /// What is likely to cause trouble, in the order of the types.
+    pub warnings: Vec<Warning>,
+}
+
 /// The contents of the `.asni` file of an input.
 pub fn compile_to_asni(input: &Input) -> Result<Vec<u8>, Error> {
     compile_to_asni_with_summary(input).map(|(data, _)| data)
@@ -213,11 +241,24 @@ pub fn compile_to_asni_with_summary_and_options(
     input: &Input,
     options: &CompileOptions,
 ) -> Result<(Vec<u8>, Vec<ModuleSummary>), Error> {
-    let nodes = compile_with_options(input, options)?;
-    let summary = summarize(&nodes);
+    compile_to_asni_with_warnings(input, options).map(|compiled| (compiled.asni, compiled.modules))
+}
+
+/// Compiles an input to the contents of an `.asni` file, and tells what
+/// its modules have and what in it is likely to cause trouble.
+pub fn compile_to_asni_with_warnings(
+    input: &Input,
+    options: &CompileOptions,
+) -> Result<Compiled, Error> {
+    let (nodes, warnings) = compile_and_check(input, options)?;
+    let modules = summarize(&nodes);
     let metadata = metadata_of(input, false)?;
 
-    Ok((container::write_asni(&metadata, &nodes), summary))
+    Ok(Compiled {
+        asni: container::write_asni(&metadata, &nodes),
+        modules,
+        warnings,
+    })
 }
 
 /// The contents of the `.asnst` file of an input, which has the text of
@@ -232,10 +273,12 @@ pub fn parse_to_asnst(input: &Input) -> Result<Vec<u8>, Error> {
 /// Parses an input to its syntax tree, in the readable form of a node
 /// (see `docs/file_formats.md`).
 pub fn parse(input: &Input) -> Result<Value, Error> {
-    Ok(parse_tree(input)?.to_tree())
+    Ok(parse_tree(input)?.0.to_tree())
 }
 
-fn parse_tree(input: &Input) -> Result<ast::SyntaxTree, Error> {
+/// The syntax tree of an input, and the names of its files, if it is
+/// files.
+fn parse_tree(input: &Input) -> Result<(ast::SyntaxTree, Option<Vec<String>>), Error> {
     let (sources, names) = read_sources(input)?;
     let string = sources.join("\n");
     let sizes: Vec<usize> = sources.iter().map(|s| s.len() + 1).collect();
@@ -263,7 +306,7 @@ fn parse_tree(input: &Input) -> Result<ast::SyntaxTree, Error> {
     grammar::reset_failures();
 
     match grammar::parse_all(&mut grammar_input) {
-        Ok(tree) => Ok(tree),
+        Ok(tree) => Ok((tree, names)),
         Err(_) if grammar_input.state.conversion_error.is_some() => {
             let message = grammar_input.state.conversion_error.take().unwrap();
 
@@ -305,9 +348,18 @@ pub fn compile(input: &Input) -> Result<Value, Error> {
 
 /// Compiles nodes with explicit ANY DEFINED BY mappings.
 pub fn compile_with_options(input: &Input, options: &CompileOptions) -> Result<Value, Error> {
-    let tree = parse_tree(input)?;
+    compile_and_check(input, options).map(|(nodes, _)| nodes)
+}
+
+/// The nodes of a compiled specification, and the warnings of it.
+fn compile_and_check(
+    input: &Input,
+    options: &CompileOptions,
+) -> Result<(Value, Vec<Warning>), Error> {
+    let (tree, files) = parse_tree(input)?;
     let mut compiler = compile::Compiler {
         modules: tree.modules,
+        files,
     };
 
     compiler.resolve().map_err(|message| Error {
@@ -322,7 +374,10 @@ pub fn compile_with_options(input: &Input, options: &CompileOptions) -> Result<V
             message,
         })?;
 
-    Ok(compact::to_compact(&compile::compiled_specification(
-        compiler.modules,
-    )))
+    let warnings = compiler.warnings();
+
+    Ok((
+        compact::to_compact(&compile::compiled_specification(compiler.modules)),
+        warnings,
+    ))
 }

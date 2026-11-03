@@ -13,7 +13,7 @@
 mod convert;
 
 use asnkit_compiler::{
-    CompileOptions, Input, compile_to_asni_with_summary_and_options, parse_to_asnst, plugin,
+    CompileOptions, Compiled, Input, compile_to_asni_with_warnings, parse_to_asnst, plugin,
 };
 
 use std::path::{Path, PathBuf};
@@ -259,14 +259,29 @@ fn compile_options(arguments: &Arguments) -> Result<CompileOptions, String> {
     Ok(options)
 }
 
+/// Compiles the files, and tells what in them is likely to cause
+/// trouble, on standard error, as warnings.
+fn compile(input: &Input, arguments: &Arguments) -> Result<Compiled, String> {
+    let compiled = compile_to_asni_with_warnings(input, &compile_options(arguments)?)
+        .map_err(|error| format!("error: {}", error.message))?;
+
+    for warning in &compiled.warnings {
+        eprintln!("warning: {}", warning.message);
+    }
+
+    Ok(compiled)
+}
+
 fn generate(arguments: &Arguments) -> Result<(), String> {
     let input = Input::Files {
         paths: arguments.files.clone(),
         encoding: arguments.encoding.clone(),
     };
-    let (asni, summary) =
-        compile_to_asni_with_summary_and_options(&input, &compile_options(arguments)?)
-            .map_err(|error| format!("error: {}", error.message))?;
+    let Compiled {
+        asni,
+        modules: summary,
+        ..
+    } = compile(&input, arguments)?;
     let asnst = parse_to_asnst(&input).map_err(|error| format!("error: {}", error.message))?;
 
     if arguments.verbose {
@@ -366,9 +381,11 @@ fn main() -> ExitCode {
         }
 
         let data = if arguments.command == "compile" {
-            let (data, summary) =
-                compile_to_asni_with_summary_and_options(&input, &compile_options(&arguments)?)
-                    .map_err(|error| format!("error: {}", error.message))?;
+            let Compiled {
+                asni: data,
+                modules: summary,
+                ..
+            } = compile(&input, &arguments)?;
 
             for module in &summary {
                 say(format!(

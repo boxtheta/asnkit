@@ -29,8 +29,10 @@ the name of the source file, which a text does not have.
   file as a `Uint8Array`. The text has one module or more. There are no
   options yet; those that were removed, as `boundTo`, are refused.
 - `compileWithSummary(specification, options)` returns `{ asni,
-  modules }`, with the `name`, `types` and `objectClasses` of each
-  module.
+  modules, warnings }`, with the `name`, `types` and `objectClasses`
+  of each module, and the `kind` and `message` of each warning, of
+  what is valid ASN.1 but likely to cause trouble, as a type that
+  refers to itself (`RecursiveType`).
 - `parse(specification)` returns the contents of an `.asnst` file, the
   syntax tree that plugins generate code from.
 - `compileFile(path, options)` reads the file first, in Node.js only.
