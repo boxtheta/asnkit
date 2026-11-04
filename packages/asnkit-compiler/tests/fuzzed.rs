@@ -195,6 +195,34 @@ fn set_with_no_braces_is_an_error() {
 }
 
 #[test]
+fn a_number_of_a_tag_beyond_64_bits_is_an_error() {
+    // The runtimes read it in 64 bits, and refused the file.
+    let largest = u64::MAX;
+
+    assert!(compile(&module(&format!("A ::= [{largest}] INTEGER"))).is_ok());
+
+    for (types, number) in [
+        (
+            "A ::= [18446744073709551616] INTEGER",
+            "18446744073709551616",
+        ),
+        (
+            "A ::= SEQUENCE { a [APPLICATION 111111111111111111111] INTEGER }",
+            "111111111111111111111",
+        ),
+        ("n INTEGER ::= -1\nA ::= [n] INTEGER", "-1"),
+    ] {
+        let error = error_of(types);
+
+        assert_eq!(error.kind, "CompileError", "{types}");
+        assert_eq!(
+            error.message,
+            format!("Tag number {number} in module 'Foo' is not from 0 to {largest}.")
+        );
+    }
+}
+
+#[test]
 fn a_field_of_an_object_class_that_is_not_found_is_an_error() {
     // The runtimes refused the file, with every codec.
     let error = error_of("I ::= C.&i");

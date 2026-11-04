@@ -487,6 +487,18 @@ impl Compiler {
                 }
             }
 
+            // The runtimes read the number of a tag in 64 bits.
+            if let Value::Number(number) = &tag.number
+                && number.as_u64().is_none()
+            {
+                return Err(format!(
+                    "Tag number {} in module '{}' is not from 0 to {}.",
+                    number,
+                    self.modules[module].name,
+                    u64::MAX
+                ));
+            }
+
             if untagged && tag.mode.as_deref() == Some("IMPLICIT") {
                 return Err(format!(
                     "IMPLICIT can not be used on a CHOICE, an open type or an ANY \

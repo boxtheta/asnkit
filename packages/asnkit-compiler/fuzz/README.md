@@ -32,4 +32,6 @@ run again with the program and the file:
 fuzz/target/x86_64-unknown-linux-gnu/release/compile_types fuzz/artifacts/compile_types/crash-...
 ```
 
-What it found is tested in `tests/fuzzed.rs`.
+What it found is tested in `tests/fuzzed.rs`. With `ASNKIT_FUZZ_STRICT`,
+what the Rust runtime is known not to support passes: `CHARACTER STRING`
+and `EMBEDDED PDV`.
