@@ -109,14 +109,14 @@ internal class ComponentCheck(
 /** A tag as it is on the wire. */
 internal data class WireTag(
     val tagClass: TagClass,
-    val number: Long,
+    val number: ULong,
     val constructed: Boolean,
 )
 
 /** A tag as the canonical order of tags has it: its class, then its number (X.680 8.6). */
 internal data class TagKey(
     val tagClass: TagClass,
-    val number: Long,
+    val number: ULong,
 ) : Comparable<TagKey> {
     override fun compareTo(other: TagKey): Int = compareValuesBy(this, other, { it.tagClass }, { it.number })
 }
@@ -410,7 +410,7 @@ internal class Types(
     fun accepts(
         id: Int,
         tagClass: TagClass,
-        number: Long,
+        number: ULong,
     ): Boolean {
         val node = nodes[id]
         val first = node.tags.firstOrNull()
@@ -833,7 +833,7 @@ private class Lowering(
 
     private fun add(
         kind: Kind,
-        tag: Pair<Long, TagMode>?,
+        tag: Pair<ULong, TagMode>?,
     ): Int {
         val node = TypeNode()
 
@@ -850,9 +850,9 @@ private class Lowering(
         val indirect = add(Kind.Integer(emptyList()), null)
         val descriptor = add(Kind.Str(StrKind.OBJECT_DESCRIPTOR), null)
         // [0] ABSTRACT-SYNTAX.&Type, an open type.
-        val single = add(openType(), 0L to TagMode.EXPLICIT)
-        val octets = add(Kind.OctetString, 1L to TagMode.IMPLICIT)
-        val arbitrary = add(Kind.BitString(emptyList()), 2L to TagMode.IMPLICIT)
+        val single = add(openType(), 0uL to TagMode.EXPLICIT)
+        val octets = add(Kind.OctetString, 1uL to TagMode.IMPLICIT)
+        val arbitrary = add(Kind.BitString(emptyList()), 2uL to TagMode.IMPLICIT)
         val encoding =
             add(
                 Kind.Choice(
@@ -974,40 +974,40 @@ private fun innerOf(
 }
 
 /** The universal tag number of a kind, and if it is constructed, if it has one. */
-private fun universalTag(kind: Kind): Pair<Long, Boolean>? =
+private fun universalTag(kind: Kind): Pair<ULong, Boolean>? =
     when (kind) {
-        is Kind.Boolean -> 1L to false
-        is Kind.Integer -> 2L to false
-        is Kind.BitString -> 3L to false
-        is Kind.OctetString -> 4L to false
-        is Kind.Null -> 5L to false
-        is Kind.ObjectIdentifier -> 6L to false
-        is Kind.Real -> 9L to false
-        is Kind.Enumerated -> 10L to false
-        is Kind.Sequence, is Kind.SequenceOf -> 16L to true
-        is Kind.External -> 8L to true
-        is Kind.Set, is Kind.SetOf -> 17L to true
+        is Kind.Boolean -> 1uL to false
+        is Kind.Integer -> 2uL to false
+        is Kind.BitString -> 3uL to false
+        is Kind.OctetString -> 4uL to false
+        is Kind.Null -> 5uL to false
+        is Kind.ObjectIdentifier -> 6uL to false
+        is Kind.Real -> 9uL to false
+        is Kind.Enumerated -> 10uL to false
+        is Kind.Sequence, is Kind.SequenceOf -> 16uL to true
+        is Kind.External -> 8uL to true
+        is Kind.Set, is Kind.SetOf -> 17uL to true
         is Kind.Str ->
             when (kind.kind) {
-                StrKind.OBJECT_DESCRIPTOR -> 7L
-                StrKind.UTF8 -> 12L
-                StrKind.NUMERIC -> 18L
-                StrKind.PRINTABLE -> 19L
-                StrKind.TELETEX -> 20L
-                StrKind.VIDEOTEX -> 21L
-                StrKind.IA5 -> 22L
-                StrKind.GRAPHIC -> 25L
-                StrKind.VISIBLE -> 26L
-                StrKind.GENERAL -> 27L
-                StrKind.UNIVERSAL -> 28L
-                StrKind.BMP -> 30L
+                StrKind.OBJECT_DESCRIPTOR -> 7uL
+                StrKind.UTF8 -> 12uL
+                StrKind.NUMERIC -> 18uL
+                StrKind.PRINTABLE -> 19uL
+                StrKind.TELETEX -> 20uL
+                StrKind.VIDEOTEX -> 21uL
+                StrKind.IA5 -> 22uL
+                StrKind.GRAPHIC -> 25uL
+                StrKind.VISIBLE -> 26uL
+                StrKind.GENERAL -> 27uL
+                StrKind.UNIVERSAL -> 28uL
+                StrKind.BMP -> 30uL
             } to false
-        is Kind.Utc -> 23L to false
-        is Kind.Generalized -> 24L to false
-        is Kind.Date -> 31L to false
-        is Kind.TimeOfDay -> 32L to false
-        is Kind.DateTime -> 33L to false
-        is Kind.Duration -> 34L to false
+        is Kind.Utc -> 23uL to false
+        is Kind.Generalized -> 24uL to false
+        is Kind.Date -> 31uL to false
+        is Kind.TimeOfDay -> 32uL to false
+        is Kind.DateTime -> 33uL to false
+        is Kind.Duration -> 34uL to false
         // A CHOICE and the types of any kind have no tag of their own.
         is Kind.Choice, is Kind.Any, is Kind.AnyDefinedBy, is Kind.OpenType, is Kind.Ref -> null
     }
