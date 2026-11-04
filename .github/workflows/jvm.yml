@@ -1,0 +1,36 @@
+name: JVM
+
+on:
+  push:
+    branches: [ "trunk" ]
+  pull_request:
+    branches: [ "trunk" ]
+
+jobs:
+
+  # The runtime for the JVM, held to the vectors of the runtime in Rust,
+  # on the oldest Java it supports and the later ones.
+  runtime-jvm:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        java: [ "17", "21", "25" ]
+
+    defaults:
+      run:
+        working-directory: packages/asnkitrt-jvm
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: ${{ matrix.java }}
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+    - name: Test
+      run: |
+        ./gradlew build

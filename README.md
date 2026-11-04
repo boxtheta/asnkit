@@ -53,6 +53,7 @@ with an error rather than encoded wrongly.
 | `asnkitrt` | Runtime for Rust. Needs `alloc` but not `std`, so it builds for embedded targets. | [`packages/asnkitrt-rs`](packages/asnkitrt-rs) | [crates.io](https://crates.io/crates/asnkitrt) | MIT |
 | `asnkitrt` | Runtime for browsers and Node.js: the Rust runtime as WebAssembly. | [`packages/asnkitrt-wasm`](packages/asnkitrt-wasm) | [npm](https://www.npmjs.com/package/asnkitrt) | MIT |
 | `asnkitrt-c` | Runtime for C: the Rust runtime as a shared and a static library, with a header. | [`packages/asnkitrt-c`](packages/asnkitrt-c) | build from source | MIT |
+| `org.boxtheta:asnkitrt` | Runtime for the JVM, in Kotlin, for Kotlin, Java and the other languages of the JVM. | [`packages/asnkitrt-jvm`](packages/asnkitrt-jvm) | Maven Central, not yet published | MIT |
 | **Compiler** | Parses ASN.1 and writes `.asni` files. | | | |
 | `asnkit-compiler` | The compiler as a Rust library, which also runs the plugins, for an application to compile ASN.1 itself. | [`packages/asnkit-compiler`](packages/asnkit-compiler) | [crates.io](https://crates.io/crates/asnkit-compiler) | Apache-2.0 |
 | `asnkitcc` | The command, made with the library. | [`packages/asnkitcc`](packages/asnkitcc) | [crates.io](https://crates.io/crates/asnkitcc) | Apache-2.0 |
@@ -86,22 +87,23 @@ Also in the repository:
 
 ## Codecs
 
-| Codec | Python | Rust | WebAssembly and C |
-|---|---|---|---|
-| Basic Encoding Rules (BER) | yes | yes | yes |
-| Distinguished Encoding Rules (DER) | yes | yes | yes |
-| Octet Encoding Rules (OER) | yes | yes | yes |
-| Aligned Packed Encoding Rules (PER) | yes | yes | yes |
-| Unaligned Packed Encoding Rules (UPER) | yes | yes | yes |
-| JSON Encoding Rules (JER) | yes | yes, feature `jer` | yes |
-| XML Encoding Rules (XER) | yes | yes, feature `xer` | yes |
-| Generic String Encoding Rules (GSER) | encoding only | yes, feature `gser` | yes |
+| Codec | Python | Rust | WebAssembly and C | JVM |
+|---|---|---|---|---|
+| Basic Encoding Rules (BER) | yes | yes | yes | yes |
+| Distinguished Encoding Rules (DER) | yes | yes | yes | yes |
+| Octet Encoding Rules (OER) | yes | yes | yes | not yet |
+| Aligned Packed Encoding Rules (PER) | yes | yes | yes | not yet |
+| Unaligned Packed Encoding Rules (UPER) | yes | yes | yes | not yet |
+| JSON Encoding Rules (JER) | yes | yes, feature `jer` | yes | yes |
+| XML Encoding Rules (XER) | yes | yes, feature `xer` | yes | not yet |
+| Generic String Encoding Rules (GSER) | encoding only | yes, feature `gser` | yes | not yet |
 
 The Rust runtime is the one of reference: the more than 5,500 vectors
 in `tests/vectors` are what it does, including constraint checks, and
 the Python runtime gives the same results for all of them. The
 WebAssembly and C runtimes are the Rust one; the WebAssembly runtime is
-tested on the vectors through its JavaScript API. In Rust, the text
+tested on the vectors through its JavaScript API. The JVM runtime is
+held to all the vectors of the codecs it has. In Rust, the text
 codecs are crate features that are enabled by default. GSER decoding
 takes the generic forms of RFC 3641, as bare values or as the value
 assignments the encoder writes; the Python runtime only encodes GSER.
@@ -158,7 +160,9 @@ pip install asnkit-gen-python        # Generate Python code from ASN.1 with asnk
 The compiler, the Rust runtime and the plugins for Rust are on
 crates.io, and the WebAssembly runtime and compiler are on npm. The C
 runtime is built from source; see
-[`packages/asnkitrt-c`](packages/asnkitrt-c/README.md).
+[`packages/asnkitrt-c`](packages/asnkitrt-c/README.md). The JVM runtime
+needs Java 17 or later; see
+[`packages/asnkitrt-jvm`](packages/asnkitrt-jvm/README.md).
 
 ```text
 cargo install asnkitcc               # The compiler.
