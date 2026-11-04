@@ -88,6 +88,10 @@ security fixes.
   way the constraint could be read, as were those in it, so that
   `E ::= A(A(A(...` took as long as three to the power of its depth:
   more than ten seconds at 12 levels. It is parsed once.
+- `asnkit-compiler`: a reference that starts with a keyword and a
+  hyphen, as `SEQUENCE-Foo`, `CHOICE-Foo` or `INTEGER-Foo`, was a
+  `ParseError` where it was used, as the keyword was read from its
+  start. Only `SET-` worked.
 
 ## [2.0.0-rc5] - 2026-11-02
 

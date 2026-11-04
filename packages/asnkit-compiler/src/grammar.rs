@@ -222,14 +222,32 @@ fn is_ident_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '$'
 }
 
-/// Matches given keyword after whitespace, as Pyparsing does: the text
-/// as it is, and not followed by a character of a word.
+/// Whether what is next goes on with the word before it: a character of
+/// a word, or a hyphen and then one, as a reference such as INTEGER-Foo
+/// has. Two hyphens start a comment.
+fn continues_word(i: &mut Input) -> bool {
+    match peek_char(i) {
+        Some(c) if is_ident_char(c) => true,
+        Some('-') => {
+            let checkpoint = i.checkpoint();
+            i.next_token();
+            let next = peek_char(i).is_some_and(is_ident_char);
+            i.reset(&checkpoint);
+
+            next
+        }
+        _ => false,
+    }
+}
+
+/// Matches given keyword after whitespace: the text as it is, and not
+/// the start of a longer word.
 fn kw(i: &mut Input, text: &'static str) -> R<()> {
     let offset = here(i);
     let checkpoint = i.checkpoint();
     lit(i, text)?;
 
-    if peek_char(i).is_some_and(is_ident_char) {
+    if continues_word(i) {
         i.reset(&checkpoint);
 
         return fail(i, offset, text);
@@ -1718,12 +1736,8 @@ fn offset_location(i: &Input, offset: usize) -> Option<crate::ast::Location> {
 }
 
 /// `{ members }` of a sequence or a set.
-fn braced_members(i: &mut Input, committed: bool) -> R<Vec<MemberItem>> {
-    if committed {
-        commit(lit(i, "{"))?;
-    } else {
-        lit(i, "{")?;
-    }
+fn braced_members(i: &mut Input) -> R<Vec<MemberItem>> {
+    commit(lit(i, "{"))?;
 
     let members = optional(i, |i| {
         let checkpoint = i.checkpoint();
@@ -1753,18 +1767,15 @@ fn braced_members(i: &mut Input, committed: bool) -> R<Vec<MemberItem>> {
 fn sequence_type(i: &mut Input) -> R<Type> {
     kw(i, "SEQUENCE")?;
 
-    Ok(Type::new(Body::Sequence(braced_members(i, true)?)))
+    Ok(Type::new(Body::Sequence(braced_members(i)?)))
 }
 
 fn set_type(i: &mut Input) -> R<Type> {
     kw(i, "SET")?;
 
     // SET with no braces was a reference to a type named SET, which is
-    // nowhere, and the runtimes refused the file. A reference may start
-    // with it, as SET-Id, which kw() matches the start of.
-    let committed = peek_char(i) != Some('-');
-
-    Ok(Type::new(Body::Set(braced_members(i, committed)?)))
+    // nowhere, and the runtimes refused the file.
+    Ok(Type::new(Body::Set(braced_members(i)?)))
 }
 
 fn choice_type(i: &mut Input) -> R<Type> {

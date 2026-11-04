@@ -189,9 +189,44 @@ fn set_with_no_braces_is_an_error() {
             error.message
         );
     }
+}
 
-    // A reference that starts with it is one still, as in OMA ULP.
-    assert!(compile(&module("SET-Id ::= INTEGER\nP ::= SEQUENCE { a SET-Id }")).is_ok());
+#[test]
+fn a_reference_may_start_with_a_keyword_and_a_hyphen() {
+    // Only SET-Id parsed, as in OMA ULP: the keyword matched the start of
+    // the others, and what was after it was not what the type has.
+    for keyword in [
+        "SET",
+        "SEQUENCE",
+        "CHOICE",
+        "INTEGER",
+        "BOOLEAN",
+        "ENUMERATED",
+        "NULL",
+        "REAL",
+        "BIT",
+        "OCTET",
+    ] {
+        let name = format!("{keyword}-Foo");
+        let named = compile(&module(&format!(
+            "{name} ::= BOOLEAN\nP ::= SEQUENCE {{ a {name}, b SEQUENCE OF {name} }}"
+        )));
+        let plain = compile(&module(
+            "Foo1 ::= BOOLEAN\nP ::= SEQUENCE { a Foo1, b SEQUENCE OF Foo1 }",
+        ));
+
+        assert_eq!(
+            named.unwrap().to_string().replace(&name, "Foo1"),
+            plain.unwrap().to_string(),
+            "{name}"
+        );
+    }
+
+    // Two hyphens start a comment, after a keyword as anywhere.
+    assert_eq!(
+        compile(&module("P ::= SEQUENCE { a INTEGER--a comment\n}")).unwrap(),
+        compile(&module("P ::= SEQUENCE { a INTEGER }")).unwrap()
+    );
 }
 
 #[test]
