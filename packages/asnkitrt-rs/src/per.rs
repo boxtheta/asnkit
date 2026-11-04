@@ -202,6 +202,10 @@ pub(crate) fn read_extended(size: Option<Range>, r: &mut Reader<'_>) -> Result<O
         return Ok(None);
     }
 
+    if size.is_some_and(|size| size.is_empty()) {
+        return decode_error(IN_EMPTY_ROOT, r.position);
+    }
+
     Ok(size)
 }
 
@@ -540,6 +544,10 @@ fn out_of_data<T>(position: usize) -> Result<T> {
 fn decode_error<T>(what: &'static str, position: usize) -> Result<T> {
     Err(Error::decode(what, position))
 }
+
+/// A value in the root of an extensible constraint that has none, as
+/// `INTEGER (5..1, ...)`, of which every value is encoded outside it.
+pub(crate) const IN_EMPTY_ROOT: &str = "A value is in the root of a constraint, which has none.";
 
 impl<'a> Reader<'a> {
     /// A reader at the start of `data`, with a budget of items in
@@ -1873,6 +1881,10 @@ impl<'a> Coder<'a> {
             r.align();
 
             return r.unconstrained_whole_number();
+        }
+
+        if range.is_some_and(|range| range.is_empty()) {
+            return decode_error(IN_EMPTY_ROOT, r.position);
         }
 
         let lower = range.and_then(|range| range.min);

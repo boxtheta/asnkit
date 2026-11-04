@@ -102,6 +102,15 @@ security fixes.
   `J ::= INTEGER (0..5)` encoded 99. The runtimes for Rust, C,
   WebAssembly, Python and the JVM refuse such a file when loading it,
   as the compiler does such a type.
+- `asnkitrt`: PER and UPER encoded a value of an extensible constraint
+  whose root has no value, as `INTEGER (5..1, ...)` or
+  `IA5String (SIZE (3..1, ...))`, as if it was in the root, with the
+  extension bit 0, where every value is outside it (X.691 13.1, 16.6,
+  17.3, 20.4, 30.4). The bit is 1, so 5 of that INTEGER is `808280` in
+  UPER and not `008280`, and data with the bit 0 is rejected when
+  decoding, as no value can be in that root. The same for the code
+  `asnkit-gen-rust-codec` makes, and in the runtimes for Rust, C,
+  WebAssembly and Python.
 
 ## [2.0.0-rc5] - 2026-11-02
 

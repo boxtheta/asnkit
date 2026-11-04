@@ -945,7 +945,8 @@ Reading them:
   root with no value that is not extensible, which permits no value.
   The compiler refuses such a type, as `INTEGER (5..1)`, and a runtime
   rejects the specification. One that is extensible, as
-  `INTEGER (5..1, ...)`, is an `ExtensionMarker` alone. Those of a
+  `INTEGER (5..1, ...)`, is an `ExtensionMarker` alone, and every
+  value is outside its root. Those of a
   `ComponentConstraint` and of an `ElementConstraint` may have no
   element, and permit no value of the component or of the elements.
 
@@ -1029,7 +1030,7 @@ This is what each codec uses:
 | Codec | What is used |
 |---|---|
 | BER, DER, XER | Nothing. |
-| PER, UPER | The range of an `INTEGER`, with an upper and a lower bound, or a lower bound only (X.691 13.2). The size of a `BIT STRING`, an `OCTET STRING`, a `SEQUENCE OF` and a `SET OF`. The size and the permitted alphabet of the strings of a known multiplier: `NumericString`, `PrintableString`, `VisibleString`, `IA5String`, `BMPString` and `UniversalString` (X.691 30.1). If a size or a range is extensible, and then a value outside its root is encoded as if there was no constraint (13.1, 16.6, 17.3, 20.4, 30.4). A value outside the bounds of a size or a range that is not extensible is rejected; one between them that is not in the root, as 3 of `INTEGER (1..2 \| 4..5)`, is encoded, and only a constraints checker rejects it. |
+| PER, UPER | The range of an `INTEGER`, with an upper and a lower bound, or a lower bound only (X.691 13.2). The size of a `BIT STRING`, an `OCTET STRING`, a `SEQUENCE OF` and a `SET OF`. The size and the permitted alphabet of the strings of a known multiplier: `NumericString`, `PrintableString`, `VisibleString`, `IA5String`, `BMPString` and `UniversalString` (X.691 30.1). If a size or a range is extensible, and then a value outside its root is encoded as if there was no constraint (13.1, 16.6, 17.3, 20.4, 30.4). Every value is outside a root with no value, as that of `INTEGER (5..1, ...)`, and one decoded as in it is rejected. A value outside the bounds of a size or a range that is not extensible is rejected; one between them that is not in the root, as 3 of `INTEGER (1..2 \| 4..5)`, is encoded, and only a constraints checker rejects it. |
 | OER | The range of an `INTEGER` that is not extensible, which tells how many bytes it takes (X.696 8.2.1, 10). A size of one value only, and not extensible, of a `BIT STRING`, an `OCTET STRING` and the strings of a known multiplier, which is then not written (X.696 27.2). A string of a known multiplier is one of those of PER, which `UTF8String` is not. If a `REAL` is IEEE 754. |
 | JER | A size of one value only of a `BIT STRING`, which is then not written. |
 
