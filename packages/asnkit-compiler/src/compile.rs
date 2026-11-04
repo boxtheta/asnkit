@@ -140,6 +140,20 @@ impl Compiler {
 
     /// `lookup_in_modules()`, with its messages.
     fn lookup(&self, section: Section, name: &str, module: usize) -> CompileResult<Found> {
+        self.lookup_through(section, name, module, &mut Vec::new())
+    }
+
+    /// `lookup()`, through the modules `through` that the name is
+    /// imported from already. A module that imports the name from itself,
+    /// or from one that imports it from the first, has it nowhere, and
+    /// was followed until the stack ran out.
+    fn lookup_through(
+        &self,
+        section: Section,
+        name: &str,
+        module: usize,
+        through: &mut Vec<usize>,
+    ) -> CompileResult<Found> {
         let _ = self.count(module, section);
         let module_name = &self.modules[module].name;
         let debug_string = section.debug_string();
@@ -147,6 +161,17 @@ impl Compiler {
         if let Some(position) = self.position(module, section, name) {
             return Ok((module, position));
         }
+
+        if through.contains(&module) {
+            return Err(format!(
+                "{} '{}' not found in module '{}'.",
+                capitalize(debug_string),
+                name,
+                module_name
+            ));
+        }
+
+        through.push(module);
 
         for import in &self.modules[module].imports {
             if !import.symbols.iter().any(|symbol| symbol == name) {
@@ -160,15 +185,17 @@ impl Compiler {
                 ));
             };
 
-            return self.lookup(section, name, from).map_err(|_| {
-                format!(
-                    "{} '{}' imported by module '{}' not found in module '{}'.",
-                    capitalize(debug_string),
-                    name,
-                    module_name,
-                    import.module
-                )
-            });
+            return self
+                .lookup_through(section, name, from, through)
+                .map_err(|_| {
+                    format!(
+                        "{} '{}' imported by module '{}' not found in module '{}'.",
+                        capitalize(debug_string),
+                        name,
+                        module_name,
+                        import.module
+                    )
+                });
         }
 
         Err(format!(
@@ -1175,13 +1202,23 @@ impl Compiler {
         let type_name = type_.type_name();
 
         if is_object_class_type_name(&type_name) {
-            // A field of an object class. Not all codecs need it to be
-            // found.
-            let class_name = type_name.split('.').next().unwrap_or("");
+            // A field of an object class, which every runtime refuses the
+            // file for if it is not found, with every codec.
+            let (class_name, field_name) = type_name.split_once('.').unwrap_or((&type_name, ""));
+            let (m, c) = self.lookup_object_class(class_name, module)?;
 
-            if let Ok((m, _)) = self.lookup_object_class(class_name, module) {
-                module = m;
+            if !self.modules[m].object_classes[c]
+                .fields
+                .iter()
+                .any(|field| field.name == field_name)
+            {
+                return Err(format!(
+                    "Field '{type_name}' not found in module '{}'.",
+                    self.modules[module].name
+                ));
             }
+
+            module = m;
         } else if !is_builtin_type_name(&type_name) {
             let (m, _) = self.lookup_type(&type_name, module)?;
             module = m;
