@@ -97,6 +97,8 @@ fn encode_integer(digits: &str, out: &mut Vec<u8>) {
     // A negative number n is -1 - value. The digits are those of a
     // number the compiler made, so they parse.
     let value: BigUint = magnitude.parse().expect("an integer");
+    // -0 is 0, and not -1 - 0, which is no BigUint.
+    let negative = negative && value != BigUint::from(0u32);
     let value = if negative { value - 1u32 } else { value };
     let (major, tag) = if negative {
         (MAJOR_NEGATIVE, TAG_NEGATIVE_BIGNUM)

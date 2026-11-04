@@ -28,6 +28,25 @@ pub struct State {
     pub conversion_error: Option<String>,
     /// Where the error of a conversion is, if it tells.
     pub conversion_offset: Option<usize>,
+    /// What `parse_type()` made at each offset it was tried at.
+    types: std::collections::HashMap<usize, Parsed>,
+    /// How many types, constraints and values the parse is in.
+    depth: usize,
+}
+
+/// How deep types, constraints and values may be in one another. The
+/// parser follows them on the stack, which ran out at a few hundred in
+/// a build with no optimization, and those of specifications are no more
+/// than a dozen.
+const DEPTH: usize = 64;
+
+/// A type parsed at an offset: what it was, where it ended, and where
+/// the last failure to match was then.
+#[derive(Debug, Clone)]
+struct Parsed {
+    result: R<Type>,
+    end: usize,
+    last_failure: usize,
 }
 
 impl State {
@@ -73,6 +92,26 @@ fn first<T>(i: &mut Input, parsers: &[fn(&mut Input) -> R<T>]) -> R<T> {
     }
 
     backtrack()
+}
+
+/// `parser`, in what the parse is in already, which is an error deeper
+/// than `DEPTH`.
+fn nested<T>(i: &mut Input, parser: impl FnOnce(&mut Input) -> R<T>) -> R<T> {
+    if i.state.depth >= DEPTH {
+        let offset = here(i);
+
+        return conversion_error_at(
+            i,
+            format!("Types, constraints and values are nested more than {DEPTH} levels deep"),
+            offset,
+        );
+    }
+
+    i.state.depth += 1;
+    let result = parser(i);
+    i.state.depth -= 1;
+
+    result
 }
 
 /// An error of a conversion, which ends the parse with its own message.
@@ -319,6 +358,13 @@ fn number(i: &mut Input) -> R<Number> {
         return fail(i, offset, "number");
     }
 
+    // As int() of Python, which the values follow too: 007 is 7. JSON
+    // has no number with zeros before it, which serde_json refuses.
+    let digits = match digits.trim_start_matches('0') {
+        "" => "0",
+        digits => digits,
+    };
+
     Ok(digits.parse::<Number>().unwrap())
 }
 
@@ -510,6 +556,14 @@ fn real_number(i: &mut Input) -> R<Tok> {
         // float() of Python.
         let value: f64 = text.parse().unwrap_or(0.0);
 
+        // More than a double holds, as 1.0e999, is infinite, which is
+        // no number of JSON. PLUS-INFINITY is how ASN.1 tells it.
+        if !value.is_finite() {
+            i.reset(&checkpoint);
+
+            return fail(i, offset, "number");
+        }
+
         Ok(Tok::Float(value))
     } else if let Some(number) = text
         .strip_prefix('+')
@@ -679,7 +733,7 @@ fn oid_components(i: &mut Input) -> R<Vec<Vec<Data>>> {
 
 fn value_tokens(i: &mut Input) -> R<ValueTokens> {
     let begin = here(i);
-    let tokens = value_tokens_inner(i)?;
+    let tokens = nested(i, value_tokens_inner)?;
     let text = text_since(i, begin);
 
     Ok(ValueTokens { text, ..tokens })
@@ -1175,7 +1229,8 @@ fn named_number(i: &mut Input) -> R<NamedNumber> {
     let negative = lit(i, "-").is_ok();
     let number = match number(i) {
         Ok(number) => {
-            let text = if negative {
+            // -0 is 0, as int() of Python has it.
+            let text = if negative && number.to_string() != "0" {
                 format!("-{number}")
             } else {
                 number.to_string()
@@ -1704,7 +1759,12 @@ fn sequence_type(i: &mut Input) -> R<Type> {
 fn set_type(i: &mut Input) -> R<Type> {
     kw(i, "SET")?;
 
-    Ok(Type::new(Body::Set(braced_members(i, false)?)))
+    // SET with no braces was a reference to a type named SET, which is
+    // nowhere, and the runtimes refused the file. A reference may start
+    // with it, as SET-Id, which kw() matches the start of.
+    let committed = peek_char(i) != Some('-');
+
+    Ok(Type::new(Body::Set(braced_members(i, committed)?)))
 }
 
 fn choice_type(i: &mut Input) -> R<Type> {
@@ -2389,10 +2449,10 @@ fn elements(i: &mut Input) -> R<RawSet> {
     let checkpoint = i.checkpoint();
 
     if lit(i, "(").is_ok() {
-        let nested = commit(element_set_spec(i))?;
+        let set = commit(nested(i, element_set_spec))?;
         commit(lit(i, ")"))?;
 
-        return Ok(RawSet::Nested(Box::new(nested)));
+        return Ok(RawSet::Nested(Box::new(set)));
     }
 
     i.reset(&checkpoint);
@@ -2712,7 +2772,42 @@ fn inner_constraint(items: Vec<Item>) -> ElementConstraint {
 }
 
 /// A type, with the constraints it is followed by.
+///
+/// A type is tried as a value of an open type and as the bounds of a
+/// range before it is taken for one, at each element of a constraint,
+/// which parsed `A(B(C(...` again three times at each level, and took
+/// as long as three to the power of the depth. What it made at an offset
+/// is kept, as it is the same each time.
 pub fn parse_type(i: &mut Input) -> R<Type> {
+    let start = i.current_token_start();
+
+    if let Some(parsed) = i.state.types.get(&start).cloned() {
+        LAST_FAILURE.with(|cell| cell.set(parsed.last_failure));
+        i.next_slice(parsed.end - start);
+
+        return parsed.result;
+    }
+
+    let checkpoint = i.checkpoint();
+    let result = nested(i, parse_type_uncached);
+
+    // A failure is where it started, as the parsers that try it go back.
+    if result.is_err() {
+        i.reset(&checkpoint);
+    }
+
+    let parsed = Parsed {
+        result: result.clone(),
+        end: i.current_token_start(),
+        last_failure: LAST_FAILURE.with(|cell| cell.get()),
+    };
+
+    i.state.types.insert(start, parsed);
+
+    result
+}
+
+fn parse_type_uncached(i: &mut Input) -> R<Type> {
     let mut type_ = base_type(i)?;
     let mut constraints = Vec::new();
 

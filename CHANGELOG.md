@@ -29,6 +29,11 @@ security fixes.
 - `asnkit-compiler` (WebAssembly): `compileWithSummary()` returns the
   warnings too, as `warnings`, each with its `kind` and `message`. The
   playground shows them.
+- `asnkit-compiler`: fuzzing, in `packages/asnkit-compiler/fuzz`, of
+  specifications that are anything, which are parsed, compiled and
+  loaded by the Rust runtime. With `ASNKIT_FUZZ_STRICT=1`, what the
+  compiler takes and the runtime refuses fails too. What it found is
+  tested in `tests/fuzzed.rs`.
 
 ### Changed
 
@@ -45,6 +50,19 @@ security fixes.
   runtimes took for no constraint, and so accepted any value, even one
   that the type referred to does not permit. A root that permits no
   value but is extensible, as `(5..1, ...)`, is still accepted.
+- `asnkit-compiler`: types, constraints and values nested more than 64
+  levels deep in one another are a `ParseError`. The parser followed
+  them on the stack, which ran out at a few hundred levels and aborted
+  the program.
+- `asnkit-compiler`: `SET` with no braces, as `P ::= SET`, is a
+  `ParseError`, as `SEQUENCE` with none is. It was a reference to a
+  type named `SET`, which every runtime refused the file for.
+- `asnkit-compiler`: a field of an object class that is not found, as
+  `C.&field` where `C` or its `&field` is not defined, is a
+  `CompileError`. Every runtime refused the file for it, with every
+  codec.
+- `asnkit-compiler`: a REAL too large for a double, as `1.0e309`, is a
+  `ParseError`, as the runtimes decode REAL to a double.
 
 ### Fixed
 
@@ -52,6 +70,20 @@ security fixes.
   or as the type of a member with a `DEFAULT`, was followed without
   end, and `COMPONENTS OF` itself used up the stack, which aborted the
   program.
+- `asnkit-compiler`: a number with zeros before it, as `[00]` or
+  `{ 1 04 }`, of a tag, an object identifier, a named number or bit or
+  an enumeration, panicked. It is the number, as `007` of a value
+  always was.
+- `asnkit-compiler`: a named number of `-0` panicked. It is 0.
+- `asnkit-compiler`: a REAL too large for a double, as in
+  `REAL (0..1.e320)`, panicked.
+- `asnkit-compiler`: a module that imports a name from itself, or from
+  a module that imports it from the first, where it is not defined,
+  used up the stack, which aborted the program. It is a `CompileError`.
+- `asnkit-compiler`: a type in a constraint was parsed again for each
+  way the constraint could be read, as were those in it, so that
+  `E ::= A(A(A(...` took as long as three to the power of its depth:
+  more than ten seconds at 12 levels. It is parsed once.
 
 ## [2.0.0-rc5] - 2026-11-02
 

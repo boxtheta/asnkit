@@ -1,0 +1,37 @@
+# Copyright (c) 2025 BoxTheta
+#
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "asnkit-compiler-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.asnkit-compiler]
+path = ".."
+
+# What the compiler makes is loaded by the runtime, which has to take it.
+[dependencies.asnkitrt]
+path = "../../asnkitrt-rs"
+
+# Not part of the workspace of the repository: it needs a nightly Rust.
+[workspace]
+
+[[bin]]
+name = "compile"
+path = "fuzz_targets/compile.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "compile_types"
+path = "fuzz_targets/compile_types.rs"
+test = false
+doc = false

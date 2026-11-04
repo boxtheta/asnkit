@@ -86,3 +86,8 @@ packages/asnkitrt-rs/fuzz/artifacts/
 # Not a program: the sources of the runtime for the JVM, which the patterns
 # of main above would leave out.
 !/packages/asnkitrt-jvm/src/main/
+
+# The fuzzing of the compiler, whose corpus fuzz/seed.py makes.
+packages/asnkit-compiler/fuzz/target/
+packages/asnkit-compiler/fuzz/corpus/
+packages/asnkit-compiler/fuzz/artifacts/
