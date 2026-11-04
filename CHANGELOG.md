@@ -63,6 +63,10 @@ security fixes.
   codec.
 - `asnkit-compiler`: a REAL too large for a double, as `1.0e309`, is a
   `ParseError`, as the runtimes decode REAL to a double.
+- `asnkit-compiler`: the number of a tag that is not from 0 to
+  2^64 - 1, as `[111111111111111111111]`, or `[n]` where `n` is
+  negative, is a `CompileError`. The runtimes for Rust, C and
+  WebAssembly read it in 64 bits and refused the file.
 
 ### Fixed
 
