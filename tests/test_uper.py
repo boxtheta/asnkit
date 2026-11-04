@@ -2763,6 +2763,47 @@ class UPerTest(BaseTest):
             with self.assertRaises(fixtures.EncodeError):
                 foo.encode(type_name, decoded)
 
+    def test_extensible_root_of_no_value(self):
+        """An extensible constraint of which the root has no value, as
+        `INTEGER (5..1, ...)`, has every value outside its root, which is
+        encoded as if there was no constraint (X.691 13.1, 16.6, 17.3,
+        20.4, 30.4). No value can be decoded from its root.
+
+        """
+
+        foo = fixtures.compile_string(
+            "Foo DEFINITIONS AUTOMATIC TAGS ::= "
+            "BEGIN "
+            "W ::= INTEGER (5..1, ...) "
+            "S ::= IA5String (SIZE (3..1, ...)) "
+            "L ::= SEQUENCE (SIZE (3..1, ...)) OF BOOLEAN "
+            "O ::= OCTET STRING (SIZE (3..1, ...)) "
+            "B ::= BIT STRING (SIZE (3..1, ...)) "
+            "END",
+            "uper",
+        )
+
+        datas = [
+            ("W", 5, bytes.fromhex("808280")),
+            ("W", -300, bytes.fromhex("817f6a00")),
+            ("S", "ab", bytes.fromhex("8161c4")),
+            ("L", [True], bytes.fromhex("80c0")),
+            ("O", b"\x01\x02", bytes.fromhex("81008100")),
+            ("B", (b"\x80", 1), bytes.fromhex("80c0")),
+        ]
+
+        for type_name, decoded, encoded in datas:
+            self.assert_encode_decode(foo, type_name, decoded, encoded)
+
+            # The same with the extension bit 0.
+            with self.assertRaises(fixtures.DecodeError) as cm:
+                foo.decode(type_name, bytes([encoded[0] & 0x7F]) + encoded[1:])
+
+            self.assertIn(
+                "A value is in the root of a constraint, which has none.",
+                str(cm.exception),
+            )
+
     def test_not_support_decode_with_length(self):
         foo = fixtures.compile_string(
             "Foo DEFINITIONS AUTOMATIC TAGS ::= BEGIN A ::= OCTET STRING END", "uper"

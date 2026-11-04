@@ -67,6 +67,33 @@ def is_in_size_range(size, minimum, maximum):
     )
 
 
+def is_empty_root(minimum, maximum):
+    """If the root of a constraint, of given bounds, has no value, as that
+    of ``INTEGER (5..1, ...)``, which is from 1 to 0.
+
+    """
+
+    return isinstance(minimum, int) and isinstance(maximum, int) and minimum > maximum
+
+
+def read_extension_bit(decoder, has_extension_marker, minimum, maximum):
+    """Reads the bit of an extensible size or range, and returns if the
+    value is outside its root. A value can not be in a root with no value.
+
+    """
+
+    if not has_extension_marker:
+        return False
+
+    if decoder.read_bit():
+        return True
+
+    if is_empty_root(minimum, maximum):
+        raise DecodeError("A value is in the root of a constraint, which has none.")
+
+    return False
+
+
 def size_bounds(minimum, maximum):
     """The bounds of a size, of which a missing lower bound is 0 (X.691 16.4,
     17.2, 20.2, 30.3), and a missing upper bound ``None``.
@@ -792,7 +819,9 @@ class KnownMultiplierStringType(Sized, Type):
     def decode(self, decoder):
         unbound = self.number_of_bits is None
 
-        if self.has_extension_marker and decoder.read_bit():
+        if read_extension_bit(
+            decoder, self.has_extension_marker, self.minimum, self.maximum
+        ):
             unbound = True
 
         if unbound:
@@ -1103,7 +1132,9 @@ class ArrayType(Sized, Type):
     def decode(self, decoder):
         unbound = self.number_of_bits is None
 
-        if self.has_extension_marker and decoder.read_bit():
+        if read_extension_bit(
+            decoder, self.has_extension_marker, self.minimum, self.maximum
+        ):
             unbound = True
 
         if unbound:
@@ -1229,11 +1260,12 @@ class Integer(NamedNumbersMixin, Type):
         )
 
     def decode(self, decoder):
-        if self.has_extension_marker:
-            if decoder.read_bit():
-                decoder.align()
+        if read_extension_bit(
+            decoder, self.has_extension_marker, self.minimum, self.maximum
+        ):
+            decoder.align()
 
-                return decoder.read_unconstrained_whole_number()
+            return decoder.read_unconstrained_whole_number()
 
         if self.number_of_bits is None:
             decoder.align()
@@ -1368,7 +1400,9 @@ class BitString(Sized, Type):
     def decode(self, decoder):
         unbound = self.number_of_bits is None
 
-        if self.has_extension_marker and decoder.read_bit():
+        if read_extension_bit(
+            decoder, self.has_extension_marker, self.minimum, self.maximum
+        ):
             unbound = True
 
         if unbound:
@@ -1455,7 +1489,9 @@ class OctetString(Sized, Type):
     def decode(self, decoder):
         unbound = self.number_of_bits is None
 
-        if self.has_extension_marker and decoder.read_bit():
+        if read_extension_bit(
+            decoder, self.has_extension_marker, self.minimum, self.maximum
+        ):
             unbound = True
 
         if unbound:

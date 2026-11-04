@@ -30,13 +30,22 @@ fn bad<T>(what: &'static str) -> Result<T> {
 /// is `None` is MIN or MAX.
 pub type Part = (Option<i128>, Option<i128>);
 
-/// A range of sizes or values. A bound that is `None` is MIN or MAX.
+/// A range of sizes or values. A bound that is `None` is MIN or MAX. A
+/// root with no value, as that of `INTEGER (5..1, ...)`, has a `min`
+/// greater than its `max`, so that no value is in it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Range {
     pub min: Option<i128>,
     pub max: Option<i128>,
     /// There is an extension marker.
     pub extensible: bool,
+}
+
+impl Range {
+    /// If no value is in its root.
+    pub fn is_empty(&self) -> bool {
+        matches!((self.min, self.max), (Some(min), Some(max)) if min > max)
+    }
 }
 
 /// The constraints of a type that the codecs look at: those of the type
@@ -734,12 +743,22 @@ fn parts_of(elements: &[Element], is_range: bool) -> Result<Vec<Part>> {
 
 /// The least and the greatest values of the root of a constraint, which
 /// is the union of its elements, and if there is an extension marker
-/// (X.691 10.3.10, X.696 8.2.7).
+/// (X.691 10.3.10, X.696 8.2.7). A root of no element has no value, and
+/// is the range from 1 to 0.
 fn range_of(elements: &[Element], is_range: bool) -> Result<Range> {
     let extensible = elements
         .iter()
         .any(|element| matches!(element, Element::ExtensionMarker));
     let parts = parts_of(elements, is_range)?;
+
+    if parts.is_empty() {
+        return Ok(Range {
+            min: Some(1),
+            max: Some(0),
+            extensible,
+        });
+    }
+
     let min = if parts.iter().any(|(lower, _)| lower.is_none()) {
         None
     } else {
@@ -1268,7 +1287,7 @@ fn component_range(
     let range = range_of(elements, true)?;
 
     Ok(match (range.extensible, range.min, range.max) {
-        (false, Some(min), Some(max)) => Some((min, max)),
+        (false, Some(min), Some(max)) if min <= max => Some((min, max)),
         _ => None,
     })
 }

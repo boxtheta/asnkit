@@ -184,6 +184,20 @@ def hull(parts):
     return minimum, maximum
 
 
+def root_hull(parts, extensible):
+    """The least and the greatest bounds of the root of a constraint, as
+    `hull()` has them, and if it is extensible. An extensible root of no
+    part, as that of ``INTEGER (5..1, ...)``, has no value, and is from 1
+    to 0, so that every value is outside it.
+
+    """
+
+    if extensible and not parts:
+        return 1, 0, True
+
+    return hull(parts) + (extensible,)
+
+
 def is_in_parts(value, parts):
     """If given value is in one of given parts of a constraint."""
 
@@ -1330,7 +1344,7 @@ class Compiler(object):
 
         parts = self.get_size_parts(type_descriptor, module_name)
 
-        return hull(parts) + (EXTENSION_MARKER in size,)
+        return root_hull(parts, EXTENSION_MARKER in size)
 
     def get_size_parts(self, type_descriptor, module_name):
         """Returns the sizes and the ranges of sizes of the root of the size
@@ -1395,7 +1409,7 @@ class Compiler(object):
         parts = self.get_restricted_to_parts(type_descriptor, module_name)
         restricted_to = type_descriptor["restricted-to"]
 
-        return hull(parts) + (EXTENSION_MARKER in restricted_to,)
+        return root_hull(parts, EXTENSION_MARKER in restricted_to)
 
     def get_restricted_to_parts(self, type_descriptor, module_name):
         """Returns the values and the ranges of values of the root of the value

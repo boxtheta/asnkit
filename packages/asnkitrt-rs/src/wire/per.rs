@@ -746,6 +746,10 @@ pub fn read_integer(r: &mut Reader<'_>, range: Option<Range>) -> Result<i128> {
         return read_unconstrained(r);
     }
 
+    if range.is_some_and(|range| range.is_empty()) {
+        return decode_error(crate::per::IN_EMPTY_ROOT, r.position);
+    }
+
     let lower = range.and_then(|range| range.min);
     let upper = range.and_then(|range| range.max);
     let (Some(min), Some(max)) = (lower, upper) else {
