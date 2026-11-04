@@ -747,6 +747,14 @@ private class Lowering(
     ): TypeNode {
         val module = moduleOf(type, outer)
         val node = TypeNode()
+
+        // A root with no value that is not extensible is written as no
+        // element at all, which `rangeOf` would take for no constraint.
+        // The compiler refuses such a type.
+        if (type.size?.isEmpty() == true || type.restrictedTo?.isEmpty() == true) {
+            badNodes("A type has a constraint that permits no value.")
+        }
+
         val range = integerRange(type.restrictedTo)
 
         node.tag = type.tag

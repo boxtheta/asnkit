@@ -207,3 +207,103 @@ fn constraints_of_a_reference_take_the_place_of_those_it_refers_to() {
     assert_eq!(hex(&encoded), "86");
     assert_eq!(spec.decode("R", &encoded).unwrap(), value);
 }
+
+#[test]
+fn a_constraint_of_no_element_is_refused() {
+    // A root with no value that is not extensible is written as no
+    // element, which was taken for no constraint. So were I ::= INTEGER
+    // (5..1), K ::= J (10..20) with J ::= INTEGER (0..5) and
+    // S ::= IA5String (SIZE (3..1)) written by 2.0.0-rc5.
+    let integer =
+        |restricted_to: Cbor| node(12, vec![Cbor::Null, Cbor::Null, Cbor::Null, restricted_to]);
+    let j = assignment("J", integer(list(vec![node(6, vec![int(0), int(5)])])));
+    let refused = [
+        assignment("I", integer(list(vec![]))),
+        assignment(
+            "K",
+            node(11, vec![text("J"), Cbor::Null, Cbor::Null, list(vec![])]),
+        ),
+        assignment(
+            "S",
+            node(10, vec![text("IA5String"), Cbor::Null, list(vec![])]),
+        ),
+        // In the elements of a member.
+        assignment(
+            "T",
+            sequence(vec![member("b", node(18, vec![integer(list(vec![]))]))]),
+        ),
+    ];
+
+    for assigned in refused {
+        let nodes = module(vec![j.clone(), assigned], vec![]);
+
+        for codec in [Codec::Ber, Codec::Uper, Codec::Oer, Codec::Jer] {
+            let Err(error) = Specification::from_nodes(&nodes, Options::new(codec)) else {
+                panic!("{codec:?} loaded a constraint of no element");
+            };
+
+            assert_eq!(
+                error.to_string(),
+                "A type has a constraint that permits no value."
+            );
+        }
+    }
+
+    // The type of a field of an object class, where it is used.
+    let class = node(
+        39,
+        vec![
+            text("C"),
+            list(vec![node(40, vec![text("&id"), integer(list(vec![]))])]),
+        ],
+    );
+    let nodes = module(
+        vec![assignment(
+            "X",
+            sequence(vec![member("id", reference("C.&id"))]),
+        )],
+        vec![class],
+    );
+
+    assert!(Specification::from_nodes(&nodes, Options::new(Codec::Uper)).is_err());
+
+    // A root with no value that is extensible, as (5..1, ...), is an
+    // extension marker alone, and permits the values outside it.
+    let nodes = module(
+        vec![j, assignment("W", integer(list(vec![node(8, vec![])])))],
+        vec![],
+    );
+    let spec = Specification::from_nodes(&nodes, Options::new(Codec::Uper)).unwrap();
+    let value = Value::Integer(5);
+    let encoded = spec.encode("W", &value).unwrap();
+
+    assert_eq!(spec.decode("W", &encoded).unwrap(), value);
+}
+
+#[test]
+fn a_component_constraint_of_no_element_permits_no_value() {
+    // T ::= SEQUENCE { a INTEGER OPTIONAL } (WITH COMPONENTS { ..., a (5..1) }),
+    // which the compiler writes with a restricted_to of no element: a
+    // can only be absent.
+    let integer = node(12, vec![]);
+    let component = node(34, vec![text("a"), Cbor::Null, Cbor::Null, list(vec![])]);
+    let t = node(
+        15,
+        vec![
+            list(vec![node(4, vec![text("a"), integer, Cbor::Bool(true)])]),
+            Cbor::Null,
+            Cbor::Null,
+            Cbor::Null,
+            Cbor::Null,
+            list(vec![list(vec![component])]),
+        ],
+    );
+    let nodes = module(vec![assignment("T", t)], vec![]);
+    let spec = Specification::from_nodes(&nodes, Options::new(Codec::Ber)).unwrap();
+
+    assert!(spec.check_constraints("T", &map(vec![])).is_ok());
+    assert!(
+        spec.check_constraints("T", &map(vec![("a", Value::Integer(7))]))
+            .is_err()
+    );
+}

@@ -321,7 +321,67 @@ def load(
     if not isinstance(compiled, syntax.CompiledSpecification):
         raise CompileError("Expected a compiled specification.")
 
+    _refuse_empty_constraints(compiled)
+
     return _load_dict(_compiled_to_dict(compiled), codec, numeric_enums, lenient)
+
+
+def _empty_constraint(type_: syntax.Type, path: str) -> str | None:
+    """The path of the first type, `type_` or one in it, with a size or
+    a range of no element, as `T.member[]` for the elements of a
+    member, or `None`.
+
+    """
+
+    if any(
+        elements is not None and len(elements) == 0
+        for elements in (type_.size, type_.restricted_to)
+    ):
+        return path
+
+    if isinstance(type_, (syntax.SequenceType, syntax.SetType, syntax.ChoiceType)):
+        items = list(type_.members)
+
+        while items:
+            item = items.pop(0)
+
+            if isinstance(item, syntax.ExtensionAdditionGroup):
+                items[:0] = item.members
+            elif isinstance(item, syntax.Member):
+                found = _empty_constraint(item.type, f"{path}.{item.name}")
+
+                if found is not None:
+                    return found
+    elif isinstance(type_, (syntax.SequenceOfType, syntax.SetOfType)):
+        return _empty_constraint(type_.element, f"{path}[]")
+
+    return None
+
+
+def _refuse_empty_constraints(compiled: syntax.CompiledSpecification) -> None:
+    """Refuses a type of which a constraint has a root with no value and
+    is not extensible, which is written as no element at all, and which
+    the codecs would take for no constraint. The compiler refuses such
+    a type, but a file made by an earlier one, or by hand, may have it.
+
+    """
+
+    for module in compiled.modules:
+        found = [
+            _empty_constraint(assignment.type, assignment.name)
+            for assignment in module.types
+        ] + [
+            _empty_constraint(field.type, f"{class_.name}.{field.name}")
+            for class_ in module.object_classes
+            for field in class_.fields
+        ]
+
+        for path in found:
+            if path is not None:
+                raise CompileError(
+                    f"Type '{path}' in module '{module.name}' has a constraint "
+                    "that permits no value."
+                )
 
 
 def load_asni(

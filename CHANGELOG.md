@@ -48,8 +48,10 @@ security fixes.
   `INTEGER (5..1)`, or `(10..20)` on a type that is `(0..5)`, are a
   `CompileError`. They were written as an empty constraint, which the
   runtimes took for no constraint, and so accepted any value, even one
-  that the type referred to does not permit. A root that permits no
-  value but is extensible, as `(5..1, ...)`, is still accepted.
+  that the type referred to does not permit. The type of a field of an
+  object class, as `&id INTEGER (5..1)`, is one too, as the types that
+  use the field take it. A root that permits no value but is
+  extensible, as `(5..1, ...)`, is still accepted.
 - `asnkit-compiler`: types, constraints and values nested more than 64
   levels deep in one another are a `ParseError`. The parser followed
   them on the stack, which ran out at a few hundred levels and aborted
@@ -92,6 +94,14 @@ security fixes.
   hyphen, as `SEQUENCE-Foo`, `CHOICE-Foo` or `INTEGER-Foo`, was a
   `ParseError` where it was used, as the keyword was read from its
   start. Only `SET-` worked.
+- `asnkitrt`: a type with a `size` or a `restricted_to` of no element,
+  which an earlier compiler wrote for a constraint that permits no
+  value, as `INTEGER (5..1)`, was taken for no constraint, and so any
+  value was encoded and decoded. For a reference, it took the place of
+  the constraint of the type it refers to, as `K ::= J (10..20)` with
+  `J ::= INTEGER (0..5)` encoded 99. The runtimes for Rust, C,
+  WebAssembly, Python and the JVM refuse such a file when loading it,
+  as the compiler does such a type.
 
 ## [2.0.0-rc5] - 2026-11-02
 
