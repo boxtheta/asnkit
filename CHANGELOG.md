@@ -12,6 +12,12 @@ security fixes.
 
 ### Added
 
+- `org.boxtheta:asnkitrt`: a runtime for the JVM, in Kotlin, in
+  `packages/asnkitrt-jvm`. It loads `.asni` files, encodes and decodes
+  with BER, DER and JER, and checks constraints, with the same results
+  as the runtime for Rust for all the vectors of those codecs. It needs
+  Java 17 or later, and reads CBOR and JSON with Jackson. It is not
+  published to Maven Central yet.
 - `asnkit-compiler`: warnings, of what is valid ASN.1 but likely to
   cause trouble. The first is `RecursiveType`, of types that refer to
   themselves, whose values nest as deep as the data has them, which the

@@ -49,6 +49,11 @@ def versions():
         with open(os.path.join(PACKAGES, package, "package.json")) as fin:
             found[package + "/package.json"] = json.load(fin)["version"]
 
+    with open(os.path.join(PACKAGES, "asnkitrt-jvm", "gradle.properties")) as fin:
+        found["asnkitrt-jvm/gradle.properties"] = re.search(
+            r"^version=(.*)$", fin.read(), re.MULTILINE
+        ).group(1)
+
     with open(
         os.path.join(
             PACKAGES, "asnkit-gen-python", "src", "asnkit_gen_python", "version.py"

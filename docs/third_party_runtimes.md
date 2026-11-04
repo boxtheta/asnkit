@@ -3,8 +3,9 @@
 This is for those writing a runtime for asnkit in another language,
 or for a platform the first-party runtimes do not cover. The
 first-party runtimes are `asnkitrt` for Python, `asnkitrt` for Rust,
-`asnkitrt` on npm, which is the one for Rust built as WebAssembly, and
-`asnkitrt-c`, the one for Rust as a C library.
+`asnkitrt` on npm, which is the one for Rust built as WebAssembly,
+`asnkitrt-c`, the one for Rust as a C library, and `org.boxtheta:asnkitrt`
+for the JVM.
 
 > **Note:** This builds on the [file formats](file_formats.md), `.asni` 2.0 and `.asnst` 1.0. What they do not specify yet is listed under [Not yet specified](file_formats.md#not-yet-specified).
 

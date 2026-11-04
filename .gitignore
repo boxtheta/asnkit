@@ -74,7 +74,15 @@ gmon.out
 
 .idea/
 
+# The build of the runtime for the JVM, with Gradle and Kotlin.
+packages/asnkitrt-jvm/.gradle/
+packages/asnkitrt-jvm/.kotlin/
+
 # The fuzzing of the runtime in Rust.
 packages/asnkitrt-rs/fuzz/target/
 packages/asnkitrt-rs/fuzz/corpus/
 packages/asnkitrt-rs/fuzz/artifacts/
+
+# Not a program: the sources of the runtime for the JVM, which the patterns
+# of main above would leave out.
+!/packages/asnkitrt-jvm/src/main/
