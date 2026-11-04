@@ -377,10 +377,10 @@ file with a field of another type than told here.
 
 - `optional`, `extensible`, `includes` and `partial` are booleans.
 
-- `number` of a `Tag` is an integer of 0 or more. `tag_class` is the
-  text string `UNIVERSAL`, `APPLICATION` or `PRIVATE`, and a tag with
-  none is context-specific. `mode` is the text string `IMPLICIT` or
-  `EXPLICIT`.
+- `number` of a `Tag` is an integer from 0 to 2^64 - 1. `tag_class` is
+  the text string `UNIVERSAL`, `APPLICATION` or `PRIVATE`, and a tag
+  with none is context-specific. `mode` is the text string `IMPLICIT`
+  or `EXPLICIT`.
 
 - `number` of a `NamedNumber` is a value, as in [Values](#values).
   `named_numbers` of an `IntegerType` and `named_bits` of a

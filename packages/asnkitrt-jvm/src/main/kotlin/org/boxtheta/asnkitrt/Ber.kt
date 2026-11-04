@@ -22,7 +22,7 @@ private const val MAX_DEPTH = 128
 internal class ReadTag(
     val tagClass: TagClass,
     val constructed: Boolean,
-    val number: Long,
+    val number: ULong,
     val end: Int,
 )
 
@@ -117,7 +117,7 @@ internal object Ber {
     fun tagBytes(
         tagClass: TagClass,
         constructed: Boolean,
-        number: Long,
+        number: ULong,
         out: ByteBuffer,
     ) {
         val flags =
@@ -128,7 +128,7 @@ internal object Ber {
                 TagClass.PRIVATE -> 0xc0
             } or if (constructed) 0x20 else 0
 
-        if (number < 31) {
+        if (number < 31uL) {
             out.add(flags or number.toInt())
 
             return
@@ -136,10 +136,10 @@ internal object Ber {
 
         out.add(flags or 0x1f)
 
-        val groups = (64 - java.lang.Long.numberOfLeadingZeros(number) + 6) / 7
+        val groups = (64 - number.countLeadingZeroBits() + 6) / 7
 
         for (group in 0 until groups) {
-            val bits = (number ushr (7 * (groups - 1 - group))).toInt() and 0x7f
+            val bits = (number shr (7 * (groups - 1 - group))).toInt() and 0x7f
 
             out.add(if (group + 1 < groups) 0x80 or bits else bits)
         }
@@ -159,19 +159,19 @@ internal object Ber {
                 else -> TagClass.PRIVATE
             }
         var at = offset + 1
-        var number = (first and 0x1f).toLong()
+        var number = (first and 0x1f).toULong()
 
-        if (number == 0x1fL) {
-            number = 0
+        if (number == 0x1fuL) {
+            number = 0uL
 
             while (true) {
                 val byte = data.getOrNull(at)?.toInt()?.and(0xff) ?: decodeError("Ran out of data when reading tag", at)
 
                 at += 1
 
-                if (number ushr 57 != 0L) decodeError("A tag number is too large.", offset)
+                if (number shr 57 != 0uL) decodeError("A tag number is too large.", offset)
 
-                number = (number shl 7) or (byte and 0x7f).toLong()
+                number = (number shl 7) or (byte and 0x7f).toULong()
 
                 if (byte and 0x80 == 0) break
             }
@@ -1028,7 +1028,7 @@ private class Coder(
 
                         TagKey(tag.tagClass, tag.number)
                     } catch (_: DecodeException) {
-                        TagKey(TagClass.PRIVATE, Long.MAX_VALUE)
+                        TagKey(TagClass.PRIVATE, ULong.MAX_VALUE)
                     }
                 }.forEach { out.addAll(it) }
         }
@@ -1287,7 +1287,7 @@ private class Coder(
         // The parts have the universal tag of the type, also if the type is
         // tagged otherwise: those of a BIT STRING are BIT STRINGs, and the
         // others are OCTET STRINGs.
-        val segmentNumber = if (kind is Kind.BitString) 3L else 4L
+        val segmentNumber = if (kind is Kind.BitString) 3uL else 4uL
         val segmentKind = if (kind is Kind.Str) Kind.OctetString else kind
         var at = start
         val segments = ArrayList<Value>()

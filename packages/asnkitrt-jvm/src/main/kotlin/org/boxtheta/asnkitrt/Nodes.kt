@@ -303,7 +303,7 @@ internal enum class TagMode {
 
 /** A tag. Its `mode` is `null` if the compiler did not say, which it always does for a tag that is applied. */
 internal data class Tag(
-    val number: Long,
+    val number: ULong,
     val tagClass: TagClass,
     val mode: TagMode?,
 )
@@ -327,9 +327,10 @@ private fun readTag(item: Cbor): Tag {
             else -> badNodes("Unknown mode of a tag.")
         }
 
-    if (number.signum() < 0 || number.bitLength() > 63) badNodes("Bad number of a tag.")
+    // From 0 to 2^64 - 1, as the runtime in Rust reads it.
+    if (number.signum() < 0 || number.bitLength() > 64) badNodes("Bad number of a tag.")
 
-    return Tag(number.toLong(), tagClass, mode)
+    return Tag(number.toLong().toULong(), tagClass, mode)
 }
 
 internal data class NamedNumber(

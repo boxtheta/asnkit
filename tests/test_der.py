@@ -458,10 +458,28 @@ class DerTest(BaseTest):
             "Foo DEFINITIONS IMPLICIT TAGS ::= BEGIN "
             "A ::= [31] INTEGER "
             "B ::= [500] INTEGER "
+            "C ::= [9223372036854775807] INTEGER "
+            "D ::= [9223372036854775808] INTEGER "
+            "E ::= [18446744073709551615] INTEGER "
+            "F ::= SET { a [9223372036854775808] INTEGER, b [1] INTEGER } "
             "END"
         )
 
-        datas = [("A", 1, b"\x9f\x1f\x01\x01"), ("B", 1, b"\x9f\x83\x74\x01\x01")]
+        # The numbers of tags are from 0 to 2^64 - 1, and those from 2^63
+        # are not negative.
+        datas = [
+            ("A", 1, b"\x9f\x1f\x01\x01"),
+            ("B", 1, b"\x9f\x83\x74\x01\x01"),
+            ("C", 1, bytes.fromhex("9fffffffffffffffff7f0101")),
+            ("D", 1, bytes.fromhex("9f818080808080808080000101")),
+            ("E", 1, bytes.fromhex("9f81ffffffffffffffff7f0101")),
+            # In the order of their tags, which puts [1] first.
+            (
+                "F",
+                {"a": 1, "b": 2},
+                bytes.fromhex("31108101029f818080808080808080000101"),
+            ),
+        ]
 
         for type_name, decoded, encoded in datas:
             self.assert_encode_decode(foo, type_name, decoded, encoded)
