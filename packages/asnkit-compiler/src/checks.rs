@@ -508,16 +508,48 @@ impl Compiler {
                     false => "The type of",
                 };
 
-                return Err(format!(
-                    "{what} '{path}' in module '{}' permits no value, as its constraints have \
-                     none in common{}.",
-                    module.name,
-                    self.place(location)
-                ));
+                return Err(self.permits_no_value(what, &path, &module.name, location));
+            }
+        }
+
+        // The types of the fields of object classes, which are written as
+        // those of types are, and which the types that use them take.
+        for module in &self.modules {
+            for class in &module.object_classes {
+                for field in &class.fields {
+                    let Some((path, location)) = empty_constraint(
+                        &field.type_,
+                        &format!("{}.{}", class.name, field.name),
+                        field.location.or(class.location),
+                    ) else {
+                        continue;
+                    };
+
+                    return Err(self.permits_no_value(
+                        "The type of",
+                        &path,
+                        &module.name,
+                        location,
+                    ));
+                }
             }
         }
 
         Ok(())
+    }
+
+    fn permits_no_value(
+        &self,
+        what: &str,
+        path: &str,
+        module: &str,
+        location: Option<Location>,
+    ) -> String {
+        format!(
+            "{what} '{path}' in module '{module}' permits no value, as its constraints have none \
+             in common{}.",
+            self.place(location)
+        )
     }
 
     /// The types each assignment refers to, in it and in the types in it.

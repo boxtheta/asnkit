@@ -941,6 +941,14 @@ Reading them:
 - An `ExtensionMarker` anywhere among the elements means the size or
   the range is extensible. What follows it is not looked at.
 
+- A `size` or a `restricted_to` of a type with no element at all is a
+  root with no value that is not extensible, which permits no value.
+  The compiler refuses such a type, as `INTEGER (5..1)`, and a runtime
+  rejects the specification. One that is extensible, as
+  `INTEGER (5..1, ...)`, is an `ExtensionMarker` alone. Those of a
+  `ComponentConstraint` and of an `ElementConstraint` may have no
+  element, and permit no value of the component or of the elements.
+
 The permitted alphabet is all the characters of the text strings among
 the elements of `permitted_alphabet`, and all the characters from the
 first character of the lower bound to that of the upper bound of each

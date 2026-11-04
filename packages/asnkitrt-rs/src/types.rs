@@ -1007,6 +1007,17 @@ impl<'a> Lowering<'a> {
         let mut node = placeholder();
 
         node.tag = ty.tag.clone();
+
+        // A root with no value that is not extensible is written as no
+        // element at all, which `range_of` would take for no constraint.
+        // The compiler refuses such a type.
+        if [&ty.size, &ty.restricted_to]
+            .iter()
+            .any(|elements| elements.as_ref().is_some_and(Vec::is_empty))
+        {
+            return bad("A type has a constraint that permits no value.");
+        }
+
         let range = integer_range(ty.restricted_to.as_deref())?;
         let own = Constraints {
             size: ty.size.as_deref().map(|e| range_of(e, false)).transpose()?,

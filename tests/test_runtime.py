@@ -130,6 +130,106 @@ class RuntimeTest(unittest.TestCase):
                 str(cm.exception), "Expected an .asni file, but got an .asnst file."
             )
 
+    def test_load_constraint_of_no_element(self):
+        # A root with no value that is not extensible is written as no
+        # element, which was taken for no constraint. So were I ::=
+        # INTEGER (5..1), K ::= J (10..20) with J ::= INTEGER (0..5) and
+        # S ::= IA5String (SIZE (3..1)) written by 2.0.0-rc5.
+        j = syntax.TypeAssignment(
+            name="J",
+            type=syntax.IntegerType(restricted_to=(syntax.Range(lower=0, upper=5),)),
+        )
+        cases = [
+            ("I", syntax.IntegerType(restricted_to=()), "I"),
+            ("K", syntax.ReferencedType(name="J", restricted_to=()), "K"),
+            ("S", syntax.BuiltinType(name="IA5String", size=()), "S"),
+            (
+                "T",
+                syntax.SequenceType(
+                    members=(
+                        syntax.Member(name="a", type=syntax.IntegerType()),
+                        syntax.ExtensionMarker(),
+                        syntax.ExtensionAdditionGroup(
+                            members=(
+                                syntax.Member(
+                                    name="b",
+                                    type=syntax.SequenceOfType(
+                                        element=syntax.IntegerType(restricted_to=())
+                                    ),
+                                ),
+                            )
+                        ),
+                    )
+                ),
+                "T.b[]",
+            ),
+        ]
+
+        for name, type_, path in cases:
+            compiled = syntax.CompiledSpecification(
+                modules=(
+                    syntax.CompiledModule(
+                        name="M",
+                        types=(j, syntax.TypeAssignment(name=name, type=type_)),
+                    ),
+                )
+            )
+
+            for load in [runtime.load, runtime.load_asni]:
+                with self.assertRaises(fixtures.CompileError) as cm:
+                    load(compiled if load is runtime.load else syntax.to_asni(compiled))
+
+                self.assertEqual(
+                    str(cm.exception),
+                    f"Type '{path}' in module 'M' has a constraint that permits "
+                    "no value.",
+                )
+
+        # The type of a field of an object class.
+        compiled = syntax.CompiledSpecification(
+            modules=(
+                syntax.CompiledModule(
+                    name="M",
+                    object_classes=(
+                        syntax.ObjectClassAssignment(
+                            name="C",
+                            fields=(
+                                syntax.ObjectClassField(
+                                    name="&id",
+                                    type=syntax.IntegerType(restricted_to=()),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        )
+
+        with self.assertRaises(fixtures.CompileError) as cm:
+            runtime.load(compiled)
+
+        self.assertEqual(
+            str(cm.exception),
+            "Type 'C.&id' in module 'M' has a constraint that permits no value.",
+        )
+
+        # A root with no value that is extensible, as (5..1, ...), is an
+        # extension marker alone, and an inner type constraint may have a
+        # root of no element, which permits no value of the component.
+        compiled = fixtures.compile_string(
+            "M DEFINITIONS AUTOMATIC TAGS ::= BEGIN "
+            "W ::= INTEGER (5..1, ...) "
+            "T ::= SEQUENCE { a INTEGER OPTIONAL } (WITH COMPONENTS { ..., a (5..1) }) "
+            "END",
+            "uper",
+        )
+
+        self.assertEqual(compiled.decode("W", compiled.encode("W", 5)), 5)
+        self.assertEqual(compiled.encode("T", {}, check_constraints=True), b"\x00")
+
+        with self.assertRaises(fixtures.ConstraintsError):
+            compiled.encode("T", {"a": 7}, check_constraints=True)
+
     def test_load_asni_without_compiler(self):
         environment = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
         result = subprocess.run(

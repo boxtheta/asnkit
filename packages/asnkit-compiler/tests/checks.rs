@@ -246,6 +246,13 @@ fn constraints_that_permit_no_value_are_an_error() {
             "The type of 'T.b[]' in module 'Foo' permits no value, as its constraints have \
              none in common, at line 4, column 3.",
         ),
+        // In a field of an object class, which the types that use it take.
+        (
+            "C ::= CLASS {\n  &Type,\n  &id INTEGER (5..1) UNIQUE\n}\n\
+             X ::= SEQUENCE { id C.&id }",
+            "The type of 'C.&id' in module 'Foo' permits no value, as its constraints have \
+             none in common, at line 4, column 3.",
+        ),
     ];
 
     for (types, message) in cases {
