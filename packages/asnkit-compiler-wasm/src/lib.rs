@@ -6,14 +6,16 @@
 //! `asnkit-compiler`, built as WebAssembly with `wasm-bindgen`.
 //!
 //! It compiles the text of an ASN.1 specification to the contents of an
-//! `.asni` file, which the runtimes load, and parses it to those of an
-//! `.asnst` file. There are no files to read and no plugins to run: the
-//! JavaScript of `js/` gives it the text and does what it wants with
-//! what it makes.
+//! `.asni` file, which the runtimes load, parses it to those of an
+//! `.asnst` file, and makes a JSON Schema, an XML Schema or a DTD of the
+//! types of an `.asni` file, as `asnkitcc schema` does. There are no
+//! files to read and no plugins to run: the JavaScript of `js/` gives it
+//! the text and does what it wants with what it makes.
 
 use asnkit_compiler::{
     CompileOptions, Compiled, Input, compile_to_asni_with_warnings, parse_to_asnst,
 };
+use asnkitcc::schema::{self, format_of, generate};
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 
@@ -147,6 +149,87 @@ pub fn compile(specification: String, options: JsValue) -> Result<Vec<u8>, JsVal
 #[wasm_bindgen]
 pub fn parse(specification: String) -> Result<Vec<u8>, JsValue> {
     parse_to_asnst(&Input::String(specification)).map_err(compiler_error)
+}
+
+/// The names of the types of `schema()`: none, a string or an array of
+/// strings.
+fn type_names(value: &JsValue) -> Result<Vec<String>, JsValue> {
+    const EXPECTED: &str = "Expected 'types' to be a string or an array of strings.";
+
+    if absent(value) {
+        return Ok(Vec::new());
+    }
+
+    if let Some(name) = value.as_string() {
+        return Ok(vec![name]);
+    }
+
+    if !Array::is_array(value) {
+        return Err(type_error(EXPECTED));
+    }
+
+    Array::from(value)
+        .iter()
+        .map(|name| name.as_string().ok_or_else(|| type_error(EXPECTED)))
+        .collect()
+}
+
+/// Makes what the values of the types of an `.asni` file are in a text
+/// codec, as `asnkitcc schema` does: a JSON Schema of JER, or an XML
+/// Schema or a DTD of BASIC-XER. The options are `format`
+/// (`json-schema`, the default, `xsd` or `dtd`), `types`, the names of
+/// the types the documents are values of, as `Type` or `Module.Type`,
+/// all of them if none, and `skipUnsupported`, to leave out what a
+/// schema can not tell rather than fail. What it cannot make is an
+/// `Error` named `SchemaError`.
+#[wasm_bindgen]
+pub fn schema(asni: &[u8], options: JsValue) -> Result<Object, JsValue> {
+    let format = match option(&options, "format")? {
+        value if absent(&value) => schema::Format::JsonSchema,
+        value => format_of(
+            &value
+                .as_string()
+                .ok_or_else(|| type_error("Expected 'format' to be a string."))?,
+        )
+        .map_err(|message| type_error(&message))?,
+    };
+    let types = type_names(&option(&options, "types")?)?;
+    let skip_unsupported = match option(&options, "skipUnsupported")? {
+        value if absent(&value) => false,
+        value => value
+            .as_bool()
+            .ok_or_else(|| type_error("Expected 'skipUnsupported' to be a boolean."))?,
+    };
+    let generator = format!(
+        "the asnkit compiler for WebAssembly {}",
+        env!("CARGO_PKG_VERSION")
+    );
+    let made = generate(&schema::Request {
+        format,
+        types: &types,
+        skip_unsupported,
+        asni,
+        generator: &generator,
+    })
+    .map_err(|message| error("SchemaError", &message))?;
+
+    let skipped = Array::new();
+
+    for (name, why) in made.skipped {
+        let entry = Object::new();
+
+        Reflect::set(&entry, &"type".into(), &name.into())?;
+        Reflect::set(&entry, &"reason".into(), &why.into())?;
+        skipped.push(&entry);
+    }
+
+    let result = Object::new();
+
+    Reflect::set(&result, &"text".into(), &made.text.into())?;
+    Reflect::set(&result, &"types".into(), &made.types.into())?;
+    Reflect::set(&result, &"skipped".into(), &skipped)?;
+
+    Ok(result)
 }
 
 /// The version of the compiler, which it writes in what it makes.

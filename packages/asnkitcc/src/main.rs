@@ -12,12 +12,13 @@
 //! ```
 
 mod convert;
-mod schema;
 
 use asnkit_compiler::{
     CompileOptions, Compiled, Input, compile_to_asni_with_warnings, parse_to_asnst, plugin,
 };
+use asnkitcc::schema;
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -140,7 +141,12 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
                 parsed.types.push(name.clone());
                 parsed.type_name = Some(name);
             }
-            "--format" => parsed.format = Some(schema::format_of(&value("--format")?)?),
+            "--format" => {
+                parsed.format = Some(
+                    schema::format_of(&value("--format")?)
+                        .map_err(|error| format!("error: {error}"))?,
+                )
+            }
             "--skip-unsupported" => parsed.skip_unsupported = true,
             "--from" => parsed.from = Some(value("--from")?),
             "--to" => parsed.to = Some(value("--to")?),
@@ -365,14 +371,43 @@ fn schema(arguments: &Arguments) -> Result<(), String> {
         compile(&input, arguments)?.asni
     };
 
-    schema::schema(&schema::Request {
-        format: arguments.format,
+    let output = arguments.output.as_deref();
+    let format = arguments
+        .format
+        .or_else(|| output.and_then(schema::format_of_path))
+        .ok_or_else(|| format!("error: give the format with --format: {}.", schema::FORMATS))?;
+    let made = schema::generate(&schema::Request {
+        format,
         types: &arguments.types,
         skip_unsupported: arguments.skip_unsupported,
-        output: arguments.output.as_deref(),
         asni: &asni,
-        verbose: arguments.verbose,
+        generator: concat!("asnkitcc ", env!("CARGO_PKG_VERSION")),
     })
+    .map_err(|error| format!("error: {error}"))?;
+
+    for (name, why) in &made.skipped {
+        eprintln!("warning: {name} is left out: {why}");
+    }
+
+    match output {
+        Some(path) => std::fs::write(path, &made.text)
+            .map_err(|error| format!("error: {}: {error}", path.display()))?,
+        None => std::io::stdout()
+            .write_all(made.text.as_bytes())
+            .and_then(|()| std::io::stdout().flush())
+            .map_err(|error| format!("error: standard output: {error}"))?,
+    }
+
+    if arguments.verbose {
+        eprintln!(
+            "Wrote a {} of {} types in {} bytes.",
+            format.name(),
+            made.types,
+            made.text.len()
+        );
+    }
+
+    Ok(())
 }
 
 fn convert(arguments: &Arguments) -> Result<(), String> {

@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>asnkit playground</title>
-<meta name="description" content="Compile ASN.1 and encode values with every codec, in the browser, with the compiler and the runtime of asnkit as WebAssembly.">
+<meta name="description" content="Compile ASN.1, encode values with every codec and make schemas of JER and XER, in the browser, with the compiler and the runtime of asnkit as WebAssembly.">
 <link rel="stylesheet" href="style.css">
 <!-- The packages as they are built in the repository. build-site.sh
      maps them to the copies next to the page. -->
@@ -83,6 +83,35 @@ SPDX-License-Identifier: Apache-2.0
         <tbody></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="panel wide" aria-labelledby="schema-heading">
+    <div class="panel-head">
+      <h2 id="schema-heading"><span class="step">4</span> Schema</h2>
+      <div class="actions">
+        <label>Of
+          <select id="schema-scope" aria-label="Types of the schema">
+            <option value="type">the selected type</option>
+            <option value="all">every type</option>
+          </select>
+        </label>
+        <label>as
+          <select id="schema-format" aria-label="Format of the schema">
+            <option value="json-schema">JSON Schema of JER</option>
+            <option value="xsd">XML Schema of XER</option>
+            <option value="dtd">DTD of XER</option>
+          </select>
+        </label>
+        <button id="schema-download" class="link" disabled>Download</button>
+      </div>
+    </div>
+    <div class="hint">What the values of the types are in a text codec, as <code>asnkitcc schema</code> writes it. A type given is never left out; other types that a schema cannot describe, such as an <code>ANY</code>, can be.</div>
+    <textarea id="schema" wrap="off" spellcheck="false" readonly aria-label="Schema"></textarea>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="schema-skip" checked> Leave out what a schema cannot describe</label>
+      <span class="hint" id="schema-size"></span>
+    </div>
+    <div id="schema-status" class="status" role="status"></div>
   </section>
 </main>
 

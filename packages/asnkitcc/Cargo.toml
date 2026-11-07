@@ -14,6 +14,11 @@ readme = "README.md"
 keywords = ["asn1", "compiler", "ber", "der", "per"]
 categories = ["command-line-utilities", "encoding"]
 
+# The library is what asnkit-compiler-wasm shares with the command: the
+# schemas, which it makes in the browser.
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "asnkitcc"
 path = "src/main.rs"

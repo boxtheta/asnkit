@@ -19,5 +19,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 asnkit-compiler = { path = "../asnkit-compiler" }
+# The schemas of `asnkitcc schema`, from the library of the command.
+asnkitcc = { path = "../asnkitcc" }
 js-sys = "0.3"
 wasm-bindgen = "=0.2.129"

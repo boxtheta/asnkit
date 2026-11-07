@@ -10,6 +10,27 @@ security fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `asnkit-compiler` on npm: `schema(asni, options)`, which makes a JSON
+  Schema of JER, or an XML Schema or a DTD of XER, of the types of an
+  `.asni` file, as `asnkitcc schema` does, with the options `format`,
+  `types` and `skipUnsupported`. It gives the text, how many types it
+  is of and those it leaves out, with why, and throws an `Error` named
+  `SchemaError` for what it can not tell. The WebAssembly is larger by
+  about 90 KB gzipped, as it reads the types with the runtime.
+- The playground makes the schema of the selected type, or of every
+  type, as each of the three, to read and to download.
+- `asnkitcc` has a library, of the schemas, which the compiler as
+  WebAssembly shares with the command. It is for the crates of the
+  repository, and may change in any release.
+
+### Changed
+
+- `asnkitcc schema`: a type given with `-t` that refers to one that
+  `--skip-unsupported` leaves out tells what it refers to, down to the
+  type that can not be told, and why, rather than only the first.
+
 ## [2.0.0-rc6] - 2026-11-07
 
 ### Added

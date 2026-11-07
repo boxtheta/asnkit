@@ -63,7 +63,11 @@ const spec = await load(asni, 'uper');
 The compiler package is published on npm as `asnkit-compiler`. Install
 matching compiler and runtime versions; release candidates use the `next`
 tag. It cannot run executable code generation plugins. Use its
-`compileWithSummary` when the UI needs module and type names. See `packages/asnkit-compiler-wasm/README.md` for builds.
+`compileWithSummary` when the UI needs module and type names, and
+`schema(asni, { format, types, skipUnsupported })` for a JSON Schema
+(`json-schema`), XML Schema (`xsd`) or DTD (`dtd`) of the types, as
+`asnkitcc schema` writes; it throws a `SchemaError` for an `ANY` or an
+open type unless `skipUnsupported` leaves it out. See `packages/asnkit-compiler-wasm/README.md` for builds.
 The compiler takes no options yet. Runtime loads reject a file whose
 CRC-32 does not match with a `LoadError`. Both WASM packages reject the
 removed binding (`boundTo`, `acceptAnyBinding`) and nonce/signing/encryption

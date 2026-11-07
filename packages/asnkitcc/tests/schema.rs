@@ -238,6 +238,43 @@ fn the_format_is_told_by_the_extension_of_the_output() {
 }
 
 #[test]
+fn a_type_given_tells_why_what_it_refers_to_is_left_out() {
+    let folder = folder();
+    let path = folder.path();
+
+    fs::write(
+        path.join("holder.asn"),
+        "Holder DEFINITIONS ::= BEGIN
+    Outer ::= SEQUENCE { holder Holder }
+    Holder ::= SEQUENCE { open Open }
+    Open ::= SEQUENCE { kind INTEGER, value [0] ANY }
+END
+",
+    )
+    .unwrap();
+
+    for format in ["json-schema", "xsd"] {
+        assert_eq!(
+            error(
+                path,
+                &[
+                    "schema",
+                    "--format",
+                    format,
+                    "--skip-unsupported",
+                    "-t",
+                    "Outer",
+                    "holder.asn"
+                ]
+            ),
+            "error: Outer refers to Holder, which refers to Open, which a schema can not tell: \
+             Open.value: an ANY or an open type, of which the codec needs the type, which no \
+             schema has.\n"
+        );
+    }
+}
+
+#[test]
 fn what_a_schema_can_not_tell_is_refused() {
     let folder = folder();
     let path = folder.path();
