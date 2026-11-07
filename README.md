@@ -7,12 +7,12 @@
 [![npm](https://img.shields.io/npm/v/asnkitrt)](https://www.npmjs.com/package/asnkitrt)
 
 > [!NOTE]
-> `trunk` is at **2.0.0-rc5**, a release candidate, and this README
+> `trunk` is at **2.0.0-rc6**, a release candidate, and this README
 > describes it. The registries still serve 1.2.0 by default, and 1.2.0
 > cannot read the version 2 `.asni` files that the 2.0 compiler writes.
 > Until 2.0.0 is released, ask for the release candidate explicitly:
-> `pip install --pre asnkitrt`, `cargo install asnkitcc --version 2.0.0-rc5`
-> (and the same `--version` for each plugin), `cargo add asnkitrt@2.0.0-rc5`
+> `pip install --pre asnkitrt`, `cargo install asnkitcc --version 2.0.0-rc6`
+> (and the same `--version` for each plugin), `cargo add asnkitrt@2.0.0-rc6`
 > and `npm install asnkitrt@next`.
 >
 > Release candidates of a new major version make no promise of
