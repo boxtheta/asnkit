@@ -268,6 +268,47 @@ class SchemaTest(unittest.TestCase):
         ]:
             self.assertFalse(dtd.validate(etree.fromstring(wrong)), wrong)
 
+    def test_xsd_of_a_choice_that_is_an_item_of_itself(self) -> None:
+        """A CHOICE that is an item has no element of its own in XER, and
+        is a model group, which may have itself in it."""
+
+        assert BINARY is not None
+
+        tree = os.path.join(self.directory.name, "tree.asn")
+        output = os.path.join(self.directory.name, "tree.xsd")
+
+        with open(tree, "w") as fout:
+            fout.write(
+                "Tree DEFINITIONS AUTOMATIC TAGS ::= BEGIN\n"
+                "Node ::= CHOICE { leaf INTEGER, group SEQUENCE SIZE (1..MAX) OF Node }\n"
+                "Forest ::= SEQUENCE OF Node\n"
+                "END\n"
+            )
+
+        subprocess.run(
+            [BINARY, "schema", "--format", "xsd", "-o", output, tree], check=True
+        )
+        xsd = etree.XMLSchema(file=output)
+        # What the runtime writes, of a group in a group.
+        encoded = subprocess.run(
+            [BINARY, "convert", "-t", "Forest", "--from", "jer", "--to", "xer", tree],
+            input=b'[{"leaf": 1}, {"group": [{"leaf": 2}, {"group": [{"leaf": 3}]}]}]',
+            capture_output=True,
+            check=True,
+        ).stdout
+
+        self.assertIn(b"<group><leaf>2</leaf><group>", encoded)
+        self.assertTrue(
+            xsd.validate(etree.fromstring(encoded)), xsd.error_log.last_error
+        )
+
+        for wrong in [
+            b"<Forest><group /></Forest>",
+            b"<Forest><group><leaf>1</leaf><nope /></group></Forest>",
+            b"<Forest><Node><leaf>1</leaf></Node></Forest>",
+        ]:
+            self.assertFalse(xsd.validate(etree.fromstring(wrong)), wrong)
+
 
 if __name__ == "__main__":
     unittest.main()

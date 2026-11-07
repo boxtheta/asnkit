@@ -31,6 +31,14 @@ security fixes.
   `--skip-unsupported` leaves out tells what it refers to, down to the
   type that can not be told, and why, rather than only the first.
 
+### Fixed
+
+- `asnkitcc schema --format xsd`: an item of a `SEQUENCE OF` or a `SET
+  OF` that is a `CHOICE`, a `BOOLEAN` or an `ENUMERATED` of a type with
+  a name, which has no element of its own in XER, is the model group of
+  that name (`xs:group`) rather than what is in it. A `CHOICE` that is an
+  item of itself, as a tree, failed as nested too deeply.
+
 ## [2.0.0-rc6] - 2026-11-07
 
 ### Added
