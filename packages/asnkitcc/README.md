@@ -13,6 +13,7 @@ $ asnkitcc parse foo.asn                             # Writes foo.asnst, a synta
 $ asnkitcc generate --plugin rust -o src foo.asn     # Writes src/foo.rs.
 $ asnkitcc convert -t Question -i q.json -o q.der foo.asni   # JER to DER.
 $ asnkitcc schema -o foo.schema.json foo.asn         # A JSON Schema of JER.
+$ asnkitcc schema -o foo.xsd foo.asn                 # An XML Schema of XER.
 $ asnkitcc schema -o foo.dtd foo.asn                 # A DTD of XER.
 ```
 
@@ -38,15 +39,18 @@ copied as the bytes it was decoded from, so it can only be converted
 between BER and DER.
 
 `schema` writes what the values of the types are in a text codec: a
-JSON Schema (draft 2020-12) of JER, with `--format json-schema`, or a
-DTD of BASIC-XER, with `--format dtd`, or as told by the extension of
-`-o` (`.json` or `.dtd`). It is of all the types, or of those given with
-`-t`, each of which may be repeated, and those they refer to; the JSON
-Schema then has them as its root, and the DTD as its root elements. It
-tells what the runtimes write: the members of a `SEQUENCE` in their
-order, the bounds of sizes and ranges that are not extensible, and
-permitted alphabets, and lets a type with an extension marker have what
-a later version adds.
+JSON Schema (draft 2020-12) of JER, with `--format json-schema`, an
+XML Schema (XSD 1.0) of BASIC-XER, with `--format xsd`, or a DTD of
+BASIC-XER, with `--format dtd`, or as told by the extension of `-o`
+(`.json`, `.xsd` or `.dtd`). It is of all the types, or of those given
+with `-t`, each of which may be repeated, and those they refer to; the
+JSON Schema then has them as its root, and the XML Schema and the DTD
+as their root elements. It tells what the runtimes write: the members
+of a `SEQUENCE` in their order, and the bounds of sizes and ranges that
+are not extensible and permitted alphabets, except in a DTD. The JSON
+Schema lets a type with an extension marker have what a later version
+adds; the XML Schema and the DTD have what the specification has
+only.
 
 ```text
 $ asnkitcc schema --format json-schema -t Question foo.asn > question.schema.json
@@ -56,14 +60,20 @@ $ asnkitcc schema --format dtd --any-defined-by choices.toml protocol.asn > prot
 What a schema can not tell is an error, with where in the types it is:
 an `ANY` and an open type, of which JER and XER need the actual type (an
 `ANY DEFINED BY` is told if it is given its types with
-`--any-defined-by`), and, in a DTD, which has one declaration for each
+`--any-defined-by`); in an XML Schema, two root elements of one name, of
+types of two modules; and, in a DTD, which has one declaration for each
 name of an element, two elements of one name with other contents, as
-`a INTEGER` in one type and `a BOOLEAN` in another. `--skip-unsupported`
-leaves out, with a warning, the types that have such a thing and those
-that refer to them, but not those given with `-t`. A DTD does not tell
-what the text of an element is, as the digits of an `INTEGER`, and a
-`SET` is in the order of its members, as asnkit writes it, though XER
-lets it be in any.
+`a INTEGER` in one type and `a BOOLEAN` in another, which an XML Schema
+has as elements of each type. `--skip-unsupported` leaves out, with a
+warning, the types that have such a thing and those that refer to them,
+but not those given with `-t`.
+
+The XML Schema has a `SET` in any order, as XER does, an `OCTET STRING`
+as `xs:hexBinary` and an `INTEGER` as `xs:integer`, but not the text of
+a `REAL` or of a string that may have control characters, which are
+elements in it (X.680 12.15.5). A DTD tells no text at all, as the
+digits of an `INTEGER`, and has a `SET` in the order of its members, as
+asnkit writes it.
 
 `compile` and `generate` print warnings on standard error, of what is
 valid ASN.1 but likely to cause trouble, as types that refer to

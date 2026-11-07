@@ -34,6 +34,15 @@ const CLASH: &str = "Clash DEFINITIONS ::= BEGIN
 END
 ";
 
+const PAIRS: &str = "Pairs DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+    Pair ::= SET { left INTEGER (-5..5 | 10), right BOOLEAN OPTIONAL }
+    Pairs ::= SEQUENCE (SIZE (2..4)) OF Pair
+    Bytes ::= OCTET STRING (SIZE (16))
+    Name ::= VisibleString (FROM (\"a\"..\"z\" | \"<\"))
+    Flags ::= SEQUENCE OF BOOLEAN
+END
+";
+
 fn run(folder: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_asnkitcc"))
         .current_dir(folder)
@@ -73,6 +82,7 @@ fn folder() -> tempfile::TempDir {
         ("shapes.asn", SHAPES),
         ("open.asn", OPEN),
         ("clash.asn", CLASH),
+        ("pairs.asn", PAIRS),
     ] {
         fs::write(folder.path().join(name), text).unwrap();
     }
@@ -214,8 +224,8 @@ fn the_format_is_told_by_the_extension_of_the_output() {
         error(path, &["schema", "shapes.asn"]).starts_with("error: give the format with --format")
     );
     assert!(
-        error(path, &["schema", "--format", "xsd", "shapes.asn"])
-            .starts_with("error: unknown format 'xsd'")
+        error(path, &["schema", "--format", "yaml", "shapes.asn"])
+            .starts_with("error: unknown format 'yaml'")
     );
     assert!(
         error(path, &["compile", "--format", "dtd", "shapes.asn"])
@@ -232,7 +242,7 @@ fn what_a_schema_can_not_tell_is_refused() {
     let folder = folder();
     let path = folder.path();
 
-    for format in ["json-schema", "dtd"] {
+    for format in ["json-schema", "xsd", "dtd"] {
         assert_eq!(
             error(path, &["schema", "--format", format, "open.asn"]),
             "error: Open.value: an ANY or an open type, of which the codec needs the type, which \
@@ -290,5 +300,59 @@ fn what_a_schema_can_not_tell_is_refused() {
     assert!(
         schema(path, &["--format", "dtd", "-t", "B", "clash.asn"])
             .contains("<!ELEMENT x (true|false)>")
+    );
+}
+
+#[test]
+fn an_xml_schema_of_xer() {
+    let folder = folder();
+    let path = folder.path();
+    let text = schema(path, &["--format", "xsd", "pairs.asn"]);
+
+    assert!(text.starts_with(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- BASIC-XER (X.693) of the types of \
+         pairs.asn"
+    ));
+
+    for wanted in [
+        "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n  <xs:element name=\"Pair\" \
+         type=\"Pair\"/>\n",
+        // The members of a SET in any order.
+        "<xs:complexType name=\"Pair\">\n    <xs:all>\n      <xs:element name=\"left\">\n",
+        "<xs:union>\n            <xs:simpleType>\n              <xs:restriction \
+         base=\"xs:integer\">\n                <xs:minInclusive value=\"-5\"/>\n                \
+         <xs:maxInclusive value=\"5\"/>\n",
+        "<xs:element name=\"right\" minOccurs=\"0\">\n        <xs:complexType>\n          \
+         <xs:choice>\n            <xs:element name=\"true\" type=\"_Empty\"/>\n",
+        "<xs:element name=\"Pair\" type=\"Pair\" minOccurs=\"2\" maxOccurs=\"4\"/>",
+        "<xs:restriction base=\"xs:hexBinary\">\n      <xs:length value=\"16\"/>",
+        "<xs:pattern value=\"[&lt;a-z]*\"/>",
+        // The items that are BOOLEAN have no element of their own.
+        "<xs:complexType name=\"Flags\">\n    <xs:sequence>\n      <xs:choice minOccurs=\"0\" \
+         maxOccurs=\"unbounded\">\n        <xs:element name=\"true\" type=\"_Empty\"/>\n",
+        "<xs:complexType name=\"_Empty\"/>\n</xs:schema>\n",
+    ] {
+        assert!(text.contains(wanted), "{wanted} not in {text}");
+    }
+
+    // The elements of a member are its own: what a DTD can not tell.
+    let clash = schema(path, &["--format", "xsd", "clash.asn"]);
+
+    assert!(clash.contains("<xs:element name=\"x\" type=\"xs:integer\"/>"));
+    assert!(
+        clash.contains("<xs:element name=\"x\">\n        <xs:complexType>\n          <xs:choice>")
+    );
+
+    schema(path, &["-o", "pairs.xsd", "pairs.asn"]);
+
+    assert!(
+        fs::read_to_string(path.join("pairs.xsd"))
+            .unwrap()
+            .contains("<xs:all>")
+    );
+    assert_eq!(
+        error(path, &["schema", "--format", "xsd", "open.asn"]),
+        "error: Open.value: an ANY or an open type, of which the codec needs the type, which \
+         no schema has.\n"
     );
 }

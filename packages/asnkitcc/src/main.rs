@@ -33,9 +33,9 @@ const USAGE: &str = "usage: asnkitcc {compile,parse} [-v] [-o OUTPUT] [-e ENCODI
 The codecs are ber, der, oer, per, uper, jer, xer and gser. Without --from or
 --to, the codec is told by the extension of the input or the output (.json is jer, .xml is xer). The
 input is read from standard input and the output written to standard output when not given.
-schema writes a JSON Schema of JER (--format json-schema) or a DTD of XER (--format dtd) of the
-types, or of those given with -t, told by the extension of the output (.json or .dtd) without
---format. What a schema can not tell, as an ANY, is an error, or left out with --skip-unsupported.
+schema writes a JSON Schema of JER (--format json-schema), or an XML Schema (--format xsd) or a
+DTD (--format dtd) of XER, of the types or of those given with -t, told by the extension of the
+output (.json, .xsd or .dtd) without --format. What a schema can not tell, as an ANY, is an error, or left out with --skip-unsupported.
 --version tells the versions of asnkitcc and of the plugins found where programs are.";
 
 /// The options of what `.asni` files no longer have: a nonce, a

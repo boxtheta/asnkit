@@ -4,17 +4,20 @@
 
 //! The command `asnkitcc schema`, which writes what the values of the
 //! types of a specification are in a text codec: a JSON Schema of JER
-//! (X.697), or a DTD of BASIC-XER (X.693), as the runtimes write them.
+//! (X.697), or an XML Schema or a DTD of BASIC-XER (X.693), as the
+//! runtimes write them.
 //!
 //! ```text
 //! asnkitcc schema --format json-schema -t Question -o question.schema.json foo.asn
+//! asnkitcc schema -o foo.xsd foo.asni
 //! asnkitcc schema -o foo.dtd foo.asni
 //! ```
 //!
 //! What a schema can not tell is refused, with where in the types it is:
 //! an ANY and an open type, of which JER and XER need the actual type,
-//! and, in a DTD, which has one declaration for each name of an element,
-//! two elements of the same name with other contents.
+//! in an XML Schema, root elements of one name in two modules, and, in a
+//! DTD, which has one declaration for each name of an element, two
+//! elements of the same name with other contents.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -28,13 +31,15 @@ use asnkitrt::types::{Codec, Constraints, Kind, MemberInfo, Members, StrKind, Ty
 /// How deep types are nested in each other, at most, as the codecs have it.
 const MAX_DEPTH: usize = 256;
 
-const FORMATS: &str = "json-schema or dtd";
+const FORMATS: &str = "json-schema, xsd or dtd";
 
 /// What a schema is written as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     /// A JSON Schema, of the draft 2020-12, of JER.
     JsonSchema,
+    /// An XML Schema (XSD 1.0) of BASIC-XER.
+    Xsd,
     /// A DTD of BASIC-XER.
     Dtd,
 }
@@ -43,7 +48,8 @@ pub enum Format {
 pub fn format_of(name: &str) -> Result<Format, String> {
     match name.to_ascii_lowercase().as_str() {
         "json-schema" | "jsonschema" | "json" | "jer" => Ok(Format::JsonSchema),
-        "dtd" | "xer" => Ok(Format::Dtd),
+        "xsd" | "xml-schema" | "xer" => Ok(Format::Xsd),
+        "dtd" => Ok(Format::Dtd),
         _ => Err(format!(
             "error: unknown format '{name}', expected {FORMATS}."
         )),
@@ -54,6 +60,7 @@ pub fn format_of(name: &str) -> Result<Format, String> {
 fn format_of_path(path: &Path) -> Option<Format> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "json" => Some(Format::JsonSchema),
+        "xsd" => Some(Format::Xsd),
         "dtd" => Some(Format::Dtd),
         _ => None,
     }
@@ -100,7 +107,7 @@ pub fn schema(request: &Request<'_>) -> Result<(), String> {
         .collect();
     let codec = match format {
         Format::JsonSchema => Codec::Jer,
-        Format::Dtd => Codec::Xer,
+        Format::Xsd | Format::Dtd => Codec::Xer,
     };
     let specification = Specification::from_asni(asni, &checks, Options::new(codec))
         .map_err(|error| format!("error: the specification: {error}"))?;
@@ -111,6 +118,7 @@ pub fn schema(request: &Request<'_>) -> Result<(), String> {
 
     let text = match format {
         Format::JsonSchema => json_schema(types, &roots, request, &about, &mut skipped)?,
+        Format::Xsd => xml_schema(types, &roots, request, &about, &mut skipped)?,
         Format::Dtd => dtd(types, &roots, request, &about, &mut skipped)?,
     };
 
@@ -132,6 +140,7 @@ pub fn schema(request: &Request<'_>) -> Result<(), String> {
             "Wrote a {} of {} types in {} bytes.",
             match format {
                 Format::JsonSchema => "JSON Schema",
+                Format::Xsd => "XML Schema",
                 Format::Dtd => "DTD",
             },
             roots.len() - skipped.len(),
@@ -881,13 +890,8 @@ fn shown(content: &str) -> String {
     }
 }
 
-fn json_schema(
-    types: &Types,
-    roots: &[Root],
-    request: &Request<'_>,
-    about: &str,
-    skipped: &mut Vec<(String, String)>,
-) -> Result<String, String> {
+/// The name each type with one has in a schema, by its id.
+fn type_keys(types: &Types) -> BTreeMap<TypeId, String> {
     let mut keys = BTreeMap::new();
 
     for (module, assignments) in &types.modules {
@@ -899,14 +903,24 @@ fn json_schema(
         }
     }
 
-    let ids: BTreeMap<String, TypeId> = keys.iter().map(|(id, key)| (key.clone(), *id)).collect();
-    let mut schema = JsonSchema {
-        types,
-        keys,
-        refs: BTreeSet::new(),
-    };
-    // Each definition with those it refers to, in the order they are made.
-    let mut definitions: Vec<(String, Json, BTreeSet<String>)> = Vec::new();
+    keys
+}
+
+/// The definitions of the types of the roots and of those they refer
+/// to, in the order they are made, each by its name in `keys`. `make`
+/// makes the definition of a type, and tells the names of those it refers
+/// to. A type that can not be told is an error, or with
+/// `--skip-unsupported` left out, with what refers to it, but not if it
+/// is a root that is given.
+fn definitions<T>(
+    roots: &[Root],
+    keys: &BTreeMap<TypeId, String>,
+    request: &Request<'_>,
+    skipped: &mut Vec<(String, String)>,
+    mut make: impl FnMut(TypeId, &str) -> Result<(T, BTreeSet<String>), String>,
+) -> Result<Vec<(String, T)>, String> {
+    let ids: BTreeMap<&String, TypeId> = keys.iter().map(|(id, key)| (key, *id)).collect();
+    let mut definitions: Vec<(String, T, BTreeSet<String>)> = Vec::new();
     let mut failed: BTreeMap<String, String> = BTreeMap::new();
     let mut pending: Vec<String> = roots.iter().map(|root| root.key.clone()).collect();
     let mut seen: BTreeSet<String> = pending.iter().cloned().collect();
@@ -916,19 +930,16 @@ fn json_schema(
         let key = pending[at].clone();
 
         at += 1;
-        schema.refs.clear();
 
-        match schema.definition(ids[&key], &key, 0) {
-            Ok(json) => {
-                let refs = std::mem::take(&mut schema.refs);
-
+        match make(ids[&key], &key) {
+            Ok((definition, refs)) => {
                 for other in &refs {
                     if seen.insert(other.clone()) {
                         pending.push(other.clone());
                     }
                 }
 
-                definitions.push((key, json, refs));
+                definitions.push((key, definition, refs));
             }
             Err(why) if request.skip_unsupported => {
                 failed.insert(key, why);
@@ -970,6 +981,33 @@ fn json_schema(
 
     skipped.extend(failed);
 
+    Ok(definitions
+        .into_iter()
+        .map(|(key, definition, _)| (key, definition))
+        .collect())
+}
+
+fn json_schema(
+    types: &Types,
+    roots: &[Root],
+    request: &Request<'_>,
+    about: &str,
+    skipped: &mut Vec<(String, String)>,
+) -> Result<String, String> {
+    let keys = type_keys(types);
+    let mut schema = JsonSchema {
+        types,
+        keys: keys.clone(),
+        refs: BTreeSet::new(),
+    };
+    let definitions = definitions(roots, &keys, request, skipped, |id, key| {
+        schema.refs.clear();
+
+        let json = schema.definition(id, key, 0)?;
+
+        Ok((json, std::mem::take(&mut schema.refs)))
+    })?;
+
     let mut document = object([
         (
             "$schema",
@@ -995,15 +1033,7 @@ fn json_schema(
         ),
     }
 
-    document.push(
-        "$defs",
-        Json::Object(
-            definitions
-                .into_iter()
-                .map(|(key, json, _)| (key, json))
-                .collect(),
-        ),
-    );
+    document.push("$defs", Json::Object(definitions));
 
     let mut out = String::new();
 
@@ -1087,7 +1117,7 @@ impl Dtd<'_> {
 
     /// The control characters a string of a type can have, each an empty
     /// element in XER (X.680 12.15.5).
-    fn controls(&self, kind: StrKind, alphabet: Option<&Vec<char>>) -> Vec<&'static str> {
+    fn controls(kind: StrKind, alphabet: Option<&Vec<char>>) -> Vec<&'static str> {
         let can_have = |code: usize| match alphabet {
             Some(chars) => chars.iter().any(|c| *c as usize == code),
             None => !matches!(
@@ -1131,7 +1161,7 @@ impl Dtd<'_> {
             ),
             Kind::Null => "EMPTY".to_string(),
             Kind::Str(kind) => {
-                let controls = self.controls(*kind, types.constraints(id).alphabet.as_ref());
+                let controls = Dtd::controls(*kind, types.constraints(id).alphabet.as_ref());
 
                 if controls.is_empty() {
                     "(#PCDATA)".to_string()
@@ -1308,6 +1338,528 @@ fn dtd(
     for name in &dtd.order {
         out.push_str(&format!("<!ELEMENT {name} {}>\n", dtd.declared[name].0));
     }
+
+    Ok(out)
+}
+
+// XML Schema.
+
+/// An element of XML, as an XML Schema is written of them.
+#[derive(Debug, Clone, PartialEq)]
+struct Xml {
+    name: &'static str,
+    attributes: Vec<(&'static str, String)>,
+    children: Vec<Xml>,
+}
+
+fn xs(name: &'static str) -> Xml {
+    Xml {
+        name,
+        attributes: Vec::new(),
+        children: Vec::new(),
+    }
+}
+
+impl Xml {
+    fn with(mut self, name: &'static str, value: impl ToString) -> Xml {
+        self.attributes.push((name, value.to_string()));
+        self
+    }
+
+    fn child(mut self, child: Xml) -> Xml {
+        self.children.push(child);
+        self
+    }
+
+    fn children(mut self, children: impl IntoIterator<Item = Xml>) -> Xml {
+        self.children.extend(children);
+        self
+    }
+
+    /// If an element in it is of the type `name`.
+    fn uses(&self, name: &str) -> bool {
+        self.attributes
+            .iter()
+            .any(|(attribute, value)| *attribute == "type" && value == name)
+            || self.children.iter().any(|child| child.uses(name))
+    }
+
+    fn write(&self, out: &mut String, level: usize) {
+        out.extend(std::iter::repeat_n("  ", level));
+        out.push_str("<xs:");
+        out.push_str(self.name);
+
+        for (name, value) in &self.attributes {
+            out.push(' ');
+            out.push_str(name);
+            out.push_str("=\"");
+
+            for c in value.chars() {
+                match c {
+                    '&' => out.push_str("&amp;"),
+                    '<' => out.push_str("&lt;"),
+                    '>' => out.push_str("&gt;"),
+                    '"' => out.push_str("&quot;"),
+                    ' '..='~' => out.push(c),
+                    c => out.push_str(&format!("&#x{:X};", c as u32)),
+                }
+            }
+
+            out.push('"');
+        }
+
+        if self.children.is_empty() {
+            out.push_str("/>\n");
+
+            return;
+        }
+
+        out.push_str(">\n");
+
+        for child in &self.children {
+            child.write(out, level + 1);
+        }
+
+        out.extend(std::iter::repeat_n("  ", level));
+        out.push_str("</xs:");
+        out.push_str(self.name);
+        out.push_str(">\n");
+    }
+}
+
+/// The type of an empty element, which no type of ASN.1 is named, as
+/// their names have no `_`.
+const EMPTY: &str = "_Empty";
+
+/// An empty element, as `<true />`.
+fn empty_element(name: &str) -> Xml {
+    xs("element").with("name", name).with("type", EMPTY)
+}
+
+/// A restriction of a type of XML Schema, with its facets.
+fn restriction(base: &str, facets: impl IntoIterator<Item = Xml>) -> Xml {
+    xs("simpleType").child(xs("restriction").with("base", base).children(facets))
+}
+
+fn facet(name: &'static str, value: impl ToString) -> Xml {
+    xs(name).with("value", value)
+}
+
+/// A restriction for each of the bounds, in a union if there are more
+/// than one, as `minInclusive` and `maxInclusive` or the facets named.
+fn bounded(
+    base: &str,
+    bounds: &Bounds,
+    minimum: &'static str,
+    maximum: &'static str,
+    more: &[Xml],
+) -> Xml {
+    let one = |(min, max): &(Option<String>, Option<String>)| {
+        let mut facets: Vec<Xml> = Vec::new();
+
+        // One size is a length.
+        if minimum == "minLength" && min.is_some() && min == max {
+            facets.push(facet("length", min.clone().unwrap_or_default()));
+        } else {
+            facets.extend(min.iter().map(|min| facet(minimum, min)));
+            facets.extend(max.iter().map(|max| facet(maximum, max)));
+        }
+
+        facets.extend(more.iter().cloned());
+
+        restriction(base, facets)
+    };
+
+    match bounds.as_slice() {
+        [] => restriction(base, more.iter().cloned()),
+        [only] => one(only),
+        parts => xs("simpleType").child(xs("union").children(parts.iter().map(one))),
+    }
+}
+
+/// A character in a class of a regular expression of XML Schema.
+fn xsd_class_char(out: &mut String, c: char) {
+    match c {
+        '\\' | ']' | '[' | '^' | '-' => {
+            out.push('\\');
+            out.push(c);
+        }
+        '\t' => out.push_str("\\t"),
+        '\n' => out.push_str("\\n"),
+        '\r' => out.push_str("\\r"),
+        c => out.push(c),
+    }
+}
+
+fn xsd_char_class(chars: &[char]) -> String {
+    let mut sorted: Vec<char> = chars.to_vec();
+
+    sorted.sort_unstable();
+    sorted.dedup();
+
+    let mut out = String::new();
+    let mut index = 0;
+
+    while index < sorted.len() {
+        let first = sorted[index];
+        let mut last = first;
+
+        while index + 1 < sorted.len() && sorted[index + 1] as u32 == last as u32 + 1 {
+            index += 1;
+            last = sorted[index];
+        }
+
+        xsd_class_char(&mut out, first);
+
+        if last != first {
+            if last as u32 > first as u32 + 1 {
+                out.push('-');
+            }
+
+            xsd_class_char(&mut out, last);
+        }
+
+        index += 1;
+    }
+
+    out
+}
+
+/// The forms of dates and times the decoders read, as the regular
+/// expressions of XML Schema have them: anchored, with no `(?:` and no
+/// lookahead.
+const XSD_UTC_TIME: &str = "[0-9]{10}([0-9]{2})?(Z|[+\\-][0-9]{4})";
+const XSD_GENERALIZED_TIME: &str =
+    "[0-9]{10}([0-9]{2}([0-9]{2})?)?([.,][0-9]+)?(Z|[+\\-][0-9]{2}([0-9]{2})?)?";
+const XSD_DATE: &str = "[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}";
+const XSD_TIME_OF_DAY: &str = "[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}";
+const XSD_DATE_TIME: &str = "[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}";
+
+/// A DURATION: weeks alone, or a date with a time or not, or a time,
+/// each of them with one element at least.
+fn xsd_duration_pattern() -> String {
+    let n = "(0|[1-9][0-9]*)([.,][0-9]+)?";
+    let date = format!("({n}Y({n}M)?({n}D)?|{n}M({n}D)?|{n}D)");
+    let time = format!("T({n}H({n}M)?({n}S)?|{n}M({n}S)?|{n}S)");
+
+    format!("P({n}W|{date}({time})?|{time})")
+}
+
+fn string_restriction(base: &str, pattern: &str) -> Xml {
+    restriction(base, [facet("pattern", pattern)])
+}
+
+struct XmlSchema<'a> {
+    types: &'a Types,
+    keys: BTreeMap<TypeId, String>,
+    refs: BTreeSet<String>,
+}
+
+impl XmlSchema<'_> {
+    /// The element of a value of the type `id`: with the name of the type
+    /// if it has one, else with the type in it.
+    fn element(&mut self, name: &str, id: TypeId, path: &str, depth: usize) -> Result<Xml, String> {
+        let element = xs("element").with("name", name.replace(' ', "_"));
+
+        if depth > MAX_DEPTH {
+            return Err(format!("{path}: the types are nested too deeply."));
+        }
+
+        if let Some(key) = self.keys.get(&id) {
+            self.refs.insert(key.clone());
+
+            return Ok(element.with("type", key));
+        }
+
+        // A reference with a tag of its own is the type it refers to, in
+        // XER, which has no tags.
+        if let Kind::Ref(target) = &self.types.node(id).kind
+            && self.types.constraints(id) == self.types.constraints(*target)
+        {
+            return self.element(name, *target, path, depth + 1);
+        }
+
+        let definition = self.definition(id, path, depth)?;
+
+        // A type of XML Schema with no facets is that type.
+        if let [restriction] = definition.children.as_slice()
+            && definition.name == "simpleType"
+            && restriction.name == "restriction"
+            && restriction.children.is_empty()
+        {
+            return Ok(element.with("type", &restriction.attributes[0].1));
+        }
+
+        Ok(element.child(definition))
+    }
+
+    /// An element in another, as a member, which may be left out.
+    fn particle(&mut self, member: &MemberInfo, path: &str, depth: usize) -> Result<Xml, String> {
+        let inner = format!("{path}.{}", member.name);
+        let element = match self.types.kind(member.ty) {
+            // The member it is defined by tells the type, but the element
+            // is the same: it is told if all of them are one type.
+            Kind::AnyDefinedBy { choices, .. } if !choices.is_empty() => {
+                let mut elements = Vec::new();
+
+                for (_, ty) in choices {
+                    let element = self.element(&member.name, *ty, &inner, depth + 1)?;
+
+                    if !elements.contains(&element) {
+                        elements.push(element);
+                    }
+                }
+
+                if elements.len() > 1 {
+                    return Err(format!(
+                        "{inner}: the types of the ANY DEFINED BY are not one, which an XML \
+                         Schema can not tell apart."
+                    ));
+                }
+
+                elements.remove(0)
+            }
+            _ => self.element(&member.name, member.ty, &inner, depth + 1)?,
+        };
+
+        Ok(if member.optional || member.has_default() {
+            element.with("minOccurs", 0)
+        } else {
+            element
+        })
+    }
+
+    /// The `simpleType` or the `complexType` of a type, with no name.
+    fn definition(&mut self, id: TypeId, path: &str, depth: usize) -> Result<Xml, String> {
+        if depth > MAX_DEPTH {
+            return Err(format!("{path}: the types are nested too deeply."));
+        }
+
+        let types = self.types;
+        let constraints = types.constraints(id);
+        let complex = |content: Xml| xs("complexType").child(content);
+
+        Ok(match types.kind(id) {
+            Kind::Ref(_) => return Err(format!("{path}: the type has no contents of its own.")),
+            Kind::Boolean => {
+                complex(xs("choice").children([empty_element("true"), empty_element("false")]))
+            }
+            Kind::Integer(_) => bounded(
+                "xs:integer",
+                &range_bounds(constraints),
+                "minInclusive",
+                "maxInclusive",
+                &[],
+            ),
+            // A number, or the empty element of a special value (X.680
+            // 21.9), of which the text is not told.
+            Kind::Real => xs("complexType").with("mixed", true).child(
+                xs("choice").with("minOccurs", 0).children(
+                    ["PLUS-INFINITY", "MINUS-INFINITY", "NOT-A-NUMBER"].map(empty_element),
+                ),
+            ),
+            Kind::Null => xs("complexType"),
+            Kind::BitString(_) => bounded(
+                "xs:string",
+                &size_bounds(constraints, 1),
+                "minLength",
+                "maxLength",
+                &[facet("pattern", "[01]*")],
+            ),
+            Kind::OctetString => bounded(
+                "xs:hexBinary",
+                &size_bounds(constraints, 1),
+                "minLength",
+                "maxLength",
+                &[],
+            ),
+            Kind::ObjectIdentifier => string_restriction("xs:token", "[0-9]+(\\.[0-9]+)+"),
+            Kind::Str(kind) => {
+                let controls = Dtd::controls(*kind, constraints.alphabet.as_ref());
+
+                if controls.is_empty() {
+                    let class = match (&constraints.alphabet, kind) {
+                        (Some(chars), _) => Some(xsd_char_class(chars)),
+                        (None, StrKind::Numeric) => Some("0-9 ".to_string()),
+                        (None, StrKind::Printable) => Some("A-Za-z0-9 '()+,\\-./:=?".to_string()),
+                        (None, StrKind::Visible) => Some(" -~".to_string()),
+                        (None, _) => None,
+                    };
+                    let pattern: Vec<Xml> = class
+                        .map(|class| facet("pattern", format!("[{class}]*")))
+                        .into_iter()
+                        .collect();
+
+                    bounded(
+                        "xs:string",
+                        &size_bounds(constraints, 1),
+                        "minLength",
+                        "maxLength",
+                        &pattern,
+                    )
+                } else {
+                    // A control character is an empty element of its name
+                    // (X.680 12.15.5), and the text with them is not told.
+                    xs("complexType").with("mixed", true).child(
+                        xs("choice")
+                            .with("minOccurs", 0)
+                            .with("maxOccurs", "unbounded")
+                            .children(controls.into_iter().map(empty_element)),
+                    )
+                }
+            }
+            Kind::Enumerated { root, additions } => complex(
+                xs("choice").children(
+                    root.iter()
+                        .chain(additions.iter().flatten())
+                        .map(|(name, _)| empty_element(name)),
+                ),
+            ),
+            // The members of a SET in any order (X.693 9.3.5).
+            Kind::Sequence(members) | Kind::Set(members) | Kind::External(members) => {
+                let group = if matches!(types.kind(id), Kind::Set(_)) {
+                    "all"
+                } else {
+                    "sequence"
+                };
+                let mut particles = Vec::new();
+
+                for member in members.all() {
+                    particles.push(self.particle(member, path, depth)?);
+                }
+
+                if particles.is_empty() {
+                    xs("complexType")
+                } else {
+                    complex(xs(group).children(particles))
+                }
+            }
+            Kind::SequenceOf(item) | Kind::SetOf(item) => {
+                let (min, max) = match constraints.size {
+                    Some(size) if !size.extensible => (size.min.unwrap_or(0), size.max),
+                    _ => (0, None),
+                };
+                let name = types
+                    .node(types.node(id).concrete)
+                    .element_name
+                    .clone()
+                    .unwrap_or_default();
+                let inner = format!("{path}[]");
+                // A BOOLEAN, an ENUMERATED and a CHOICE have no element of
+                // their own as an item (X.693 9.3.6).
+                let particle = match types.kind(*item) {
+                    Kind::Boolean | Kind::Enumerated { .. } | Kind::Choice(_) => {
+                        let mut group = self
+                            .definition(*item, &inner, depth + 1)?
+                            .children
+                            .remove(0);
+
+                        group.attributes.retain(|(name, _)| *name != "minOccurs");
+                        group
+                    }
+                    _ => self.element(&name, *item, &inner, depth + 1)?,
+                };
+                let max = max.map_or("unbounded".to_string(), |max| max.to_string());
+
+                complex(
+                    xs("sequence").child(particle.with("minOccurs", min).with("maxOccurs", max)),
+                )
+            }
+            Kind::Choice(members) => {
+                let mut alternatives = Vec::new();
+
+                for member in members.all() {
+                    alternatives.push(self.element(
+                        &member.name,
+                        member.ty,
+                        &format!("{path}.{}", member.name),
+                        depth + 1,
+                    )?);
+                }
+
+                complex(xs("choice").children(alternatives))
+            }
+            Kind::Utc => string_restriction("xs:string", XSD_UTC_TIME),
+            Kind::Generalized => string_restriction("xs:string", XSD_GENERALIZED_TIME),
+            Kind::Date => string_restriction("xs:string", XSD_DATE),
+            Kind::TimeOfDay => string_restriction("xs:string", XSD_TIME_OF_DAY),
+            Kind::DateTime => string_restriction("xs:string", XSD_DATE_TIME),
+            Kind::Duration => string_restriction("xs:string", &xsd_duration_pattern()),
+            kind @ (Kind::Any | Kind::AnyDefinedBy { .. } | Kind::OpenType) => {
+                return Err(unsupported(kind, path));
+            }
+        })
+    }
+}
+
+fn xml_schema(
+    types: &Types,
+    roots: &[Root],
+    request: &Request<'_>,
+    about: &str,
+    skipped: &mut Vec<(String, String)>,
+) -> Result<String, String> {
+    let keys = type_keys(types);
+    let mut schema = XmlSchema {
+        types,
+        keys: keys.clone(),
+        refs: BTreeSet::new(),
+    };
+    let definitions = definitions(roots, &keys, request, skipped, |id, key| {
+        schema.refs.clear();
+
+        let definition = schema.definition(id, key, 0)?.with("name", key);
+
+        Ok((definition, std::mem::take(&mut schema.refs)))
+    })?;
+    let defined: BTreeSet<&String> = definitions.iter().map(|(key, _)| key).collect();
+    let mut document = xs("schema").with("xmlns:xs", "http://www.w3.org/2001/XMLSchema");
+    // The root elements, named after their types, of which two of one name
+    // in two modules have to be the same.
+    let mut elements: BTreeMap<&str, &str> = BTreeMap::new();
+
+    for root in roots.iter().filter(|root| defined.contains(&root.key)) {
+        match elements.get(root.name.as_str()) {
+            Some(other) => {
+                let why = format!(
+                    "{}: the root element <{}> is also of {other}, which an XML Schema can not \
+                     tell apart.",
+                    root.key, root.name
+                );
+
+                if request.skip_unsupported && !root.given {
+                    skipped.push((root.key.clone(), why));
+                } else {
+                    return Err(format!("error: {why}"));
+                }
+            }
+            None => {
+                elements.insert(&root.name, &root.key);
+                document = document.child(
+                    xs("element")
+                        .with("name", &root.name)
+                        .with("type", &root.key),
+                );
+            }
+        }
+    }
+
+    document = document.children(definitions.into_iter().map(|(_, definition)| definition));
+
+    if document.uses(EMPTY) {
+        document = document.child(xs("complexType").with("name", EMPTY));
+    }
+
+    let mut out = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- {} -->\n",
+        format!(
+            "BASIC-XER (X.693) of the types of {about}, as asnkit writes them. Made by asnkitcc {}.",
+            env!("CARGO_PKG_VERSION")
+        )
+        .replace("--", "- -")
+    );
+
+    document.write(&mut out, 0);
 
     Ok(out)
 }
