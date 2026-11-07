@@ -24,7 +24,7 @@ wheels = [
 
 [[package]]
 name = "asnkit-gen-python"
-version = "2.0.0rc5"
+version = "2.0.0rc6"
 source = { editable = "packages/asnkit-gen-python" }
 dependencies = [
     { name = "asnkitrt" },
@@ -92,7 +92,7 @@ schema = [
 
 [[package]]
 name = "asnkitrt"
-version = "2.0.0rc5"
+version = "2.0.0rc6"
 source = { editable = "packages/asnkitrt" }
 
 [[package]]
