@@ -251,12 +251,15 @@ internal sealed class Kind {
         val members: Members,
     ) : Kind()
 
+    /** `elementName` is what an item is called in XER. */
     class SequenceOf(
         val element: Int,
+        val elementName: String = "",
     ) : Kind()
 
     class SetOf(
         val element: Int,
+        val elementName: String = "",
     ) : Kind()
 
     class Str(
@@ -361,6 +364,9 @@ public enum class Codec {
 
     /** JSON Encoding Rules, X.697. */
     JER,
+
+    /** XML Encoding Rules, X.693: BASIC-XER. */
+    XER,
 }
 
 /** The types of a specification. */
@@ -509,6 +515,32 @@ internal fun lower(
     finish(types)
 
     return types
+}
+
+/**
+ * What the items of a SEQUENCE OF or a SET OF are called in XER: the name
+ * given to them, or else that of the kind of their type, as `INTEGER`,
+ * `SEQUENCE` or the name of a type.
+ */
+private fun elementNameOf(
+    element: Type,
+    given: String?,
+): String {
+    if (!given.isNullOrEmpty()) return given
+
+    return when (val body = element.body) {
+        is Body.Builtin -> body.builtin.asn1Name
+        is Body.Referenced -> body.name
+        is Body.Integer -> "INTEGER"
+        is Body.BitString -> "BIT STRING"
+        is Body.Enumerated -> "ENUMERATED"
+        is Body.Sequence -> "SEQUENCE"
+        is Body.Set -> "SET"
+        is Body.Choice -> "CHOICE"
+        is Body.SequenceOf -> "SEQUENCE OF"
+        is Body.SetOf -> "SET OF"
+        is Body.AnyDefinedBy -> "ANY DEFINED BY"
+    }
 }
 
 private fun hasOwn(type: Type): Boolean = type.tag != null || type.size != null || type.restrictedTo != null || type.permittedAlphabet != null
@@ -819,8 +851,8 @@ private class Lowering(
                 is Body.Sequence -> Kind.Sequence(lowerMembers(body.items, module))
                 is Body.Set -> Kind.Set(lowerMembers(body.items, module))
                 is Body.Choice -> Kind.Choice(lowerMembers(body.items, module))
-                is Body.SequenceOf -> Kind.SequenceOf(lowerType(body.element, module))
-                is Body.SetOf -> Kind.SetOf(lowerType(body.element, module))
+                is Body.SequenceOf -> Kind.SequenceOf(lowerType(body.element, module), elementNameOf(body.element, body.elementName))
+                is Body.SetOf -> Kind.SetOf(lowerType(body.element, module), elementNameOf(body.element, body.elementName))
                 is Body.AnyDefinedBy -> Kind.AnyDefinedBy(body.value, body.choices.map { it.value to lowerType(it.type, module) })
             }
 
@@ -830,8 +862,8 @@ private class Lowering(
     /**
      * An open type, as the value of a field of an object class that is a
      * type: in BER and DER the encoding of the value as it is, as an ANY.
-     * JER needs the type to encode it with (X.697 41), and so does not
-     * support it.
+     * JER and XER need the type to encode it with (X.697 41, X.693 8.5),
+     * and so do not support it.
      */
     private fun openType(): Kind =
         when (codec) {

@@ -22,6 +22,8 @@ dependencies {
     // CBOR for the .asni files, and the JSON of JER with the core it
     // brings.
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.22.4")
+    // The XML of XER, read with StAX.
+    implementation("com.fasterxml.woodstox:woodstox-core:7.3.0")
 
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")

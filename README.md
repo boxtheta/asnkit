@@ -95,7 +95,7 @@ Also in the repository:
 | Aligned Packed Encoding Rules (PER) | yes | yes | yes | not yet |
 | Unaligned Packed Encoding Rules (UPER) | yes | yes | yes | not yet |
 | JSON Encoding Rules (JER) | yes | yes, feature `jer` | yes | yes |
-| XML Encoding Rules (XER) | yes | yes, feature `xer` | yes | not yet |
+| XML Encoding Rules (XER) | yes | yes, feature `xer` | yes | yes |
 | Generic String Encoding Rules (GSER) | encoding only | yes, feature `gser` | yes | not yet |
 
 The Rust runtime is the one of reference: the more than 5,500 vectors
@@ -109,7 +109,8 @@ takes the generic forms of RFC 3641, as bare values or as the value
 assignments the encoder writes; the Python runtime only encodes GSER.
 `xer` uses [quick-xml](https://crates.io/crates/quick-xml) and `bigint`
 uses [num-bigint](https://crates.io/crates/num-bigint), and both need
-`std`, so embedded builds use `default-features = false`.
+`std`, so embedded builds use `default-features = false`. On the JVM,
+XER reads XML with [Woodstox](https://github.com/FasterXML/woodstox).
 
 The DER decoder rejects anything X.690 does not allow, such as a
 `BOOLEAN` other than 0x00 or 0xff, an `INTEGER` that is not minimally

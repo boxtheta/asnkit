@@ -101,7 +101,8 @@ public class EncodeException internal constructor(what: String) : ValueException
 
 /**
  * Data that can not be decoded, and the [offset] it was found at: in bytes
- * for BER and DER, and 0 for JER, of which the text is read whole first.
+ * for BER and DER, and 0 for JER and XER, of which the text is read whole
+ * first.
  */
 public class DecodeException internal constructor(what: String, public val offset: Int) : ValueException(what)
 
@@ -110,7 +111,7 @@ public class ConstraintsException internal constructor(what: String) : ValueExce
 
 /**
  * Something this runtime does not do (yet), as a codec it does not have
- * or an ANY in JER, and where in the value, if it is about one.
+ * or an ANY in JER and XER, and where in the value, if it is about one.
  */
 public class UnsupportedException internal constructor(what: String) : ValueException(what)
 

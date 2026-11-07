@@ -274,7 +274,7 @@ class VectorsTest {
 
         if (verbose) failures.take(60).forEach { println(it.take(300)) }
 
-        assertTrue(passed.values.sum() > 2000, "Expected the vectors of BER, DER and JER, found $passed.")
+        assertTrue(passed.values.sum() > 2000, "Expected the vectors of BER, DER, JER and XER, found $passed.")
         assertTrue(failures.isEmpty(), "${failures.size} vectors failed, see VECTORS_VERBOSE")
     }
 }
