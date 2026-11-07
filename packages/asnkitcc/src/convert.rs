@@ -70,9 +70,9 @@ pub struct Conversion<'a> {
     pub verbose: bool,
 }
 
-/// The contents of an `.asni` file, or of one compiled from the files.
-fn read_asni(conversion: &Conversion<'_>) -> Result<Vec<u8>, String> {
-    let files = conversion.specification;
+/// The contents of an `.asni` file, or of one compiled from the files,
+/// which are read in `encoding`.
+pub fn read_asni(files: &[PathBuf], encoding: &str) -> Result<Vec<u8>, String> {
     let compiled: Vec<&PathBuf> = files
         .iter()
         .filter(|path| {
@@ -85,7 +85,7 @@ fn read_asni(conversion: &Conversion<'_>) -> Result<Vec<u8>, String> {
         [] => {
             let input = Input::Files {
                 paths: files.to_vec(),
-                encoding: conversion.encoding.to_string(),
+                encoding: encoding.to_string(),
             };
 
             compile_to_asni(&input).map_err(|error| format!("error: {}", error.message))
@@ -149,7 +149,7 @@ pub fn convert(conversion: &Conversion<'_>) -> Result<(), String> {
         return Err("error: --indent is for JER and XER.".to_string());
     }
 
-    let asni = read_asni(conversion)?;
+    let asni = read_asni(conversion.specification, conversion.encoding)?;
     let checks = Checks::default();
     let load = |codec: Codec| {
         let mut options = Options::new(codec);

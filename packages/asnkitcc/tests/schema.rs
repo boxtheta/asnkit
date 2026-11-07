@@ -1,0 +1,294 @@
+// Copyright (c) 2025 BoxTheta
+// SPDX-License-Identifier: Apache-2.0
+
+//! `asnkitcc schema` writes a JSON Schema of JER or a DTD of XER of the
+//! types of a specification, and refuses what a schema can not tell.
+//! `tests/test_schema.py` holds what it writes to the vectors, with a
+//! validator of each.
+
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
+const SHAPES: &str = "Shapes DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+    Shape ::= CHOICE { circle Circle, square Square, ... }
+    Circle ::= SEQUENCE { radius INTEGER (0..100), label UTF8String (SIZE (1..8)) OPTIONAL }
+    Square ::= SEQUENCE { side REAL, color Color DEFAULT red }
+    Color ::= ENUMERATED { red, green }
+    Shapes ::= SEQUENCE (SIZE (1..10)) OF Shape
+    Flags ::= BIT STRING (SIZE (4))
+    Code ::= PrintableString (FROM (\"A\"..\"F\"))
+    Tree ::= SEQUENCE { value INTEGER, children SEQUENCE OF Tree }
+END
+";
+
+const OPEN: &str = "Open DEFINITIONS ::= BEGIN
+    Known ::= SEQUENCE { kind INTEGER }
+    Open ::= SEQUENCE { kind INTEGER, value [0] ANY }
+END
+";
+
+const CLASH: &str = "Clash DEFINITIONS ::= BEGIN
+    A ::= SEQUENCE { x INTEGER }
+    B ::= SEQUENCE { x BOOLEAN }
+END
+";
+
+fn run(folder: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_asnkitcc"))
+        .current_dir(folder)
+        .args(args)
+        .env("PATH", "")
+        .output()
+        .unwrap()
+}
+
+/// What the command writes on standard output, which succeeds.
+fn schema(folder: &Path, args: &[&str]) -> String {
+    let output = run(folder, &[&["schema"][..], args].concat());
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).unwrap()
+}
+
+/// The error the command fails with.
+fn error(folder: &Path, args: &[&str]) -> String {
+    let output = run(folder, args);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+
+    String::from_utf8(output.stderr).unwrap()
+}
+
+fn folder() -> tempfile::TempDir {
+    let folder = tempfile::tempdir().unwrap();
+
+    for (name, text) in [
+        ("shapes.asn", SHAPES),
+        ("open.asn", OPEN),
+        ("clash.asn", CLASH),
+    ] {
+        fs::write(folder.path().join(name), text).unwrap();
+    }
+
+    folder
+}
+
+/// The text without its spaces and line breaks, to look for what is in
+/// it whatever the indentation.
+fn compact(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+#[test]
+fn a_json_schema_of_jer() {
+    let folder = folder();
+    let text = schema(folder.path(), &["--format", "json-schema", "shapes.asn"]);
+    let json = compact(&text);
+
+    assert!(
+        text.starts_with("{\n  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n")
+    );
+    // Every type, and no root.
+    assert!(!json.contains("\"$ref\":\"#/$defs/Shape\",\"$defs\""));
+
+    for wanted in [
+        // A CHOICE with an extension marker takes any other name.
+        r##""Shape":{"anyOf":[{"type":"object","properties":{"circle":{"$ref":"#/$defs/Circle"}},"required":["circle"],"additionalProperties":false}"##,
+        r##""propertyNames":{"not":{"enum":["circle","square"]}}"##,
+        r##""radius":{"type":"integer","minimum":0,"maximum":100}"##,
+        r##""label":{"type":"string","minLength":1,"maxLength":8}"##,
+        // A member with a default may be left out.
+        r##""required":["radius"],"additionalProperties":false"##,
+        r##""required":["side"]"##,
+        r##""side":{"anyOf":[{"type":"number"},{"enum":["-0","INF","-INF","NaN"]}]}"##,
+        r##""Color":{"enum":["red","green"]}"##,
+        r##""Shapes":{"type":"array","items":{"$ref":"#/$defs/Shape"},"minItems":1,"maxItems":10}"##,
+        // A BIT STRING of one size is its bytes alone.
+        r##""Flags":{"type":"string","pattern":"^(?:[0-9A-Fa-f]{2}){1}$"}"##,
+        r##""Code":{"type":"string","pattern":"^[A-F]*$"}"##,
+        r##""children":{"type":"array","items":{"$ref":"#/$defs/Tree"}}"##,
+    ] {
+        assert!(json.contains(&compact(wanted)), "{wanted} not in {text}");
+    }
+}
+
+#[test]
+fn the_types_given_and_those_they_refer_to() {
+    let folder = folder();
+    let json = compact(&schema(
+        folder.path(),
+        &["--format", "json-schema", "-t", "Shapes", "shapes.asn"],
+    ));
+
+    assert!(json.contains(r##""$ref":"#/$defs/Shapes","$defs":{"Shapes":"##));
+
+    for name in ["Shape", "Circle", "Square", "Color"] {
+        assert!(json.contains(&format!("\"{name}\":{{")), "{name}");
+    }
+
+    for name in ["Flags", "Tree"] {
+        assert!(!json.contains(&format!("\"{name}\":{{")), "{name}");
+    }
+
+    let both = compact(&schema(
+        folder.path(),
+        &[
+            "--format",
+            "json-schema",
+            "-t",
+            "Shapes.Flags",
+            "-t",
+            "Code",
+            "shapes.asn",
+        ],
+    ));
+
+    assert!(both.contains(r##""anyOf":[{"$ref":"#/$defs/Flags"},{"$ref":"#/$defs/Code"}]"##));
+    assert!(
+        error(
+            folder.path(),
+            &["schema", "--format", "dtd", "-t", "Nothing", "shapes.asn"]
+        )
+        .starts_with("error: no type 'Nothing' in the specification")
+    );
+}
+
+#[test]
+fn a_dtd_of_xer() {
+    let folder = folder();
+    let text = schema(folder.path(), &["--format", "dtd", "shapes.asn"]);
+
+    assert!(text.starts_with("<!-- BASIC-XER (X.693) of the types of shapes.asn"));
+    assert!(text.contains(
+        "<!-- The root elements: Shape, Circle, Square, Color, Shapes, Flags, Code, Tree. -->\n"
+    ));
+
+    for wanted in [
+        // An element before those in it.
+        "<!ELEMENT Shape (circle|square)>\n<!ELEMENT circle (radius, label?)>\n",
+        "<!ELEMENT radius (#PCDATA)>\n",
+        "<!ELEMENT label (#PCDATA|nul|soh|",
+        "<!ELEMENT square (side, color?)>\n",
+        "<!ELEMENT side (#PCDATA|PLUS-INFINITY|MINUS-INFINITY|NOT-A-NUMBER)*>\n",
+        "<!ELEMENT color (red|green)>\n<!ELEMENT red EMPTY>\n<!ELEMENT green EMPTY>\n",
+        // The items of a CHOICE have no element of their own (X.693 9.3.6).
+        "<!ELEMENT Shapes (circle|square)+>\n",
+        "<!ELEMENT Flags (#PCDATA)>\n",
+        // A PrintableString has no control characters.
+        "<!ELEMENT Code (#PCDATA)>\n",
+        "<!ELEMENT Tree (value, children)>\n<!ELEMENT value (#PCDATA)>\n<!ELEMENT children (Tree)*>\n",
+    ] {
+        assert!(text.contains(wanted), "{wanted} not in {text}");
+    }
+
+    // Each element is declared once.
+    assert_eq!(text.matches("<!ELEMENT circle ").count(), 1);
+}
+
+#[test]
+fn the_format_is_told_by_the_extension_of_the_output() {
+    let folder = folder();
+    let path = folder.path();
+
+    schema(path, &["-o", "shapes.dtd", "shapes.asn"]);
+    schema(path, &["-o", "shapes.schema.json", "shapes.asn"]);
+
+    assert!(
+        fs::read_to_string(path.join("shapes.dtd"))
+            .unwrap()
+            .contains("<!ELEMENT Tree ")
+    );
+    assert!(
+        fs::read_to_string(path.join("shapes.schema.json"))
+            .unwrap()
+            .contains("\"$defs\"")
+    );
+    assert!(
+        error(path, &["schema", "shapes.asn"]).starts_with("error: give the format with --format")
+    );
+    assert!(
+        error(path, &["schema", "--format", "xsd", "shapes.asn"])
+            .starts_with("error: unknown format 'xsd'")
+    );
+    assert!(
+        error(path, &["compile", "--format", "dtd", "shapes.asn"])
+            .starts_with("error: --format and --skip-unsupported are for schema.")
+    );
+    assert!(
+        error(path, &["compile", "-t", "Shape", "shapes.asn"])
+            .starts_with("error: --type is for convert and schema.")
+    );
+}
+
+#[test]
+fn what_a_schema_can_not_tell_is_refused() {
+    let folder = folder();
+    let path = folder.path();
+
+    for format in ["json-schema", "dtd"] {
+        assert_eq!(
+            error(path, &["schema", "--format", format, "open.asn"]),
+            "error: Open.value: an ANY or an open type, of which the codec needs the type, which \
+             no schema has.\n"
+        );
+
+        // Or left out, with a warning.
+        let output = run(
+            path,
+            &[
+                "schema",
+                "--format",
+                format,
+                "--skip-unsupported",
+                "open.asn",
+            ],
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+
+        assert!(output.status.success());
+        assert!(text.contains("Known"));
+        assert!(!text.contains("Open\""));
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            "warning: Open is left out: Open.value: an ANY or an open type, of which the codec \
+             needs the type, which no schema has.\n"
+        );
+
+        // But not when it is asked for.
+        assert!(
+            error(
+                path,
+                &[
+                    "schema",
+                    "--format",
+                    format,
+                    "--skip-unsupported",
+                    "-t",
+                    "Open",
+                    "open.asn"
+                ]
+            )
+            .starts_with("error: Open.value: an ANY")
+        );
+    }
+
+    // A JSON Schema has no names of elements.
+    schema(path, &["--format", "json-schema", "clash.asn"]);
+
+    assert_eq!(
+        error(path, &["schema", "--format", "dtd", "clash.asn"]),
+        "error: B.x: the element <x> is (true|false) here and (#PCDATA) at A.x, which a DTD can \
+         not tell apart, as it has one declaration for each name.\n"
+    );
+    assert!(
+        schema(path, &["--format", "dtd", "-t", "B", "clash.asn"])
+            .contains("<!ELEMENT x (true|false)>")
+    );
+}
