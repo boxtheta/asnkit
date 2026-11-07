@@ -1393,6 +1393,19 @@ impl Xml {
         self
     }
 
+    /// The names of the model groups it refers to.
+    fn groups(&self, out: &mut BTreeSet<String>) {
+        if self.name == "group"
+            && let Some((_, name)) = self.attributes.iter().find(|(name, _)| *name == "ref")
+        {
+            out.insert(name.clone());
+        }
+
+        for child in &self.children {
+            child.groups(out);
+        }
+    }
+
     /// If an element in it is of the type `name`.
     fn uses(&self, name: &str) -> bool {
         self.attributes
@@ -1573,6 +1586,21 @@ struct XmlSchema<'a> {
 }
 
 impl XmlSchema<'_> {
+    /// The name of the type `id` in the schema, or of the type it is a
+    /// reference to, if it is that type in XER.
+    fn key(&self, id: TypeId) -> Option<String> {
+        if let Some(key) = self.keys.get(&id) {
+            return Some(key.clone());
+        }
+
+        match &self.types.node(id).kind {
+            Kind::Ref(target) if self.types.constraints(id) == self.types.constraints(*target) => {
+                self.key(*target)
+            }
+            _ => None,
+        }
+    }
+
     /// The element of a value of the type `id`: with the name of the type
     /// if it has one, else with the type in it.
     fn element(&mut self, name: &str, id: TypeId, path: &str, depth: usize) -> Result<Xml, String> {
@@ -1763,9 +1791,16 @@ impl XmlSchema<'_> {
                     .unwrap_or_default();
                 let inner = format!("{path}[]");
                 // A BOOLEAN, an ENUMERATED and a CHOICE have no element of
-                // their own as an item (X.693 9.3.6).
-                let particle = match types.kind(*item) {
-                    Kind::Boolean | Kind::Enumerated { .. } | Kind::Choice(_) => {
+                // their own as an item (X.693 9.3.6): the item is what is in
+                // it, as the model group of the type of the same name, which
+                // a CHOICE that has itself as an item needs, or in the
+                // sequence if the type has no name.
+                let particle = match (types.kind(*item), self.key(*item)) {
+                    (Kind::Boolean | Kind::Enumerated { .. } | Kind::Choice(_), Some(key)) => {
+                        self.refs.insert(key.clone());
+                        xs("group").with("ref", key)
+                    }
+                    (Kind::Boolean | Kind::Enumerated { .. } | Kind::Choice(_), None) => {
                         let mut group = self
                             .definition(*item, &inner, depth + 1)?
                             .children
@@ -1861,7 +1896,28 @@ fn xml_schema(
         }
     }
 
+    // The model groups of the types that are items, with what is in their
+    // types, which are defined, as the items refer to them.
+    let mut groups = BTreeSet::new();
+
+    for (_, definition) in &definitions {
+        definition.groups(&mut groups);
+    }
+
+    let groups: Vec<Xml> = groups
+        .into_iter()
+        .filter_map(|key| {
+            let (_, definition) = definitions.iter().find(|(other, _)| *other == key)?;
+            let mut content = definition.children.first()?.clone();
+
+            content.attributes.retain(|(name, _)| *name != "minOccurs");
+
+            Some(xs("group").with("name", key).child(content))
+        })
+        .collect();
+
     document = document.children(definitions.into_iter().map(|(_, definition)| definition));
+    document = document.children(groups);
 
     if document.uses(EMPTY) {
         document = document.child(xs("complexType").with("name", EMPTY));

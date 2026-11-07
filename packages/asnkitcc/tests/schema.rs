@@ -238,6 +238,36 @@ fn the_format_is_told_by_the_extension_of_the_output() {
 }
 
 #[test]
+fn a_choice_that_is_an_item_of_itself_is_a_model_group() {
+    let folder = folder();
+    let path = folder.path();
+
+    fs::write(
+        path.join("tree.asn"),
+        "Tree DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+    Node ::= CHOICE { leaf INTEGER, group SEQUENCE SIZE (1..MAX) OF Node }
+    Forest ::= SEQUENCE OF Node
+END
+",
+    )
+    .unwrap();
+
+    let text = schema(path, &["--format", "xsd", "-t", "Forest", "tree.asn"]);
+
+    for wanted in [
+        // An item that is a CHOICE has no element of its own: it is the
+        // model group of its type, which can have itself in it.
+        "<xs:complexType name=\"Forest\">\n    <xs:sequence>\n      <xs:group ref=\"Node\" \
+         minOccurs=\"0\" maxOccurs=\"unbounded\"/>\n",
+        "<xs:group name=\"Node\">\n    <xs:choice>\n      <xs:element name=\"leaf\" \
+         type=\"xs:integer\"/>\n      <xs:element name=\"group\">\n",
+        "<xs:group ref=\"Node\" minOccurs=\"1\" maxOccurs=\"unbounded\"/>",
+    ] {
+        assert!(text.contains(wanted), "{wanted} not in {text}");
+    }
+}
+
+#[test]
 fn a_type_given_tells_why_what_it_refers_to_is_left_out() {
     let folder = folder();
     let path = folder.path();
