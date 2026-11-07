@@ -117,7 +117,9 @@ fn repeated_configuration_files_and_errors() {
     ] {
         let output = run(folder.path(), &args);
         assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("for compile and generate"));
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("for compile, generate and schema")
+        );
     }
 }
 

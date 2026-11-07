@@ -26,6 +26,16 @@ security fixes.
   `Compiled`.
 - `asnkitcc`: `compile` and `generate` print the warnings on standard
   error, as `warning: ...`, and still write what they make.
+- `asnkitcc schema`, which writes a JSON Schema (draft 2020-12) of the
+  JER of the types of a specification, with `--format json-schema`, or a
+  DTD of their BASIC-XER, with `--format dtd`, of all of them or of
+  those given with `-t`. What a schema can not tell is an error: an
+  `ANY` or an open type, an `ANY DEFINED BY` without the types of
+  `--any-defined-by`, which it then takes, and, in a DTD, elements of
+  one name with other contents. `--skip-unsupported` leaves out such
+  types, with a warning. `tests/test_schema.py` holds the schemas to the
+  vectors of JER and XER, with `jsonschema` and `lxml`, of the new
+  dependency group `schema`.
 - `asnkit-compiler` (WebAssembly): `compileWithSummary()` returns the
   warnings too, as `warnings`, each with its `kind` and `message`. The
   playground shows them.

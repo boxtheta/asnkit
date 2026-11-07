@@ -49,6 +49,12 @@ interop = [
     "pyasn1>=0.6",
     "pyasn1-modules>=0.4",
 ]
+# The validators tests/test_schema.py holds what `asnkitcc schema` writes
+# to the vectors with.
+schema = [
+    "jsonschema>=4.23",
+    "lxml>=5.3",
+]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5",

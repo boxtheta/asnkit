@@ -8,9 +8,11 @@
 //! asnkitcc compile foo.asn             # Makes foo.asni.
 //! asnkitcc parse foo.asn               # Makes foo.asnst.
 //! asnkitcc convert -t Question --from jer --to der foo.asni < q.json > q.der
+//! asnkitcc schema --format json-schema -t Question foo.asn > question.schema.json
 //! ```
 
 mod convert;
+mod schema;
 
 use asnkit_compiler::{
     CompileOptions, Compiled, Input, compile_to_asni_with_warnings, parse_to_asnst, plugin,
@@ -22,13 +24,18 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: asnkitcc {compile,parse} [-v] [-o OUTPUT] [-e ENCODING] FILE [FILE ...]\n       asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] [-v] [-o FOLDER] [-e ENCODING] FILE [FILE ...]
        asnkitcc convert -t [MODULE.]TYPE [--from CODEC] [--to CODEC] [-i INPUT] [-o OUTPUT] [--input-hex] [--output-hex]
        [--indent N] [--lenient] [-v] [-e ENCODING] {FILE.asni | FILE.asn [FILE.asn ...]}
+       asnkitcc schema [--format FORMAT] [-t [MODULE.]TYPE ...] [--skip-unsupported] [-o OUTPUT] [-v] [-e ENCODING]
+       {FILE.asni | FILE.asn [FILE.asn ...]}
        asnkitcc {-h,--help,help}
        asnkitcc {-V,--version,version}
 
---any-defined-by FILE adds TOML choice mappings to compile or generate; it can be repeated.
+--any-defined-by FILE adds TOML choice mappings to compile, generate or schema; it can be repeated.
 The codecs are ber, der, oer, per, uper, jer, xer and gser. Without --from or
 --to, the codec is told by the extension of the input or the output (.json is jer, .xml is xer). The
 input is read from standard input and the output written to standard output when not given.
+schema writes a JSON Schema of JER (--format json-schema) or a DTD of XER (--format dtd) of the
+types, or of those given with -t, told by the extension of the output (.json or .dtd) without
+--format. What a schema can not tell, as an ANY, is an error, or left out with --skip-unsupported.
 --version tells the versions of asnkitcc and of the plugins found where programs are.";
 
 /// The options of what `.asni` files no longer have: a nonce, a
@@ -57,6 +64,10 @@ struct Arguments {
     plugin: Option<String>,
     plugin_options: Vec<String>,
     type_name: Option<String>,
+    /// Every `-t`, of which `schema` takes several.
+    types: Vec<String>,
+    format: Option<schema::Format>,
+    skip_unsupported: bool,
     from: Option<String>,
     to: Option<String>,
     input: Option<PathBuf>,
@@ -78,7 +89,7 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
         _ => {}
     }
 
-    if !["compile", "parse", "generate", "convert"].contains(&command.as_str()) {
+    if !["compile", "parse", "generate", "convert", "schema"].contains(&command.as_str()) {
         return Err(format!("error: unknown command '{command}'.\n{USAGE}"));
     }
 
@@ -90,6 +101,9 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
         plugin: None,
         plugin_options: Vec::new(),
         type_name: None,
+        types: Vec::new(),
+        format: None,
+        skip_unsupported: false,
         from: None,
         to: None,
         input: None,
@@ -120,7 +134,14 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
             "--plugin-opt" => parsed.plugin_options.push(value("--plugin-opt")?),
             "-o" | "--output" => parsed.output = Some(PathBuf::from(value("-o")?)),
             "-e" | "--encoding" => parsed.encoding = value("-e")?,
-            "-t" | "--type" => parsed.type_name = Some(value("--type")?),
+            "-t" | "--type" => {
+                let name = value("--type")?;
+
+                parsed.types.push(name.clone());
+                parsed.type_name = Some(name);
+            }
+            "--format" => parsed.format = Some(schema::format_of(&value("--format")?)?),
+            "--skip-unsupported" => parsed.skip_unsupported = true,
             "--from" => parsed.from = Some(value("--from")?),
             "--to" => parsed.to = Some(value("--to")?),
             "-i" | "--input" => parsed.input = Some(PathBuf::from(value("-i")?)),
@@ -156,13 +177,12 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
     }
 
     if !parsed.any_defined_by.is_empty()
-        && !matches!(parsed.command.as_str(), "compile" | "generate")
+        && !matches!(parsed.command.as_str(), "compile" | "generate" | "schema")
     {
-        return Err("error: --any-defined-by is for compile and generate.".into());
+        return Err("error: --any-defined-by is for compile, generate and schema.".into());
     }
 
-    let converting = parsed.type_name.is_some()
-        || parsed.from.is_some()
+    let converting = parsed.from.is_some()
         || parsed.to.is_some()
         || parsed.input.is_some()
         || parsed.input_hex
@@ -170,9 +190,19 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
         || parsed.indent.is_some()
         || parsed.lenient;
 
+    if (parsed.format.is_some() || parsed.skip_unsupported) && parsed.command != "schema" {
+        return Err(format!(
+            "error: --format and --skip-unsupported are for schema.\n{USAGE}"
+        ));
+    }
+
     if parsed.command == "convert" {
         if parsed.type_name.is_none() {
             return Err(format!("error: convert needs --type.\n{USAGE}"));
+        }
+
+        if parsed.types.len() > 1 {
+            return Err(format!("error: convert takes one --type.\n{USAGE}"));
         }
 
         if parsed.plugin.is_some() || !parsed.plugin_options.is_empty() {
@@ -180,9 +210,15 @@ fn parse_arguments(arguments: &[String]) -> Result<Request, String> {
         }
     } else if converting {
         return Err(format!(
-            "error: --type, --from, --to, --input, --input-hex, --output-hex, --indent and \
-             --lenient are for convert.\n{USAGE}"
+            "error: --from, --to, --input, --input-hex, --output-hex, --indent and --lenient \
+             are for convert.\n{USAGE}"
         ));
+    } else if parsed.command == "schema" {
+        if parsed.plugin.is_some() || !parsed.plugin_options.is_empty() {
+            return Err(format!("error: schema takes no plugin.\n{USAGE}"));
+        }
+    } else if parsed.type_name.is_some() {
+        return Err(format!("error: --type is for convert and schema.\n{USAGE}"));
     } else if parsed.command == "generate" {
         if parsed.plugin.is_none() {
             return Err(format!("error: generate needs --plugin.\n{USAGE}"));
@@ -308,6 +344,37 @@ fn generate(arguments: &Arguments) -> Result<(), String> {
         .map_err(|error| format!("error: {}", error.message))
 }
 
+fn schema(arguments: &Arguments) -> Result<(), String> {
+    // Compiled here with --any-defined-by, which gives the types of the
+    // values of an ANY DEFINED BY.
+    let asni = if arguments.any_defined_by.is_empty() {
+        convert::read_asni(&arguments.files, &arguments.encoding)?
+    } else if arguments.files.iter().any(|path| {
+        path.extension()
+            .is_some_and(|extension| extension == "asni")
+    }) {
+        return Err(
+            "error: --any-defined-by is for the ASN.1 files that are compiled.".to_string(),
+        );
+    } else {
+        let input = Input::Files {
+            paths: arguments.files.clone(),
+            encoding: arguments.encoding.clone(),
+        };
+
+        compile(&input, arguments)?.asni
+    };
+
+    schema::schema(&schema::Request {
+        format: arguments.format,
+        types: &arguments.types,
+        skip_unsupported: arguments.skip_unsupported,
+        output: arguments.output.as_deref(),
+        asni: &asni,
+        verbose: arguments.verbose,
+    })
+}
+
 fn convert(arguments: &Arguments) -> Result<(), String> {
     let codec = |name: &Option<String>| name.as_deref().map(convert::codec_of).transpose();
 
@@ -348,6 +415,7 @@ fn main() -> ExitCode {
         match arguments.command.as_str() {
             "generate" => return generate(&arguments),
             "convert" => return convert(&arguments),
+            "schema" => return schema(&arguments),
             _ => {}
         }
 

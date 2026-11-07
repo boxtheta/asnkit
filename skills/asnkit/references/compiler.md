@@ -43,6 +43,19 @@ Codecs can be inferred from extensions (`.json` → JER, `.xml` → XER),
 but explicit `--from` and `--to` are clearer in pipelines. Use
 `Module.Type` when names are ambiguous.
 
+Write a JSON Schema of the JER of a type, or a DTD of its XER:
+
+```sh
+asnkitcc schema --format json-schema -t Foo.Question -o question.schema.json foo.asn
+asnkitcc schema --format dtd -o foo.dtd foo.asn
+```
+
+Without `-t` it describes every type. An `ANY`, an open type, an `ANY
+DEFINED BY` without `--any-defined-by` mappings and, in a DTD, two
+elements of one name with different contents are errors that name the
+place; `--skip-unsupported` leaves those types out with a warning
+instead, but never a type given with `-t`.
+
 Conversion does not validate constraints; use the runtime API for
 explicit constraint validation. The old `--bound-to`, `--nonce`,
 `--signing-key-*` and `--encryption-key-*` options are no longer
