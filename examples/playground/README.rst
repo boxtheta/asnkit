@@ -6,7 +6,8 @@ the compiler as WebAssembly (``packages/asnkit-compiler-wasm``), and
 loads what it makes with the runtime as WebAssembly
 (``packages/asnkitrt-wasm``). A value is decoded with one codec and
 encoded with all of them, BER, DER, OER, PER, UPER, JER, XER and
-GSER, to compare their sizes. Clicking any encoding makes it the input.
+GSER, to compare their sizes, and a schema of the types is made for
+JER and XER. Clicking any encoding makes it the input.
 GSER accepts both bare values and the value assignments shown in its row.
 Changing the input codec also converts a valid input to that encoding.
 If the input cannot be decoded or encoded with the selected codec, its
@@ -20,6 +21,15 @@ from both timings. These are single-call measurements, not benchmarks.
 They measure the WebAssembly runtime in the browser, not native runtime
 performance. Native runtime execution is typically faster.
 Very short calls may show zero at the browser's timer resolution.
+
+Under the codecs, the page makes a schema of the selected type, or of
+every type, with ``schema()`` of the compiler, as ``asnkitcc schema``
+does: a JSON Schema of JER, an XML Schema of XER or a DTD of XER, to
+read and to download. What a schema cannot describe, such as an
+``ANY``, is left out with the types that refer to it, unless that is
+turned off; a selected type that needs it is an error that tells why.
+The X.509 schema is such a type, as its algorithm parameters are
+``ANY``.
 
 Samples include sensor messages, the Foo protocol, a Sketch-Pad drawing
 journal, an SNMPv1 get request, and an X.509 certificate. The Sketch-Pad

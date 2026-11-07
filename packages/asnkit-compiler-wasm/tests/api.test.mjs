@@ -15,6 +15,7 @@ import {
   compileWithSummary,
   parse,
   ready,
+  schema,
   version,
 } from '../js/node.js';
 import { load } from '../../asnkitrt-wasm/js/node.js';
@@ -153,5 +154,76 @@ describe('parse', () => {
     assert.ok(asnst.includes('asnst'));
     assert.ok(asnst.includes('Question'));
     await rejectsWith(parse('A DEFINITIONS ::= BEGIN B ::= END'), 'ParseError', /line 1/);
+  });
+});
+
+describe('schema', () => {
+  const ANY = 'Foo DEFINITIONS ::= BEGIN\nWrapped ::= SEQUENCE { id INTEGER, body ANY }\n'
+    + 'Plain ::= SEQUENCE { id INTEGER (0..9) }\nEND\n';
+
+  test('is a JSON Schema of JER by default', async () => {
+    const asni = await compile(FOO_TEXT);
+    const made = await schema(asni, { types: 'Question' });
+    const document = JSON.parse(made.text);
+
+    assert.equal(made.types, 1);
+    assert.deepEqual(made.skipped, []);
+    assert.equal(document.$schema, 'https://json-schema.org/draft/2020-12/schema');
+    assert.equal(document.$ref, '#/$defs/Question');
+    assert.deepEqual(Object.keys(document.$defs), ['Question']);
+    assert.deepEqual(document.$defs.Question.required, ['id', 'question']);
+    assert.match(document.$comment, new RegExp(`for WebAssembly ${version().replace(/\./g, '\\.')}`));
+    assert.deepEqual(Object.keys(JSON.parse((await schema(asni)).text).$defs), ['Question', 'Answer']);
+  });
+
+  test('is an XML Schema or a DTD of XER', async () => {
+    const asni = await compile(FOO_TEXT);
+    const xsd = await schema(asni, { format: 'xsd', types: ['Foo.Question', 'Answer'] });
+    const dtd = await schema(asni, { format: 'dtd' });
+
+    assert.equal(xsd.types, 2);
+    assert.match(xsd.text, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
+    assert.match(xsd.text, /<xs:element name="Question" type="Question"\/>/);
+    assert.match(dtd.text, /<!ELEMENT Question \(id, question\)>/);
+  });
+
+  test('leaves out what it can not tell, if asked to', async () => {
+    const asni = await compile(ANY);
+
+    await rejectsWith(schema(asni), 'SchemaError', /Wrapped/);
+    await rejectsWith(
+      schema(asni, { types: 'Wrapped', skipUnsupported: true }),
+      'SchemaError',
+      /Wrapped/,
+    );
+
+    const made = await schema(asni, { skipUnsupported: true });
+
+    assert.equal(made.types, 1);
+    assert.deepEqual(made.skipped.map((skipped) => skipped.type), ['Wrapped']);
+    assert.match(made.skipped[0].reason, /ANY/);
+    assert.deepEqual(Object.keys(JSON.parse(made.text).$defs), ['Plain']);
+  });
+
+  test('checks its options and the types', async () => {
+    const asni = await compile(FOO_TEXT);
+
+    await rejectsWith(schema(asni, { types: 'Nope' }), 'SchemaError', /no type 'Nope'/);
+    await rejectsWith(schema(new Uint8Array(8)), 'SchemaError', /the specification/);
+
+    for (const [options, pattern] of [
+      ['yes', /options to be an object/],
+      [{ format: 'yaml' }, /unknown format 'yaml'/],
+      [{ format: 1 }, /'format' to be a string/],
+      [{ types: [1] }, /'types' to be a string or an array/],
+      [{ skipUnsupported: 'yes' }, /'skipUnsupported' to be a boolean/],
+    ]) {
+      await assert.rejects(schema(asni, options), (error) => {
+        assert.ok(error instanceof TypeError, String(error));
+        assert.match(error.message, pattern);
+
+        return true;
+      });
+    }
   });
 });

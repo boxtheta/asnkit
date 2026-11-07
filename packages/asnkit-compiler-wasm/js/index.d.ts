@@ -41,6 +41,44 @@ export function compileWithSummary(
   options?: CompileOptions,
 ): Promise<{ asni: Uint8Array; modules: ModuleSummary[]; warnings: Warning[] }>;
 
+/**
+ * What a schema is of: a JSON Schema (draft 2020-12) of JER, an XML
+ * Schema (XSD 1.0) of BASIC-XER or a DTD of BASIC-XER.
+ */
+export type SchemaFormat = 'json-schema' | 'xsd' | 'dtd';
+
+/** What `schema()` makes. */
+export interface SchemaOptions {
+  /** `json-schema` if not given. */
+  format?: SchemaFormat;
+  /**
+   * The types of which the values are the documents, as `Type` or
+   * `Module.Type`, with those they refer to. Every type if not given.
+   */
+  types?: string | string[];
+  /**
+   * Leave out what a schema can not tell, as an `ANY`, and what refers
+   * to it, rather than fail. A type given in `types` is never left out.
+   */
+  skipUnsupported?: boolean;
+}
+
+/** A schema, and the types it leaves out with `skipUnsupported`. */
+export interface Schema {
+  text: string;
+  /** How many types it is of. */
+  types: number;
+  skipped: { type: string; reason: string }[];
+}
+
+/**
+ * Makes what the values of the types of the contents of an `.asni` file
+ * are in a text codec, as `asnkitcc schema` does. Throws an `Error` named
+ * `SchemaError` that tells where in the types for what a schema can not
+ * tell, or a `TypeError` for wrong options.
+ */
+export function schema(asni: Uint8Array, options?: SchemaOptions): Promise<Schema>;
+
 /** Parses the text of a specification to the contents of an `.asnst` file. */
 export function parse(specification: string): Promise<Uint8Array>;
 

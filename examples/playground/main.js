@@ -5,7 +5,8 @@
 // The playground: the text of the specification is compiled by the
 // compiler as WebAssembly, and what it makes is loaded by the runtime as
 // WebAssembly, once for each codec. A value is decoded with one codec
-// and encoded with all of them.
+// and encoded with all of them, and a schema of the types made for JER
+// or XER.
 
 // By the names of the packages on npm, which index.html maps to where
 // they are.
@@ -99,7 +100,12 @@ const state = {
   inputCodec: 'ber',
   // The encodings of the last value, by codec, to use as the input.
   outputs: new Map(),
+  // The last schema made, to download, and the name of its file.
+  schema: null,
 };
+
+// The extension of the file of a schema, by its format.
+const SCHEMA_EXTENSIONS = { 'json-schema': '.schema.json', xsd: '.xsd', dtd: '.dtd' };
 
 function hex(bytes) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -224,8 +230,57 @@ async function compileSpecification() {
     $('compile-meta').hidden = true;
     showStatus(status, describe(error), 'error');
     renderOutputs(null);
+    renderSchema();
 
     return false;
+  }
+}
+
+/** Makes the schema of the selected type, or of every type, again. */
+async function renderSchema() {
+  const status = $('schema-status');
+  const format = $('schema-format').value;
+  const type = $('type').value;
+  const every = $('schema-scope').value === 'all';
+
+  state.schema = null;
+  $('schema-download').disabled = true;
+  $('schema-size').textContent = '';
+
+  if (!state.asni) {
+    $('schema').value = '';
+    showStatus(status, 'Compile the specification first.', 'error');
+
+    return;
+  }
+
+  try {
+    const started = performance.now();
+    const made = await compiler.schema(state.asni, {
+      format,
+      types: every || !type ? [] : [type],
+      skipUnsupported: $('schema-skip').checked,
+    });
+    const elapsed = performance.now() - started;
+
+    state.schema = {
+      text: made.text,
+      name: `${every || !type ? state.name : type}${SCHEMA_EXTENSIONS[format]}`,
+    };
+    $('schema').value = made.text;
+    $('schema-download').disabled = false;
+    $('schema-size').textContent = `${new TextEncoder().encode(made.text).length.toLocaleString()} bytes`;
+    showStatus(
+      status,
+      [
+        `Made in ${elapsed.toFixed(1)} ms, of ${made.types} ${made.types === 1 ? 'type' : 'types'}.`,
+        ...made.skipped.map((skipped) => `Left out ${skipped.type}: ${skipped.reason}`),
+      ].join('\n'),
+      made.skipped.length ? 'warning' : 'ok',
+    );
+  } catch (error) {
+    $('schema').value = '';
+    showStatus(status, describe(error), 'error');
   }
 }
 
@@ -425,7 +480,17 @@ async function loadExample(example) {
     );
     updateHint();
     decodeInput();
+    renderSchema();
   }
+}
+
+function download(blob, name) {
+  const link = document.createElement('a');
+
+  link.href = URL.createObjectURL(blob);
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function debounce(action, delay) {
@@ -452,6 +517,7 @@ async function main() {
   $('compile').addEventListener('click', async () => {
     if (await compileSpecification()) {
       decodeInput();
+      renderSchema();
     }
   });
   $('spec').addEventListener('keydown', (event) => {
@@ -461,7 +527,14 @@ async function main() {
     }
   });
   $('example').addEventListener('change', () => loadExample(EXAMPLES[$('example').value]));
-  $('type').addEventListener('change', decodeInput);
+  $('type').addEventListener('change', () => {
+    decodeInput();
+    renderSchema();
+  });
+
+  for (const id of ['schema-format', 'schema-scope', 'schema-skip']) {
+    $(id).addEventListener('change', renderSchema);
+  }
   $('input-codec').addEventListener('change', () => {
     const codec = $('input-codec').value;
 
@@ -486,12 +559,12 @@ async function main() {
     }
   });
   $('download').addEventListener('click', () => {
-    const link = document.createElement('a');
-
-    link.href = URL.createObjectURL(new Blob([state.asni], { type: 'application/octet-stream' }));
-    link.download = `${state.name}.asni`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    download(new Blob([state.asni], { type: 'application/octet-stream' }), `${state.name}.asni`);
+  });
+  $('schema-download').addEventListener('click', () => {
+    if (state.schema) {
+      download(new Blob([state.schema.text], { type: 'text/plain' }), state.schema.name);
+    }
   });
 
   await loadExample(EXAMPLES[0]);

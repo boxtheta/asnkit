@@ -2,10 +2,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! The command `asnkitcc schema`, which writes what the values of the
-//! types of a specification are in a text codec: a JSON Schema of JER
-//! (X.697), or an XML Schema or a DTD of BASIC-XER (X.693), as the
-//! runtimes write them.
+//! What the values of the types of a specification are in a text codec:
+//! a JSON Schema of JER (X.697), or an XML Schema or a DTD of BASIC-XER
+//! (X.693), as the runtimes write them. The command `asnkitcc schema`
+//! writes them, and the compiler as WebAssembly
+//! (`packages/asnkit-compiler-wasm`) makes them too.
 //!
 //! ```text
 //! asnkitcc schema --format json-schema -t Question -o question.schema.json foo.asn
@@ -20,7 +21,6 @@
 //! elements of the same name with other contents.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Write;
 use std::path::Path;
 
 use asnkitrt::container::{self, Checks};
@@ -31,7 +31,7 @@ use asnkitrt::types::{Codec, Constraints, Kind, MemberInfo, Members, StrKind, Ty
 /// How deep types are nested in each other, at most, as the codecs have it.
 const MAX_DEPTH: usize = 256;
 
-const FORMATS: &str = "json-schema, xsd or dtd";
+pub const FORMATS: &str = "json-schema, xsd or dtd";
 
 /// What a schema is written as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,14 +50,12 @@ pub fn format_of(name: &str) -> Result<Format, String> {
         "json-schema" | "jsonschema" | "json" | "jer" => Ok(Format::JsonSchema),
         "xsd" | "xml-schema" | "xer" => Ok(Format::Xsd),
         "dtd" => Ok(Format::Dtd),
-        _ => Err(format!(
-            "error: unknown format '{name}', expected {FORMATS}."
-        )),
+        _ => Err(format!("unknown format '{name}', expected {FORMATS}.")),
     }
 }
 
 /// The format a file is in, told by its extension.
-fn format_of_path(path: &Path) -> Option<Format> {
+pub fn format_of_path(path: &Path) -> Option<Format> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "json" => Some(Format::JsonSchema),
         "xsd" => Some(Format::Xsd),
@@ -66,18 +64,39 @@ fn format_of_path(path: &Path) -> Option<Format> {
     }
 }
 
+/// What schema to make.
 pub struct Request<'a> {
-    pub format: Option<Format>,
+    pub format: Format,
     /// `Type` or `Module.Type`: the types of which the values are the
     /// documents. All of the specification if there are none.
     pub types: &'a [String],
-    /// Leave out what can not be told, with a warning, rather than fail.
+    /// Leave out what can not be told, with why, rather than fail.
     pub skip_unsupported: bool,
-    /// Standard output if not given.
-    pub output: Option<&'a Path>,
     /// The contents of the `.asni` file.
     pub asni: &'a [u8],
-    pub verbose: bool,
+    /// What makes the schema, as `asnkitcc 2.0.0`, which it says.
+    pub generator: &'a str,
+}
+
+/// A schema, as text, and what it leaves out.
+pub struct Schema {
+    pub text: String,
+    /// How many types it is of.
+    pub types: usize,
+    /// The types that are left out, by their names in the schema, with
+    /// why, when `skip_unsupported` is asked for.
+    pub skipped: Vec<(String, String)>,
+}
+
+impl Format {
+    /// Its name, as `JSON Schema`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Format::JsonSchema => "JSON Schema",
+            Format::Xsd => "XML Schema",
+            Format::Dtd => "DTD",
+        }
+    }
 }
 
 /// A type that a document can be a value of, by the name it is given in
@@ -90,65 +109,42 @@ struct Root {
     given: bool,
 }
 
-pub fn schema(request: &Request<'_>) -> Result<(), String> {
-    let format = request
-        .format
-        .or_else(|| request.output.and_then(format_of_path))
-        .ok_or_else(|| format!("error: give the format with --format: {FORMATS}."))?;
+/// Makes the schema of the types of an `.asni` file. An error tells why,
+/// without `error: `, with where in the types for what a schema can not
+/// tell.
+pub fn generate(request: &Request<'_>) -> Result<Schema, String> {
     let asni = request.asni;
     let checks = Checks::default();
     let sources: Vec<String> = container::read(asni, &checks)
-        .map_err(|error| format!("error: the specification: {error}"))?
+        .map_err(|error| format!("the specification: {error}"))?
         .header
         .metadata
         .sources
         .iter()
         .filter_map(|source| source.name.clone())
         .collect();
-    let codec = match format {
+    let codec = match request.format {
         Format::JsonSchema => Codec::Jer,
         Format::Xsd | Format::Dtd => Codec::Xer,
     };
     let specification = Specification::from_asni(asni, &checks, Options::new(codec))
-        .map_err(|error| format!("error: the specification: {error}"))?;
+        .map_err(|error| format!("the specification: {error}"))?;
     let types = specification.types();
     let roots = roots(types, request.types)?;
     let about = describe(&sources);
     let mut skipped = Vec::new();
 
-    let text = match format {
+    let text = match request.format {
         Format::JsonSchema => json_schema(types, &roots, request, &about, &mut skipped)?,
         Format::Xsd => xml_schema(types, &roots, request, &about, &mut skipped)?,
         Format::Dtd => dtd(types, &roots, request, &about, &mut skipped)?,
     };
 
-    for (name, why) in &skipped {
-        eprintln!("warning: {name} is left out: {why}");
-    }
-
-    match request.output {
-        Some(path) => std::fs::write(path, &text)
-            .map_err(|error| format!("error: {}: {error}", path.display()))?,
-        None => std::io::stdout()
-            .write_all(text.as_bytes())
-            .and_then(|()| std::io::stdout().flush())
-            .map_err(|error| format!("error: standard output: {error}"))?,
-    }
-
-    if request.verbose {
-        eprintln!(
-            "Wrote a {} of {} types in {} bytes.",
-            match format {
-                Format::JsonSchema => "JSON Schema",
-                Format::Xsd => "XML Schema",
-                Format::Dtd => "DTD",
-            },
-            roots.len() - skipped.len(),
-            text.len()
-        );
-    }
-
-    Ok(())
+    Ok(Schema {
+        text,
+        types: roots.len() - skipped.len(),
+        skipped,
+    })
 }
 
 /// What the schema is of, as `foo.asn`.
@@ -219,10 +215,10 @@ fn roots(types: &Types, given: &[String]) -> Result<Vec<Root>, String> {
         };
         let id = id.ok_or_else(|| {
             if text.contains('.') {
-                format!("error: no type '{text}' in the specification.")
+                format!("no type '{text}' in the specification.")
             } else {
                 format!(
-                    "error: no type '{text}' in the specification, or it is in more than one \
+                    "no type '{text}' in the specification, or it is in more than one \
                      module: give it as Module.{text}."
                 )
             }
@@ -944,11 +940,14 @@ fn definitions<T>(
             Err(why) if request.skip_unsupported => {
                 failed.insert(key, why);
             }
-            Err(why) => return Err(format!("error: {why}")),
+            Err(why) => return Err(why),
         }
     }
 
-    // What refers to what is left out is left out too.
+    // What refers to what is left out is left out too, and which it
+    // refers to is kept, to tell why a type that is given can not be.
+    let mut refers: BTreeMap<String, String> = BTreeMap::new();
+
     loop {
         let before = failed.len();
 
@@ -959,6 +958,7 @@ fn definitions<T>(
                         key.clone(),
                         format!("it refers to {other}, which is left out."),
                     );
+                    refers.insert(key.clone(), other.clone());
 
                     false
                 }
@@ -971,11 +971,28 @@ fn definitions<T>(
         }
     }
 
-    for root in roots {
-        if let Some(why) = failed.get(&root.key)
-            && root.given
-        {
-            return Err(format!("error: {why}"));
+    for root in roots.iter().filter(|root| root.given) {
+        if failed.contains_key(&root.key) {
+            // What refers to what, to the type that can not be told.
+            let mut through = Vec::new();
+            let mut key = &root.key;
+
+            while let Some(other) = refers.get(key) {
+                through.push(other.as_str());
+                key = other;
+            }
+
+            let why = &failed[key];
+
+            return Err(if through.is_empty() {
+                why.clone()
+            } else {
+                format!(
+                    "{} refers to {}, which a schema can not tell: {why}",
+                    root.key,
+                    through.join(", which refers to ")
+                )
+            });
         }
     }
 
@@ -1017,8 +1034,8 @@ fn json_schema(
             "$comment",
             Json::Str(format!(
                 "The JSON Encoding Rules (X.697) of the types of {about}, as asnkit writes them. \
-                 Made by asnkitcc {}.",
-                env!("CARGO_PKG_VERSION")
+                 Made by {}.",
+                request.generator
             )),
         ),
     ]);
@@ -1318,7 +1335,7 @@ fn dtd(
                 dtd = before;
                 skipped.push((root.key.clone(), why));
             }
-            Err(why) => return Err(format!("error: {why}")),
+            Err(why) => return Err(why),
         }
     }
 
@@ -1327,8 +1344,8 @@ fn dtd(
     let mut out = String::new();
 
     out.push_str(&comment(format!(
-        "BASIC-XER (X.693) of the types of {about}, as asnkit writes them. Made by asnkitcc {}.",
-        env!("CARGO_PKG_VERSION")
+        "BASIC-XER (X.693) of the types of {about}, as asnkit writes them. Made by {}.",
+        request.generator
     )));
     out.push_str(&comment(format!(
         "The root elements: {}.",
@@ -1830,7 +1847,7 @@ fn xml_schema(
                 if request.skip_unsupported && !root.given {
                     skipped.push((root.key.clone(), why));
                 } else {
-                    return Err(format!("error: {why}"));
+                    return Err(why);
                 }
             }
             None => {
@@ -1853,8 +1870,8 @@ fn xml_schema(
     let mut out = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- {} -->\n",
         format!(
-            "BASIC-XER (X.693) of the types of {about}, as asnkit writes them. Made by asnkitcc {}.",
-            env!("CARGO_PKG_VERSION")
+            "BASIC-XER (X.693) of the types of {about}, as asnkit writes them. Made by {}.",
+            request.generator
         )
         .replace("--", "- -")
     );

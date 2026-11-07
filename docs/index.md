@@ -15,9 +15,9 @@ files by the compiler `asnkitcc`, which has no Python API.
 - [Plugins](plugins.md): how they are run, how to write one, and the
   three there are.
 - [Versioning](versioning.md): what each kind of release may change.
-- [Playground](playground/): compile ASN.1 and encode a value with
-  every codec, in the browser, with the compiler and the runtime as
-  WebAssembly.
+- [Playground](playground/): compile ASN.1, encode a value with every
+  codec and make a JSON Schema, an XML Schema or a DTD of the types, in
+  the browser, with the compiler and the runtime as WebAssembly.
 
 ## Basic usage
 

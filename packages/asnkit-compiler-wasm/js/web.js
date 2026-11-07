@@ -30,6 +30,16 @@ export async function compileWithSummary(specification, options = {}) {
   return wasm.compileWithSummary(specification, options);
 }
 
+/**
+ * A JSON Schema of JER, or an XML Schema or a DTD of XER, of the types of
+ * the contents of an `.asni` file.
+ */
+export async function schema(asni, options = {}) {
+  await ready();
+
+  return wasm.schema(asni, options);
+}
+
 /** Parses the text of a specification to the contents of an `.asnst` file. */
 export async function parse(specification) {
   await ready();
