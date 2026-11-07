@@ -123,7 +123,7 @@ class SchemaTest(unittest.TestCase):
         # All but those of open types.
         self.assertGreater(checked, 180)
 
-    def test_xer(self) -> None:
+    def test_dtd(self) -> None:
         checked = 0
 
         # A DTD of each type alone, as the types of the vectors have
@@ -156,6 +156,38 @@ class SchemaTest(unittest.TestCase):
                     checked += 1
 
         self.assertGreater(checked, 180)
+
+    def test_xsd(self) -> None:
+        checked = 0
+
+        for spec, values in sorted(encodings("xer").items()):
+            text, stderr = self.schema(spec, "xsd", "--skip-unsupported")
+
+            self.assertIsNotNone(text, stderr)
+            assert text is not None
+
+            document = etree.fromstring(text.encode())
+            # It is an XML Schema, with no element of two types in one
+            # content and no particle that is unsure.
+            schema = etree.XMLSchema(document)
+            roots = {
+                element.get("name")
+                for element in document
+                if element.tag == "{http://www.w3.org/2001/XMLSchema}element"
+            }
+
+            for name, encoded in values:
+                if name not in roots:
+                    continue
+
+                self.assertTrue(
+                    schema.validate(etree.fromstring(encoded)),
+                    f"{spec} {name}: {encoded.decode()} {schema.error_log.last_error}",
+                )
+                checked += 1
+
+        # All but those of open types, and roots of one name in two modules.
+        self.assertGreater(checked, 200)
 
     def test_wrong_documents_are_not_valid(self) -> None:
         assert BINARY is not None
@@ -201,6 +233,29 @@ class SchemaTest(unittest.TestCase):
             dtd.validate(
                 etree.fromstring(
                     b"<Answer><id>1</id><answer><true /></answer></Answer>"
+                )
+            )
+        )
+
+        subprocess.run(
+            [BINARY, "schema", "--format", "xsd", "-o", output, foo], check=True
+        )
+        xsd = etree.XMLSchema(file=output)
+
+        for wrong in [
+            b"<Answer><answer><true /></answer></Answer>",
+            b"<Answer><answer><true /></answer><id>1</id></Answer>",
+            b"<Answer><id>1</id><answer>true</answer></Answer>",
+            b"<Answer><id>x</id><answer><true /></answer></Answer>",
+            b"<Answer><id>1</id><answer><true>x</true></answer></Answer>",
+            b"<Question><id>1</id><question>a<bell/></question></Question>",
+        ]:
+            self.assertFalse(xsd.validate(etree.fromstring(wrong)), wrong)
+
+        self.assertTrue(
+            xsd.validate(
+                etree.fromstring(
+                    b"<Question><id>1</id><question>a<bel/></question></Question>"
                 )
             )
         )

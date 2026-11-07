@@ -360,7 +360,7 @@ asnkitcc compile foo.asn    # Writes foo.asni, for a runtime to load.
 asnkitcc parse foo.asn      # Writes foo.asnst, a syntax tree for plugins.
 asnkitcc generate --plugin NAME [--plugin-opt KEY=VALUE ...] foo.asn
 asnkitcc convert -t Question -i q.json -o q.der foo.asni   # JER to DER.
-asnkitcc schema -o foo.schema.json foo.asn   # A JSON Schema of JER, or -o foo.dtd for a DTD of XER.
+asnkitcc schema -o foo.schema.json foo.asn   # A JSON Schema of JER, or foo.xsd or foo.dtd for XER.
 asnkitcc --help             # Every option.
 
 python -m asnkitrt.syntax foo.asni    # Prints a file as JSON.
@@ -368,8 +368,8 @@ python -m asnkitrt.syntax foo.asni    # Prints a file as JSON.
 
 `convert` decodes a value with one codec and encodes it with another,
 with an `.asni` file or ASN.1 files it compiles first. `schema` writes a
-JSON Schema of JER or a DTD of XER of the types, and refuses what a
-schema can not tell, as an `ANY`; see
+JSON Schema of JER, or an XML Schema or a DTD of XER, of the types, and
+refuses what a schema can not tell, as an `ANY`; see
 [`packages/asnkitcc`](packages/asnkitcc/README.md). `asnkitcc` prints
 nothing on success but warnings. Its output is checked against the
 cases in `packages/asnkit-compiler/tests/golden`, recorded from the
