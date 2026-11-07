@@ -5,9 +5,9 @@ the other languages of the JVM. It loads the `.asni` files produced by
 `asnkitcc` and uses them to encode and decode ASN.1. It contains no
 parser, and needs Java 17 or later.
 
-The codecs are BER, DER and JER. It can also check values against their
-constraints. The other codecs of the runtime for Rust (OER, PER, UPER,
-XER and GSER) are not done yet.
+The codecs are BER, DER, JER and XER. It can also check values against
+their constraints. The other codecs of the runtime for Rust (OER, PER,
+UPER and GSER) are not done yet.
 
 ```kotlin
 import org.boxtheta.asnkitrt.Codec
@@ -55,6 +55,8 @@ dependencies {
 - **Errors** tell where in the value they are: an `EncodeException`,
   a `DecodeException` or a `ConstraintsException` has a `location`, and
   its message is as `Question.question: Expected data of type str.`.
+- **Indented**: `encodeIndented` writes JER and XER with spaces for each
+  level, as the runtime for Python does.
 - **Thread-safe**: a `Specification` does not change after it is loaded.
 
 ## Dependencies
@@ -65,8 +67,12 @@ dependencies {
 against what `docs/file_formats.md` allows, as Jackson takes more: no
 indefinite lengths, no byte strings but those of bignums, no other
 tags, no simple values but `false`, `true` and `null`, and only text as
-the keys of maps. Kotlin's standard library is the only other
-dependency.
+the keys of maps.
+[Woodstox](https://github.com/FasterXML/woodstox) (`woodstox-core`,
+with `stax2-api`) reads the XML of XER, with no document type
+declaration, and so no entity but the five of XML, nor any that is
+fetched, and elements nested 128 levels at most. Kotlin's standard
+library is the only other dependency.
 
 ## Building
 
@@ -82,14 +88,14 @@ run from a checkout of it.
 
 ## Limitations
 
-Not supported: `ANY` and open types in JER, which need their type, and
+Not supported: `ANY` and open types in JER and XER, which need their type, and
 the types `EMBEDDED PDV` and `CHARACTER STRING`. These return an error;
 none produces a wrong value.
 
 It is held to the vectors in
 [`tests/vectors`](https://github.com/boxtheta/asnkit/blob/trunk/tests/vectors)
-of the runtime for Rust, the one of reference: all of those of BER, DER
-and JER, including constraint checks, give the same bytes and values.
+of the runtime for Rust, the one of reference: all of those of BER, DER,
+JER and XER, including constraint checks, give the same bytes and values.
 `SpecificationTest` decodes and encodes again the X.509 certificates the
 runtime for Rust checks against OpenSSL.
 

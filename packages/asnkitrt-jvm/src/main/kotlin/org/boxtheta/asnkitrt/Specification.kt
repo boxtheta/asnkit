@@ -83,9 +83,9 @@ public class Specification private constructor(
     ): ByteArray = encode(find(module, type), type, value, null)
 
     /**
-     * Encodes `value` as the type `type` in JER, with `indent` spaces for
-     * each level, as the runtime for Python does. The other codecs are not
-     * indented, and throw an [UnsupportedException].
+     * Encodes `value` as the type `type` in JER or XER, with `indent` spaces
+     * for each level, as the runtime for Python does. The other codecs are
+     * not indented, and throw an [UnsupportedException].
      */
     public fun encodeIndented(
         type: String,
@@ -99,12 +99,13 @@ public class Specification private constructor(
         value: Value,
         indent: Int?,
     ): ByteArray {
-        if (indent != null && codec != Codec.JER) unsupported("Only JER is indented.")
+        if (indent != null && codec != Codec.JER && codec != Codec.XER) unsupported("Only JER and XER are indented.")
 
         return within(Step.Name(name)) {
             when (codec) {
                 Codec.BER, Codec.DER -> Ber.encode(types, id, value)
                 Codec.JER -> Jer(types).encode(id, value, indent)
+                Codec.XER -> Xer(types).encode(id, value, indent)
             }
         }
     }
@@ -131,6 +132,7 @@ public class Specification private constructor(
             when (codec) {
                 Codec.BER, Codec.DER -> Ber.decode(types, id, data)
                 Codec.JER -> Jer(types).decode(id, data)
+                Codec.XER -> Xer(types).decode(id, data)
             }
         }
 
@@ -145,7 +147,7 @@ public class Specification private constructor(
     ): Pair<Value, Int> {
         val id = find(type)
 
-        if (codec == Codec.JER) unsupported("Only BER and DER have values one after another.")
+        if (codec != Codec.BER && codec != Codec.DER) unsupported("Only BER and DER have values one after another.")
 
         val decoded = within(Step.Name(type)) { Ber.decodeWithLength(types, id, data) }
 
@@ -159,7 +161,7 @@ public class Specification private constructor(
      * and DER have it.
      */
     public fun decodeLength(data: ByteArray): Int? {
-        if (codec == Codec.JER) unsupported("This codec has no length in the data.")
+        if (codec != Codec.BER && codec != Codec.DER) unsupported("This codec has no length in the data.")
 
         return Ber.decodeLength(data)
     }

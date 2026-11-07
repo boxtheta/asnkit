@@ -73,30 +73,36 @@ class RobustTest {
         }
     }
 
-    @Test
-    fun jer() {
+    /** What a text codec encodes in the vectors, of every type there, made wrong. */
+    private fun text(codec: Codec) {
         val mapper = com.fasterxml.jackson.databind.ObjectMapper()
         val specs = HashMap<String, Specification>()
-        // What JER encodes in the vectors, of every type there.
+        val name = codec.name.lowercase()
         val seeds =
             java.util.zip
                 .GZIPInputStream(File(repository, "tests/vectors/vectors.jsonl.gz").inputStream())
                 .bufferedReader()
                 .lineSequence()
                 .map { mapper.readTree(it) }
-                .filter { it["codec"].textValue() == "jer" && it["error"].isNull && !it["numeric_enums"].booleanValue() }
+                .filter { it["codec"].textValue() == name && it["error"].isNull && !it["numeric_enums"].booleanValue() }
                 .toList()
 
         for (seed in seeds) {
             val spec =
                 specs.getOrPut(seed["spec"].textValue()) {
-                    Specification.load(File(repository, "tests/vectors/specs/${seed["spec"].textValue()}.asni"), Options(Codec.JER))
+                    Specification.load(File(repository, "tests/vectors/specs/${seed["spec"].textValue()}.asni"), Options(codec))
                 }
             val text = hex(seed["encoded"].textValue())
 
-            repeat(20) { survives("JER ${seed["type"]}", mutate(text)) { spec.decode(seed["type"].textValue(), it) } }
+            repeat(20) { survives("$codec ${seed["type"]}", mutate(text)) { spec.decode(seed["type"].textValue(), it) } }
         }
     }
+
+    @Test
+    fun jer() = text(Codec.JER)
+
+    @Test
+    fun xer() = text(Codec.XER)
 
     @Test
     fun specifications() {

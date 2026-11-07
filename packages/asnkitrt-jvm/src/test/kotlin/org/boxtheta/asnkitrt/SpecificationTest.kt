@@ -40,6 +40,16 @@ class SpecificationTest {
     }
 
     @Test
+    fun xer() {
+        val spec = Specification.load(foo, Options(Codec.XER))
+
+        assertEquals("<Question><id>1</id><question>Is 1+1=3?</question></Question>", String(spec.encode("Question", question)))
+        assertEquals("<Question>\n  <id>1</id>\n  <question>Is 1+1=3?</question>\n</Question>\n", String(spec.encodeIndented("Question", question, 2)))
+        assertEquals(question, spec.decode("Question", "<?xml version=\"1.0\"?><Question><question>Is 1+1=3?</question><id> 1 </id></Question>".toByteArray()))
+        assertThrows<UnsupportedException> { spec.decodeWithLength("Question", spec.encode("Question", question)) }
+    }
+
+    @Test
     fun errorsTellWhereInTheValueTheyAre() {
         val spec = Specification.load(foo, Options(Codec.DER))
         val error = assertThrows<EncodeException> { spec.encode("Question", Value.Map("id" to Value.Integer(1), "question" to Value.Integer(2))) }

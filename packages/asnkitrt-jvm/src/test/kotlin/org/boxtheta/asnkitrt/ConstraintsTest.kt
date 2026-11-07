@@ -57,7 +57,7 @@ class ConstraintsTest {
             )
 
         for (assigned in refused) {
-            for (codec in listOf(Codec.BER, Codec.DER, Codec.JER)) {
+            for (codec in Codec.entries) {
                 val error = assertThrows(AsniException::class.java) { load(module(listOf(j, assigned)), codec) }
 
                 assertEquals(AsniException.Reason.BAD_NODES, error.reason)
