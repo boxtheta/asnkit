@@ -1277,7 +1277,9 @@ before nothing, a key that is not one and a key given twice are
 errors.
 
 Only an `.asnst` file has pragmas. What a key means is for the plugins
-to tell, and they had better use a prefix of their own, as `rpc.`.
+to tell, and they had better use a prefix of their own, as `rpc.`. The
+one key asnkit itself reads is `schema_comment`, of a module, which is
+the comment of the schemas `asnkitcc schema` writes of its types.
 
 ## Versions
 

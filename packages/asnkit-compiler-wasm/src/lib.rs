@@ -179,9 +179,11 @@ fn type_names(value: &JsValue) -> Result<Vec<String>, JsValue> {
 /// Schema or a DTD of BASIC-XER. The options are `format`
 /// (`json-schema`, the default, `xsd` or `dtd`), `types`, the names of
 /// the types the documents are values of, as `Type` or `Module.Type`,
-/// all of them if none, and `skipUnsupported`, to leave out what a
-/// schema can not tell rather than fail. What it cannot make is an
-/// `Error` named `SchemaError`.
+/// all of them if none, `skipUnsupported`, to leave out what a
+/// schema can not tell rather than fail, and `specification`, the text
+/// the `.asni` file is compiled from, whose pragma `schema_comment` is
+/// the comment of the schema. What it cannot make is an `Error` named
+/// `SchemaError`.
 #[wasm_bindgen]
 pub fn schema(asni: &[u8], options: JsValue) -> Result<Object, JsValue> {
     let format = match option(&options, "format")? {
@@ -200,16 +202,21 @@ pub fn schema(asni: &[u8], options: JsValue) -> Result<Object, JsValue> {
             .as_bool()
             .ok_or_else(|| type_error("Expected 'skipUnsupported' to be a boolean."))?,
     };
-    let generator = format!(
-        "the asnkit compiler for WebAssembly {}",
-        env!("CARGO_PKG_VERSION")
-    );
+    let comments = match option(&options, "specification")? {
+        value if absent(&value) => Vec::new(),
+        value => schema::comments_of(&Input::String(
+            value
+                .as_string()
+                .ok_or_else(|| type_error("Expected 'specification' to be a string."))?,
+        ))
+        .map_err(compiler_error)?,
+    };
     let made = generate(&schema::Request {
         format,
         types: &types,
         skip_unsupported,
         asni,
-        generator: &generator,
+        comments: &comments,
     })
     .map_err(|message| error("SchemaError", &message))?;
 

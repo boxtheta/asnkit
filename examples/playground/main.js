@@ -93,9 +93,11 @@ END
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  // The specification loaded for each codec, and the .asni it is of.
+  // The specification loaded for each codec, the .asni it is of, and
+  // the text that is compiled to it.
   specs: null,
   asni: null,
+  text: null,
   name: 'specification',
   inputCodec: 'ber',
   // The encodings of the last value, by codec, to use as the input.
@@ -184,6 +186,7 @@ async function compileSpecification() {
     freeSpecs();
     state.specs = specs;
     state.asni = asni;
+    state.text = text;
     state.name = modules[0]?.name ?? 'specification';
 
     // What is valid but likely to cause trouble is told under it.
@@ -227,6 +230,7 @@ async function compileSpecification() {
   } catch (error) {
     freeSpecs();
     state.asni = null;
+    state.text = null;
     $('compile-meta').hidden = true;
     showStatus(status, describe(error), 'error');
     renderOutputs(null);
@@ -260,6 +264,8 @@ async function renderSchema() {
       format,
       types: every || !type ? [] : [type],
       skipUnsupported: $('schema-skip').checked,
+      // For the pragma schema_comment.
+      specification: state.text,
     });
     const elapsed = performance.now() - started;
 
