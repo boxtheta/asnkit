@@ -371,6 +371,21 @@ fn schema(arguments: &Arguments) -> Result<(), String> {
         compile(&input, arguments)?.asni
     };
 
+    // The pragmas are in the syntax tree of the ASN.1, and not in an
+    // .asni file.
+    let comments = if arguments.files.iter().any(|path| {
+        path.extension()
+            .is_some_and(|extension| extension == "asni")
+    }) {
+        Vec::new()
+    } else {
+        schema::comments_of(&Input::Files {
+            paths: arguments.files.clone(),
+            encoding: arguments.encoding.clone(),
+        })
+        .map_err(|error| format!("error: {}", error.message))?
+    };
+
     let output = arguments.output.as_deref();
     let format = arguments
         .format
@@ -381,7 +396,7 @@ fn schema(arguments: &Arguments) -> Result<(), String> {
         types: &arguments.types,
         skip_unsupported: arguments.skip_unsupported,
         asni: &asni,
-        generator: concat!("asnkitcc ", env!("CARGO_PKG_VERSION")),
+        comments: &comments,
     })
     .map_err(|error| format!("error: {error}"))?;
 
