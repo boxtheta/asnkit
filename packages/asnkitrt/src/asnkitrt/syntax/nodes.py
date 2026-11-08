@@ -21,8 +21,9 @@ from typing import Any, Tuple, Union
 # its fields in the compact form, as that is all a reader of an
 # earlier minor can ignore. Increment major on any other change, such
 # as a new kind of node. Either way, increment that of an .asni file
-# too.
-SCHEMA_VERSION = (1, 0)
+# too, unless an .asni file never has the field, as ``location`` and
+# ``pragmas``.
+SCHEMA_VERSION = (1, 1)
 
 # Where something is found in the ASN.1 files a syntax tree was made
 # from: the index of the file among the files parsed, and the line
@@ -36,6 +37,16 @@ SCHEMA_VERSION = (1, 0)
 # It is None when not known, as in a compiled specification, and is
 # not part of what makes two nodes equal.
 Location = Tuple[int, int, int]
+
+# The pragmas of a module, an assignment, a member or a field of an
+# object class: the comments ``--@ key = value`` on the lines before
+# it, as pairs of a key and a value in the order they are written. A
+# key is only there once, so ``dict(pragmas)`` loses nothing. A pragma
+# with no ``=`` has the value ``''``.
+#
+# It is None when there are none, and in a compiled specification,
+# which has none.
+Pragmas = Tuple[Tuple[str, str], ...]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -521,6 +532,7 @@ class Member(Node):
     # None if it has no default.
     default: Value = None
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -592,6 +604,7 @@ class TypeAssignment(Node):
     name: str
     type: Type
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -602,6 +615,7 @@ class ValueAssignment(Node):
     type: str
     value: Value
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -615,6 +629,7 @@ class ObjectAssignment(Node):
     class_name: str
     object: Union[Object, UnresolvedObject, Identifier, UnsupportedValue]
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -622,6 +637,7 @@ class ObjectClassField(Node):
     name: str
     type: Type
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -643,6 +659,7 @@ class ObjectClassAssignment(Node):
     fields: Tuple[ObjectClassField, ...]
     syntax: Tuple[Union[str, OptionalGroup], ...] | None = None
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -651,6 +668,7 @@ class ObjectSetAssignment(Node):
     class_name: str
     members: Tuple[ObjectSetMember, ...]
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -673,6 +691,7 @@ class Module(Node):
     object_classes: Tuple[ObjectClassAssignment, ...] = ()
     object_sets: Tuple[ObjectSetAssignment, ...] = ()
     location: Location | None = field(default=None, compare=False)
+    pragmas: Pragmas | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

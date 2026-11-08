@@ -615,6 +615,7 @@ impl Compiler {
                         default: None,
                         raw_default: None,
                         location: None,
+                        pragmas: Vec::new(),
                     })
                 };
 

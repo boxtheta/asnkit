@@ -10,6 +10,26 @@ security fixes.
 
 ## [Unreleased]
 
+### Added
+
+- Pragmas: comments `--@ key = value`, or `--@ key`, on the lines
+  before a module, an assignment, a member or a field of an object
+  class, to tell plugins what the ASN.1 has no way to, as what a type
+  is to an RPC framework. The syntax tree has them as `pragmas`, a list
+  of pairs of a key and a value, and `asnkitrt.syntax` as the field
+  `pragmas` of `Module`, `TypeAssignment`, `ValueAssignment`,
+  `ObjectAssignment`, `ObjectClassAssignment`, `ObjectClassField`,
+  `ObjectSetAssignment` and `Member`. A pragma that is of nothing, a
+  key that is not one and a key given twice are parse errors. A
+  compiled specification has none, so `.asni` files are as they were.
+  See [Pragmas](docs/file_formats.md#pragmas).
+
+
+### Changed
+
+- `.asnst` files are of version 1.1, for `pragmas`. A reader of 1.0
+  reads them, and ignores the pragmas.
+
 ## [2.0.0-rc7] - 2026-11-08
 
 ### Added

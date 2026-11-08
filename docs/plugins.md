@@ -29,6 +29,41 @@ when the plugin exits. Nothing is written to the plugin's standard
 input, and what it writes to standard output and standard error goes
 to those of `asnkitcc`.
 
+## Pragmas
+
+A plugin can be told what the ASN.1 has no way to tell with pragmas,
+comments `--@ key = value` on the lines before a module, an
+assignment, a member or a field of an object class:
+
+```text
+Greeter DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+--@ rpc.method = Greet
+HelloRequest ::= SEQUENCE {
+    --@ json.name = the_name
+    name UTF8String
+}
+
+END
+```
+
+They are in the syntax tree, as `pragmas` of what they are of: pairs
+of a key and a value, in the order they are written, or none. They are
+not in the compiled specification.
+
+```python
+tree = syntax.from_asnst_file(args.asnst)
+
+for module in tree.modules:
+    for assignment in module.types:
+        pragmas = dict(assignment.pragmas or ())
+
+        if "rpc.method" in pragmas:
+            ...  # pragmas["rpc.method"] is "Greet".
+```
+
+See [Pragmas](file_formats.md#pragmas) for what one can be and be of.
+
 `asnkitcc --version` runs each plugin it finds on `PATH` with
 `--version`, and shows the last word of what it prints as its version.
 

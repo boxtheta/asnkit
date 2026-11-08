@@ -1728,6 +1728,7 @@ fn member(i: &mut Input) -> R<Member> {
         default,
         raw_default,
         location: offset_location(i, offset),
+        pragmas: Vec::new(),
     })
 }
 
@@ -3013,6 +3014,7 @@ fn class_field(i: &mut Input) -> R<ObjectClassField> {
         name,
         type_,
         location: offset_location(i, offset),
+        pragmas: Vec::new(),
     })
 }
 
@@ -3088,6 +3090,7 @@ fn class_definition(i: &mut Input, name: String, offset: usize) -> R<ObjectClass
         fields,
         syntax,
         location: offset_location(i, offset),
+        pragmas: Vec::new(),
     })
 }
 
@@ -3363,6 +3366,7 @@ fn assignment(i: &mut Input, module: &mut Module) -> R<()> {
                         class_name,
                         members,
                         location: offset_location(i, offset),
+                        pragmas: Vec::new(),
                     };
 
                     assign_once(i, module, &name, offset)?;
@@ -3404,6 +3408,7 @@ fn assignment(i: &mut Input, module: &mut Module) -> R<()> {
             name: name.clone(),
             type_,
             location: offset_location(i, offset),
+            pragmas: Vec::new(),
         };
 
         assign_once(i, module, &name, offset)?;
@@ -3426,6 +3431,7 @@ fn assignment(i: &mut Input, module: &mut Module) -> R<()> {
                     type_name: class_name,
                     value: object,
                     location: offset_location(i, offset),
+                    pragmas: Vec::new(),
                 };
 
                 assign_once(i, module, &name, offset)?;
@@ -3447,6 +3453,7 @@ fn assignment(i: &mut Input, module: &mut Module) -> R<()> {
         type_name,
         value: RawData::Data(data),
         location: offset_location(i, offset),
+        pragmas: Vec::new(),
     };
 
     assign_once(i, module, &name, offset)?;

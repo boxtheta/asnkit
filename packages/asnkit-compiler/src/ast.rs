@@ -76,6 +76,26 @@ fn location(location: &Option<Location>) -> Option<Json> {
     })
 }
 
+/// The pragmas of a module, an assignment, a member or a field of an
+/// object class, each a key and its value, in the order they are written
+/// (see `docs/file_formats.md`).
+pub type Pragmas = Vec<(String, String)>;
+
+/// The pragmas as a field: a list of pairs, left out when there are none
+/// and in a compiled specification, which has none.
+fn pragmas(pragmas: &Pragmas) -> Option<Json> {
+    if pragmas.is_empty() || form() == Form::Compiled {
+        return None;
+    }
+
+    Some(Json::Array(
+        pragmas
+            .iter()
+            .map(|(key, value)| Json::Array(vec![text(key).unwrap(), Json::String(value.clone())]))
+            .collect(),
+    ))
+}
+
 /// A value, or anything else found where one is: the bound of a range,
 /// an element of a constraint, an actual parameter, the setting of a
 /// field of an object.
@@ -718,6 +738,7 @@ pub struct Member {
     /// the types of the whole specification.
     pub raw_default: Option<(crate::data::Data, String)>,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 impl MemberItem {
@@ -731,6 +752,7 @@ impl MemberItem {
                     ("optional", Some(Json::Bool(member.optional))),
                     ("default", member.default.as_ref().map(Value::to_tree)),
                     ("location", location(&member.location)),
+                    ("pragmas", pragmas(&member.pragmas)),
                 ],
             ),
             MemberItem::ComponentsOf(name) => node("ComponentsOf", vec![("type_name", text(name))]),
@@ -748,6 +770,7 @@ pub struct TypeAssignment {
     pub name: String,
     pub type_: Type,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -756,6 +779,7 @@ pub struct ValueAssignment {
     pub type_: String,
     pub value: Value,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -764,6 +788,7 @@ pub struct ObjectAssignment {
     pub class_name: String,
     pub object: Value,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -771,6 +796,7 @@ pub struct ObjectClassField {
     pub name: String,
     pub type_: Type,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -785,6 +811,7 @@ pub struct ObjectClassAssignment {
     pub fields: Vec<ObjectClassField>,
     pub syntax: Option<Vec<SyntaxToken>>,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -793,6 +820,7 @@ pub struct ObjectSetAssignment {
     pub class_name: String,
     pub members: Vec<Value>,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -809,6 +837,7 @@ pub struct RawValue {
     pub type_name: String,
     pub value: RawData,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -834,6 +863,7 @@ pub struct Module {
     pub object_classes: Vec<ObjectClassAssignment>,
     pub object_sets: Vec<ObjectSetAssignment>,
     pub location: Option<Location>,
+    pub pragmas: Pragmas,
 }
 
 fn syntax_tree(tokens: &[SyntaxToken]) -> Json {
@@ -885,6 +915,7 @@ impl Module {
                                 ("name", text(&t.name)),
                                 ("type", Some(t.type_.to_tree())),
                                 ("location", location(&t.location)),
+                                ("pragmas", pragmas(&t.pragmas)),
                             ],
                         )
                     }),
@@ -899,6 +930,7 @@ impl Module {
                                 ("type", text(&v.type_)),
                                 ("value", Some(v.value.to_tree())),
                                 ("location", location(&v.location)),
+                                ("pragmas", pragmas(&v.pragmas)),
                             ],
                         )
                     }),
@@ -913,6 +945,7 @@ impl Module {
                                 ("class_name", text(&o.class_name)),
                                 ("object", Some(o.object.to_tree())),
                                 ("location", location(&o.location)),
+                                ("pragmas", pragmas(&o.pragmas)),
                             ],
                         )
                     }),
@@ -933,12 +966,14 @@ impl Module {
                                                 ("name", text(&f.name)),
                                                 ("type", Some(f.type_.to_tree())),
                                                 ("location", location(&f.location)),
+                                                ("pragmas", pragmas(&f.pragmas)),
                                             ],
                                         )
                                     }),
                                 ),
                                 ("syntax", c.syntax.as_ref().map(|s| syntax_tree(s))),
                                 ("location", location(&c.location)),
+                                ("pragmas", pragmas(&c.pragmas)),
                             ],
                         )
                     }),
@@ -953,11 +988,13 @@ impl Module {
                                 ("class_name", text(&s.class_name)),
                                 ("members", list(&s.members, Value::to_tree)),
                                 ("location", location(&s.location)),
+                                ("pragmas", pragmas(&s.pragmas)),
                             ],
                         )
                     }),
                 ),
                 ("location", location(&self.location)),
+                ("pragmas", pragmas(&self.pragmas)),
             ],
         )
     }

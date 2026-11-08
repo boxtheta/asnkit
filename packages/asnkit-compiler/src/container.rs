@@ -26,7 +26,7 @@ const TAG_NEGATIVE_BIGNUM: u64 = 3;
 /// The version of an `.asni` file, of its header and its nodes.
 const ASNI_VERSION: (u8, u8) = (2, 0);
 /// The version of an `.asnst` file, of its map and its nodes.
-const ASNST_VERSION: (u8, u8) = (1, 0);
+const ASNST_VERSION: (u8, u8) = (1, 1);
 /// Where the metadata of an `.asni` file begins: after the magic, the
 /// version and the CRC-32.
 const ASNI_HEADER_SIZE: usize = 10;
@@ -322,7 +322,7 @@ mod tests {
         let file = write_asnst(&Metadata::default(), &Json::Null);
         let mut version = Vec::new();
         encode_text("version", &mut version);
-        version.extend([0x82, 0x01, 0x00]);
+        version.extend([0x82, 0x01, 0x01]);
 
         assert!(file.windows(version.len()).any(|window| window == version));
     }

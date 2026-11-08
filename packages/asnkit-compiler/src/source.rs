@@ -11,13 +11,23 @@ pub struct CommentError {
     pub message: &'static str,
 }
 
+/// A single line comment that is a pragma, `--@ key = value`: the offset
+/// of its `--`, and its text after the `@`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PragmaComment {
+    pub offset: usize,
+    pub text: String,
+}
+
 /// Replaces comments with spaces, so that an offset is the same with and
-/// without them. A single line comment ends where the line does, or at
-/// the next `--`, and a multiple line comment, of which there may be one
-/// inside another, ends at `*/`.
-pub fn ignore_comments(string: &str) -> Result<String, CommentError> {
+/// without them, and gives the single line comments that are pragmas. A
+/// single line comment ends where the line does, or at the next `--`,
+/// and a multiple line comment, of which there may be one inside
+/// another, ends at `*/`.
+pub fn ignore_comments(string: &str) -> Result<(String, Vec<PragmaComment>), CommentError> {
     let bytes = string.as_bytes();
     let mut out = String::with_capacity(string.len());
+    let mut pragmas = Vec::new();
     let mut in_single_line_comment = false;
     let mut depth = 0usize;
     let mut start_offset = 0usize;
@@ -48,6 +58,14 @@ pub fn ignore_comments(string: &str) -> Result<String, CommentError> {
             if kind == "--" || kind == "\n" {
                 in_single_line_comment = false;
                 let end = if kind == "--" { at + 2 } else { at };
+
+                if let Some(text) = string[start_offset + 2..at].strip_prefix('@') {
+                    pragmas.push(PragmaComment {
+                        offset: start_offset,
+                        text: text.to_string(),
+                    });
+                }
+
                 // The text of the comment is as long in characters as in
                 // bytes for what matters here: every character of it
                 // becomes as many spaces as it has bytes.
@@ -93,7 +111,7 @@ pub fn ignore_comments(string: &str) -> Result<String, CommentError> {
 
     out.push_str(&string[non_comment_offset..]);
 
-    Ok(out)
+    Ok((out, pragmas))
 }
 
 /// Tells where in the files an offset in the string of all of them, one

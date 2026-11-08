@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(kinds["UnsupportedConstraint"].number, 67);
         assert_eq!(kinds["BuiltinType"].fields.len(), 12);
         assert_eq!(kinds["ComponentConstraint"].fields.len(), 8);
-        assert_eq!(kinds["Module"].fields.len(), 10);
+        assert_eq!(kinds["Module"].fields.len(), 11);
     }
 
     #[test]
