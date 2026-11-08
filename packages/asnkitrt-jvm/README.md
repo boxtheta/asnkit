@@ -36,7 +36,7 @@ version of the other packages of asnkit:
 
 ```kotlin
 dependencies {
-    implementation("org.boxtheta:asnkitrt:2.0.0-rc6")
+    implementation("org.boxtheta:asnkitrt:2.0.0-rc7")
 }
 ```
 
