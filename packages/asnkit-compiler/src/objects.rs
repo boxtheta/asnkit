@@ -405,6 +405,7 @@ pub fn finish(modules: Vec<Module>) -> Vec<Module> {
                     class_name: raw.type_name,
                     object,
                     location: raw.location,
+                    pragmas: raw.pragmas,
                 });
             } else {
                 let RawData::Data(value) = data else {
@@ -416,6 +417,7 @@ pub fn finish(modules: Vec<Module>) -> Vec<Module> {
                     value: value_from_data(&value, Where::Value, Some(&raw.type_name), false),
                     type_: raw.type_name,
                     location: raw.location,
+                    pragmas: raw.pragmas,
                 });
             }
         }

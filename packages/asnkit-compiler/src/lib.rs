@@ -46,6 +46,7 @@ pub mod container;
 mod data;
 mod grammar;
 mod objects;
+mod pragma;
 // A plugin is a program that is run, which WebAssembly has no way to.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod plugin;
@@ -289,7 +290,7 @@ fn parse_tree(input: &Input) -> Result<(ast::SyntaxTree, Option<Vec<String>>), E
         None => String::new(),
     };
 
-    let stripped = match source::ignore_comments(&string) {
+    let (stripped, pragmas) = match source::ignore_comments(&string) {
         Ok(stripped) => stripped,
         Err(error) => {
             let (source, line, column, marked) = locator.locate_error(error.offset);
@@ -306,7 +307,18 @@ fn parse_tree(input: &Input) -> Result<(ast::SyntaxTree, Option<Vec<String>>), E
     grammar::reset_failures();
 
     match grammar::parse_all(&mut grammar_input) {
-        Ok(tree) => Ok((tree, names)),
+        Ok(mut tree) => match pragma::attach(&mut tree, &pragmas, &stripped, &locator) {
+            Ok(()) => Ok((tree, names)),
+            Err(error) => {
+                let (source, line, column, marked) = locator.locate_error(error.offset);
+
+                Err(parse_error(format!(
+                    "Invalid pragma {}at line {line}, column {column}: '{marked}': {}.",
+                    where_(source),
+                    error.message
+                )))
+            }
+        },
         Err(_) if grammar_input.state.conversion_error.is_some() => {
             let message = grammar_input.state.conversion_error.take().unwrap();
 

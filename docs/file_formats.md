@@ -6,7 +6,7 @@ writing them without this package, in C, Rust or anything else.
 
 > **Note:** This document, with its code blocks, is licensed under the Apache License 2.0. See `LICENSE-COMPILER` in the root of the repository.
 
-> **Note:** This describes version 2.0 of `.asni` and version 1.0 of `.asnst`. [Not yet specified](#not-yet-specified) lists what is missing.
+> **Note:** This describes version 2.0 of `.asni` and version 1.1 of `.asnst`. [Not yet specified](#not-yet-specified) lists what is missing.
 
 ## The two files
 
@@ -120,7 +120,7 @@ needs nothing but something that reads CBOR to read it. The map has:
 
 - `format` — The text string `asnst`.
 
-- `version` — A list of the major and the minor version, currently `[1, 0]`.
+- `version` — A list of the major and the minor version, currently `[1, 1]`.
 - `metadata` — The [metadata](#metadata).
 
 - `tree` — The [nodes](#nodes), in [the readable form](#the-readable-form).
@@ -298,8 +298,8 @@ all `null` by default: `tag`, `size`, `restricted_to`,
 |---|---|---|
 | 1 | CompiledSpecification | modules |
 | 2 | CompiledModule | name, types = [], object_classes = [] |
-| 3 | TypeAssignment | name, type, location = null |
-| 4 | Member | name, type, optional = false, default = null, location = null |
+| 3 | TypeAssignment | name, type, location = null, pragmas = null |
+| 4 | Member | name, type, optional = false, default = null, location = null, pragmas = null |
 | 5 | Tag | number, tag_class = null, mode = null |
 | 6 | Range | lower, upper |
 | 7 | NamedNumber | name, number |
@@ -334,14 +334,14 @@ all `null` by default: `tag`, `size`, `restricted_to`,
 | 36 | AnyDefinedByType | value, choices = [], *type fields* |
 | 37 | AnyDefinedByChoice | value, type |
 | 38 | ComponentsOf | type_name |
-| 39 | ObjectClassAssignment | name, fields, syntax = null, location = null |
-| 40 | ObjectClassField | name, type, location = null |
+| 39 | ObjectClassAssignment | name, fields, syntax = null, location = null, pragmas = null |
+| 40 | ObjectClassField | name, type, location = null, pragmas = null |
 | 41 | SyntaxTree | modules |
-| 42 | Module | name, tags = null, extensibility_implied = false, imports = [], types = [], values = [], objects = [], object_classes = [], object_sets = [], location = null |
+| 42 | Module | name, tags = null, extensibility_implied = false, imports = [], types = [], values = [], objects = [], object_classes = [], object_sets = [], location = null, pragmas = null |
 | 43 | Import | module, symbols |
-| 44 | ValueAssignment | name, type, value, location = null |
-| 45 | ObjectAssignment | name, class_name, object, location = null |
-| 46 | ObjectSetAssignment | name, class_name, members, location = null |
+| 44 | ValueAssignment | name, type, value, location = null, pragmas = null |
+| 45 | ObjectAssignment | name, class_name, object, location = null, pragmas = null |
+| 46 | ObjectSetAssignment | name, class_name, members, location = null, pragmas = null |
 | 47 | Object | fields |
 | 48 | ObjectField | name, setting |
 | 49 | UnresolvedObject | source |
@@ -428,6 +428,9 @@ file with a field of another type than told here.
   `ObjectClassField` nodes. The compiler never writes `syntax` in a
   compiled specification.
 
+- `pragmas` is a list of [pragmas](#pragmas), each a list of two text
+  strings, its key and its value.
+
 What the kinds of a compiled specification mean is told in
 [What the nodes mean](#what-the-nodes-mean). The others, which are
 only found in syntax trees, are told in `asnkitrt.syntax.nodes` (see
@@ -509,7 +512,7 @@ A value, as the default of a member or a bound of a range, is one of:
 ## Compiled specifications
 
 An `.asni` file only has the kinds of nodes numbered 1 to 40, and of
-those `ComponentsOf`, `location`, `parameters`,
+those `ComponentsOf`, `location`, `pragmas`, `parameters`,
 `actual_parameters` and `constraints` are never found in one. Unlike in a syntax
 tree:
 
@@ -1230,6 +1233,51 @@ list of three numbers:
 It is the place of the first character of the name of a module, an
 assignment, a member or a field of an object class. Only an
 `.asnst` file has locations.
+
+## Pragmas
+
+A pragma is a comment that tells a plugin something the ASN.1 has no
+way to, as what a type is to an RPC framework built on asnkit:
+
+```text
+--@ rpc.package = greeter.v1
+Greeter DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+
+--@ rpc.message
+--@ go-name = HelloRequest
+HelloRequest ::= SEQUENCE {
+    --@ json.name = the_name
+    name UTF8String
+}
+
+END
+```
+
+- A pragma is a single line comment that begins with `--@`, on a line
+  of its own. Anything else, as `-- @`, or `--@` in a comment of
+  several lines, is a comment and nothing more.
+
+- It is `--@ key = value`, or `--@ key`, whose value is the empty
+  string. The key is a letter followed by letters, digits, `.`, `-`
+  and `_`. The value is the text after the first `=`, up to where the
+  comment ends: the end of the line, or the next `--`. Both are
+  trimmed of whitespace.
+
+- It is of the module, the assignment, the member of a `SEQUENCE`, a
+  `SET` or a `CHOICE`, or the field of an object class that comes
+  after it, with nothing but whitespace and other comments between
+  them. A pragma is not of a member of a type in a constraint.
+
+- What it is of has it in `pragmas`, with the others of the same, in
+  the order they are written. A key is only given once to the same.
+
+A pragma that is not on a line of its own, that comes before something
+else, as an item of an `ENUMERATED`, an extension marker or `END`, or
+before nothing, a key that is not one and a key given twice are
+errors.
+
+Only an `.asnst` file has pragmas. What a key means is for the plugins
+to tell, and they had better use a prefix of their own, as `rpc.`.
 
 ## Versions
 

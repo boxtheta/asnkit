@@ -90,6 +90,16 @@ module summaries. There is no binding argument, and `Protection` and
 `derive_key_id` no longer exist. See `packages/asnkit-compiler/src/lib.rs`
 and `docs/file_formats.md` for the current API and format.
 
+## Pragmas
+
+A comment `--@ key = value` (or `--@ key`, value `""`) on its own line
+before a module, an assignment, a member or an object class field is a
+pragma. The `.asnst` syntax tree has it on that node as `pragmas`, a list
+of `[key, value]` pairs in source order; `asnkitrt.syntax` gives a tuple
+of pairs or `None`. `.asni` files never have pragmas. A pragma before
+anything else, a bad key or a repeated key is a parse error. Plugins read
+them from the `--asnst` file; see `docs/file_formats.md#pragmas`.
+
 ## Generated models
 
 The compiler locates executable `asnkit-gen-NAME` on `PATH`. Generators

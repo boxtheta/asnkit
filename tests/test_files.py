@@ -129,6 +129,37 @@ class FilesTest(unittest.TestCase):
                 )
                 self.assertEqual(syntax.from_asnst(syntax.to_asnst(tree)), tree)
 
+    def test_pragmas(self):
+        # The comments --@ key = value before a module, an assignment
+        # or a member are pairs of the node in the syntax tree, and are
+        # not in the compiled specification.
+        specification = (
+            "--@ rpc.package = greeter.v1\n"
+            "Greeter DEFINITIONS AUTOMATIC TAGS ::= BEGIN\n"
+            "--@ rpc.message\n"
+            "--@ go-name = HelloRequest\n"
+            "HelloRequest ::= SEQUENCE {\n"
+            "    --@ json.name = the_name\n"
+            "    name UTF8String,\n"
+            "    age INTEGER OPTIONAL\n"
+            "}\n"
+            "END\n"
+        )
+        tree = syntax.from_asnst(fixtures.parse_string_to_asnst(specification))
+        module = tree.modules[0]
+        request = module.types[0]
+
+        self.assertEqual(module.pragmas, (("rpc.package", "greeter.v1"),))
+        self.assertEqual(
+            dict(request.pragmas), {"rpc.message": "", "go-name": "HelloRequest"}
+        )
+        self.assertEqual(request.type.members[0].pragmas, (("json.name", "the_name"),))
+        self.assertIsNone(request.type.members[1].pragmas)
+        self.assertEqual(syntax.from_asnst(syntax.to_asnst(tree)), tree)
+
+        compiled = syntax.from_asni(fixtures.compile_string_to_asni(specification))
+        self.assertIsNone(compiled.modules[0].types[0].pragmas)
+
     def test_to_asni_from_asni(self):
         for name in ["all_types", "parameterization", "3gpp/rrc_8_6_0", "ietf/rfc5280"]:
             with self.subTest(name=name):
@@ -368,7 +399,7 @@ class FilesTest(unittest.TestCase):
         contents = cbor.loads(asnst)
         self.assertEqual(list(contents), ["format", "version", "metadata", "tree"])
         self.assertEqual(contents["format"], "asnst")
-        self.assertEqual(contents["version"], [1, 0])
+        self.assertEqual(contents["version"], [1, 1])
         self.assertEqual(contents["tree"]["kind"], "SyntaxTree")
 
         for changes, message in [

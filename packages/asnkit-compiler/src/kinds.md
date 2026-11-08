@@ -8,8 +8,8 @@ compact.rs keeps the two the same. -->
 |---|---|---|
 | 1 | CompiledSpecification | modules |
 | 2 | CompiledModule | name, types = [], object_classes = [] |
-| 3 | TypeAssignment | name, type, location = null |
-| 4 | Member | name, type, optional = false, default = null, location = null |
+| 3 | TypeAssignment | name, type, location = null, pragmas = null |
+| 4 | Member | name, type, optional = false, default = null, location = null, pragmas = null |
 | 5 | Tag | number, tag_class = null, mode = null |
 | 6 | Range | lower, upper |
 | 7 | NamedNumber | name, number |
@@ -44,14 +44,14 @@ compact.rs keeps the two the same. -->
 | 36 | AnyDefinedByType | value, choices = [], *type fields* |
 | 37 | AnyDefinedByChoice | value, type |
 | 38 | ComponentsOf | type_name |
-| 39 | ObjectClassAssignment | name, fields, syntax = null, location = null |
-| 40 | ObjectClassField | name, type, location = null |
+| 39 | ObjectClassAssignment | name, fields, syntax = null, location = null, pragmas = null |
+| 40 | ObjectClassField | name, type, location = null, pragmas = null |
 | 41 | SyntaxTree | modules |
-| 42 | Module | name, tags = null, extensibility_implied = false, imports = [], types = [], values = [], objects = [], object_classes = [], object_sets = [], location = null |
+| 42 | Module | name, tags = null, extensibility_implied = false, imports = [], types = [], values = [], objects = [], object_classes = [], object_sets = [], location = null, pragmas = null |
 | 43 | Import | module, symbols |
-| 44 | ValueAssignment | name, type, value, location = null |
-| 45 | ObjectAssignment | name, class_name, object, location = null |
-| 46 | ObjectSetAssignment | name, class_name, members, location = null |
+| 44 | ValueAssignment | name, type, value, location = null, pragmas = null |
+| 45 | ObjectAssignment | name, class_name, object, location = null, pragmas = null |
+| 46 | ObjectSetAssignment | name, class_name, members, location = null, pragmas = null |
 | 47 | Object | fields |
 | 48 | ObjectField | name, setting |
 | 49 | UnresolvedObject | source |
