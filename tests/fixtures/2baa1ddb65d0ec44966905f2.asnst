@@ -1,4 +1,4 @@
-§fformateasnstgversionÇhmetadata¢igeneratorx asnkit-compiler 2.0.0-rc7 (Rust)gsourcesÅ£dnamekrfc5280.asnfsha256x@da7505c518e9d4bc7b7f166d132b640c9130ef210c50176317b8e52aa95b4fcfdtextyÖ	PKIX1Explicit88 { iso(1) identified-organization(3) dod(6) internet(1)
+§fformateasnstgversionÇhmetadata¢igeneratorx asnkit-compiler 2.0.0-rc8 (Rust)gsourcesÅ£dnamekrfc5280.asnfsha256x@da7505c518e9d4bc7b7f166d132b640c9130ef210c50176317b8e52aa95b4fcfdtextyÖ	PKIX1Explicit88 { iso(1) identified-organization(3) dod(6) internet(1)
   security(5) mechanisms(5) pkix(7) id-mod(0) id-pkix1-explicit(18) }
 
 DEFINITIONS EXPLICIT TAGS ::=
