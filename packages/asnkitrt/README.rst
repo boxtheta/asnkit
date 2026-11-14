@@ -20,6 +20,11 @@ live in the same
 `repository`_, which also documents the formats and the known
 limitations.
 
+Decoding is strict: data that is not what the codec writes for the
+type is a ``DecodeError``, and DER reads only DER unless the
+specification is loaded with ``lenient=True``. Every error of the
+package is an ``asnkitrt.Error``.
+
 The runtime reads version 2 ``.asni`` files. Recompile version 1 files
 from their ASN.1 sources. A file whose CRC-32 does not match is
 corrupt, and is not loaded. On ``load``, ``load_asni`` and

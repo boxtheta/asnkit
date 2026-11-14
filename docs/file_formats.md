@@ -564,7 +564,7 @@ Two things are still left to look up by name in version 1.0:
 
 This is for those writing a runtime. It tells what the runtimes in
 this repository do with the nodes of a compiled specification, which
-is the same in all of them. `tests/vectors` holds more than 5,500
+is the same in all of them. `tests/vectors` holds more than 5,700
 encodings and decodings by the one for Rust, the runtime of reference,
 in BER, DER, OER, PER, UPER, JER and XER, and encodings in GSER, with the compiled
 specifications they were made with, for a runtime to be tried against.
@@ -810,6 +810,29 @@ contents, which are those of DER for a DER decoder. After what an
 explicit tag is around it reads nothing. A decoder of BER or of DER
 that is told to be lenient leaves out whatever is there, up to the end
 of the contents.
+
+### What OER and PER read
+
+A decoder of OER, PER or UPER reads what its codec writes, and has
+nothing to be lenient about. An OER decoder rejects a tag number that
+is not in as few bytes as possible (X.696 8.7.2), a length or an
+`ENUMERATED` in the long form of no bytes, an `INTEGER` of no bytes,
+and a `BIT STRING`, or the presence bits of the additions, with more
+than 7 unused bits, or with unused bits and no byte. A PER or UPER
+decoder rejects an `INTEGER` with no bounds of no bytes.
+
+### Limits of a decoder
+
+A decoder reads values nested 128 deep and rejects one nested deeper,
+with every codec.
+
+An element of no bits, as a `NULL`, and a character of an alphabet of
+one character, take none of the data, so a length of a few bytes can
+tell of more of them than a decoder can hold. A decoder of OER, PER or
+UPER therefore has a number of items it may read from the data it is
+given: 8 for each byte of it, and 1024 more. Each element of a
+`SEQUENCE OF` or a `SET OF` and each character of a string is one, and
+data that has more is rejected.
 
 ### Members
 
@@ -1088,6 +1111,12 @@ alphabet of its own has to have the characters of its kind:
 | DURATION | text, as an ISO 8601 duration |
 | ANY and OpenType | the bytes of its encoding |
 
+The text of an `OBJECT IDENTIFIER` is its arcs in decimal, with a `.`
+between them and nothing else, as no sign. There are two at least, the
+first is 0, 1 or 2, and the second is 39 at most under 0 and 1 (X.690
+8.19.4), as the first two are written as one number: an encoder rejects
+any other, and so does a decoder of JER and of XER.
+
 An `ENUMERATED` that is extensible and has a value that is not one
 of its own decodes to nothing, and so does a `CHOICE` with an
 alternative of a later version, with no name.
@@ -1132,6 +1161,9 @@ OER as X.691 32 and X.696 31 say. When reading the forms of JER and
 XER, the month, the day, the hour, the minute and the second may have
 one digit. These types have no fraction of a second and no offset
 (X.680 38.4.2, 38.4.3), and an encoder rejects a value that has one.
+A decoder of any codec rejects one that is not a date or a time: a
+year that is not 1 to 9999, a month that is not 1 to 12, a day the
+month has not, an hour above 23, or a minute or a second above 59.
 
 A `DURATION` is written by XER without its elements that are 0, but
 the last one, so `P1Y0M2D` is `P1Y2D`, and as it is given by the
@@ -1177,8 +1209,14 @@ JER writes a value in one form of those X.697 allows:
   told to give numbers (X.697 22).
 
 A decoder ignores the members of an object that are not those of the
-type. It reads a `REAL` from any JSON number, and from `"-0"`,
-`"-INF"`, `"INF"` and `"NaN"`.
+type, and rejects an object without a member that is not `OPTIONAL` and
+has no default. It reads a `REAL` from any JSON number, also one with
+no fraction, as `1`, and from `"-0"`, `"-INF"`, `"INF"` and `"NaN"`.
+It rejects a value that is not of the kind of JSON its type is written
+as: an `INTEGER` is a number with no fraction and no exponent, and not
+a string or a boolean, a `SEQUENCE OF` is an array, and so on.
+Hexadecimal digits are those only, and a `BIT STRING` has as many bytes
+as its length takes.
 
 ### XER
 
@@ -1217,6 +1255,13 @@ XER writes a value in one form of those X.693 allows:
 
 - An `OCTET STRING` as hexadecimal digits in upper case, and a `BIT
   STRING` as its bits, each `0` or `1`.
+
+A decoder rejects a document with a document type declaration, so
+that there are no entities but the five of XML, an element with a name
+that is not one of XML, and a `SEQUENCE` or a `SET` without a member
+that is not `OPTIONAL` and has no default. It reads an `INTEGER` as
+decimal digits, after a sign or not, with white space around them or
+not.
 
 ### Where the runtimes differ from the standards
 

@@ -82,7 +82,7 @@ Do not treat proposal documents as implemented APIs.
   CRC-32 does not match before parsing it. Version 1 files, and those
   written by 2.0.0-rc4 (which had two bytes of flags there), must be
   recompiled from source; release candidates of a major make no
-  compatibility promise to each other. `.asnst` remains version 1.0.
+  compatibility promise to each other. `.asnst` is version 1.1, which 1.0 readers still read.
 - Signing, encryption, nonces and binding are removed, with their
   options (`--bound-to`, `bound_to`, `boundTo`, `accept_any_binding`, the
   C binding setters). The CRC-32 detects corruption, not tampering:
