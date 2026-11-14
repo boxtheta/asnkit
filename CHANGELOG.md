@@ -41,6 +41,120 @@ security fixes.
   `schema::comments_of()`, rather than `generator`.
 - `.asnst` files are of version 1.1, for `pragmas`. A reader of 1.0
   reads them, and ignores the pragmas.
+- DER: a `SEQUENCE` or a `SET` with data after its members is a
+  `DecodeError`, in every runtime. Without an extension marker nothing
+  follows the members, and with one only the additions of a later
+  version do, each all of a tag, a definite length in as few bytes as
+  possible and its contents. What followed was left out, whatever it
+  was, so that many byte strings were one value, as `30 06 80 01 FF 02
+  01 00` and `30 03 80 01 FF` of `SEQUENCE { a BOOLEAN }`. The code
+  `asnkit-gen-rust-codec` makes already refused it, but took additions
+  with a length that is not one of DER, which it now refuses too.
+- BER: the same holds, in every runtime, with the additions each all of
+  a tag, a length of any form of BER and its contents. What an explicit
+  tag is around is all of the contents of the tag, in BER and in DER.
+- `lenient` is looked at by the BER codec too. A lenient decoder of BER
+  or of DER leaves out whatever follows the members of a `SEQUENCE` or
+  a `SET`, and what an explicit tag is around, as both did before. It
+  is `lenient=True` in Python, `lenient` in the options of the other
+  runtimes and `--lenient` of `asnkitcc convert`.
+- BER and DER: a value that ends after the contents it is in is a
+  `DecodeError`, lenient or not: a member after the end of its
+  `SEQUENCE`, an element after the end of its `SEQUENCE OF`, or a part
+  of a string after the end of the string. `30 02 80 01 FF` was decoded
+  as `30 03 80 01 FF`.
+- BER and DER: a tag number that is not in as few bytes as possible is
+  a `DecodeError`, in every runtime: one below 31 in the long form, as
+  `1F 02` for `02`, or with a group of zeros before it, as `9F 80 01`
+  (X.690 8.1.2). The runtimes for Rust and for the JVM read them as the
+  tag they are the number of, so that `1F 02 01 05` was the INTEGER 5,
+  also in DER.
+- OER: a tag number that is not in as few bytes as possible (X.696
+  8.7.2), a length or an ENUMERATED in the long form of no bytes, an
+  INTEGER of no bytes, and a BIT STRING or the presence bits of the
+  additions with more than 7 unused bits, or with unused bits and no
+  byte, are a `DecodeError`. The runtime for Rust read them, the last as
+  a BIT STRING of more bytes than its bits, and the runtime for Python
+  failed with another exception on some.
+- PER and UPER: an INTEGER with no bounds of no bytes is a
+  `DecodeError`, in the runtime for Rust and in the code
+  `asnkit-gen-rust-codec` makes, which read it as 0.
+- OER, PER and UPER: a `DATE`, a `TIME-OF-DAY` or a `DATE-TIME` that is
+  not one is a `DecodeError` in the runtime for Rust, as it is in the
+  one for Python and with every other codec: a month 13 or 0, a day the
+  month has not, an hour 24, a minute or a second 60, and a year that
+  is not 1 to 9999. They were decoded as they were, and a year beyond
+  32 bits as another.
+- An OBJECT IDENTIFIER given as text with a first arc above 2, or a
+  second arc above 39 under the first arcs 0 and 1, is an `EncodeError`,
+  and a `DecodeError` of JER and XER, in every runtime. `3.7` was
+  encoded as `2.47` is and `1.50` as `2.10`, which they were decoded as.
+  The runtime for Rust also took a `+` before an arc.
+- XER: an element with a name that is not one of XML, as `<A(/>` or
+  `< />`, is a `DecodeError` in the runtime for Rust, which read it.
+- `asnkitrt` (Python): `decode()` raises a `DecodeError` for data that
+  is not what the codec writes, whatever is wrong with it, and
+  `load()`, `load_asni()` and `load_asni_file()` a `CompileError` for a
+  file that is not a compiled specification, with a CRC-32 that
+  matches. Some were a `ValueError`, a `KeyError`, an `IndexError`, a
+  `TypeError`, an `AttributeError`, a `UnicodeDecodeError`, a
+  `json.JSONDecodeError` or an `xml.etree.ElementTree.ParseError`, which
+  code that catches `asnkitrt.Error` did not catch. The cause is the
+  `__cause__` of the error. What a codec does not support is still a
+  `NotImplementedError`.
+- `asnkitrt` (Python), JER: a value that is not of the kind of JSON of
+  its type is a `DecodeError`, as in the runtime for Rust: a number
+  that is not an integer, a string or a boolean for an INTEGER, anything
+  but an array for a `SEQUENCE OF`, and so on. They were decoded as the
+  value of JSON they were, so that an INTEGER could be decoded to a
+  `str`. A REAL may be a number with no fraction, as `1`, which was an
+  error. Hexadecimal digits are only those, and a BIT STRING has as many
+  bytes as its length takes.
+- `asnkitrt` (Python), JER and XER: a `SEQUENCE` or a `SET` without a
+  member that is not `OPTIONAL` and has no `DEFAULT` is a `DecodeError`.
+  It was decoded without the member.
+- `asnkitrt` (Python), XER: an INTEGER is digits after a sign or not,
+  and not all that `int()` takes, as `1_000`. A document with a document
+  type declaration is a `DecodeError`, as in the runtime for Rust.
+- `asnkitrt` (Python), OER and PER: a BIT STRING with more than 7
+  unused bits in OER, a tag number of OER that is not in as few bytes
+  as possible, and half of a surrogate pair in a `UniversalString` of
+  PER are a `DecodeError`. The first was decoded as a BIT STRING of a
+  negative number of bits.
+
+### Fixed
+
+- BER: a `SEQUENCE` or a `SET` of indefinite length with an extension
+  marker was not decoded if it had additions that are not known, in
+  every runtime, and neither was one with no additions at all in Rust
+  and on the JVM, or with only its root members where additions are
+  known. The end-of-contents octets were read again after they were
+  found, and unknown additions were not skipped.
+- `asnkitrt` (Python), DER: a `SEQUENCE OF` or a `SET OF` with an
+  element of another tag than that of its elements, as the five bytes
+  `30 03 02 01 00` of a `SEQUENCE OF BOOLEAN`, was decoded without an
+  end, adding to a list until the memory was used up. It is a
+  `DecodeError`.
+- `asnkitrt` (Python), OER and PER: a `SEQUENCE OF` or a `SET OF` of
+  elements of no bits, as `NULL`, and a string of an alphabet of one
+  character, were decoded as long as their length said, which a few
+  bytes say is thousands of millions. A decoder now has a budget of
+  items of 8 for each byte of the data and 1024 more, as the runtime
+  for Rust has, and more is a `DecodeError`.
+- `asnkitrt` (Python), OER: encoding and decoding took time with the
+  square of the size of the data, as all of it was kept as one number:
+  seven seconds to decode 320 kB, and half a minute to encode twice
+  that. They take time with the size, under a tenth of a second for
+  that decoding.
+- `asnkitrt` (Python): the first two arcs of an OBJECT IDENTIFIER of
+  which the first subidentifier is 120 or more were decoded as other
+  arcs, with every codec but JER and XER: `2.47` as `3.7` and `2.999`
+  as `26.39`. One with no contents or cut short in a subidentifier is
+  a `DecodeError`.
+- `asnkitrt` (Python), BER and DER: a BIT STRING with more than 7
+  unused bits, or with unused bits and no byte, was decoded as one of a
+  negative number of bits, and an element whose tag number was in more
+  bytes than it needs was left out of a `SEQUENCE` as an addition.
 
 ## [2.0.0-rc7] - 2026-11-08
 

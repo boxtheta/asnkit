@@ -31,6 +31,7 @@ from . import (
     restricted_generalized_time_to_datetime,
     restricted_utc_time_from_datetime,
     restricted_utc_time_to_datetime,
+    reports_decode_errors,
 )
 from .ber import (
     decode_object_identifier,
@@ -475,6 +476,8 @@ class Decoder(object):
     def __init__(self, encoded):
         self.number_of_bits = 8 * len(encoded)
         self.total_number_of_bits = self.number_of_bits
+        # How many items may be decoded, as the runtime for Rust has it.
+        self.budget = self.number_of_bits + 1024
 
         if len(encoded) > 0:
             value = int(binascii.hexlify(encoded), 16)
@@ -482,6 +485,21 @@ class Decoder(object):
             self.value = bin(value)[10:]
         else:
             self.value = ""
+
+    def spend(self, count):
+        """Takes `count` items from the budget of the data: a list or a
+        string of items of no bits is as long as its length says, which
+        a few bytes may say is more than can be held.
+
+        """
+
+        if count > self.budget:
+            raise DecodeError(
+                "Too many items for the size of the data.",
+                offset=self.number_of_read_bits(),
+            )
+
+        self.budget -= count
 
     def align(self):
         self.align_always()
@@ -612,6 +630,14 @@ class Decoder(object):
 
     def read_unconstrained_whole_number(self):
         length = self.read_length_determinant()
+
+        # An integer is of a byte or more (X.691 13.2.6).
+        if length == 0:
+            raise DecodeError(
+                "Expected an INTEGER of a byte or more.",
+                offset=self.number_of_read_bits(),
+            )
+
         decoded = self.read_non_negative_binary_integer(8 * length)
         number_of_bits = 8 * length
 
@@ -774,6 +800,12 @@ class KnownMultiplierStringType(Sized, Type):
                 )
             )
 
+        # Half of a surrogate pair is not a character (X.680 41).
+        if 0xD800 <= code <= 0xDFFF:
+            raise DecodeError(
+                "Expected a character, but got the surrogate {:#x}.".format(code)
+            )
+
         return chr(code)
 
     def encode(self, data, encoder):
@@ -837,6 +869,8 @@ class KnownMultiplierStringType(Sized, Type):
             if self.maximum * self.bits_per_character > 16:
                 decoder.align()
 
+        decoder.spend(length)
+
         return "".join(
             self.decode_character(
                 decoder.read_non_negative_binary_integer(self.bits_per_character)
@@ -849,6 +883,8 @@ class KnownMultiplierStringType(Sized, Type):
         characters = []
 
         for length in decoder.read_length_determinant_chunks():
+            decoder.spend(length)
+
             for _ in range(length):
                 characters.append(
                     self.decode_character(
@@ -1144,6 +1180,8 @@ class ArrayType(Sized, Type):
         else:
             length = self.minimum
 
+        decoder.spend(length)
+
         return [self.element_type.decode(decoder) for _ in range(length)]
 
     def decode_unbound(self, decoder):
@@ -1151,6 +1189,8 @@ class ArrayType(Sized, Type):
         decoded = []
 
         for length in decoder.read_length_determinant_chunks():
+            decoder.spend(length)
+
             for _ in range(length):
                 decoded_element = self.element_type.decode(decoder)
                 decoded.append(decoded_element)
@@ -2131,9 +2171,11 @@ def get_open_type(decoder, decode, *args):
     offset = decoder.number_of_read_bits()
     data = decode_open_type(decoder)
     inner = decoder.__class__(bytearray(data))
+    inner.budget = decoder.budget
 
     try:
         decoded = decode(inner, *args)
+        decoder.budget = inner.budget
     except DecodeError as e:
         # Where in all of the data, or at the open type if it is in
         # fragments.
@@ -2263,6 +2305,7 @@ class CompiledType(compiler.CompiledType):
 
         return encoder.as_bytearray()
 
+    @reports_decode_errors
     def decode(self, data):
         decoder = Decoder(bytearray(data))
         try:

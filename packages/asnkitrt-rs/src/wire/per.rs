@@ -840,6 +840,8 @@ pub fn read_big_integer<'a>(r: &mut Reader<'a>, range: Option<Range>) -> Result<
                 )),
             }
         }
+        // An integer is of a byte or more (X.691 13.2.6).
+        _ if length == 0 => decode_error("Expected an INTEGER of a byte or more.", r.position),
         _ => Ok(Integer::from_octets(bytes, false)),
     }
 }
@@ -851,8 +853,9 @@ fn read_unconstrained(r: &mut Reader<'_>) -> Result<i128> {
         return Err(Error::unsupported("An INTEGER is too large."));
     }
 
+    // An integer is of a byte or more (X.691 13.2.6).
     if length == 0 {
-        return Ok(0);
+        return decode_error("Expected an INTEGER of a byte or more.", r.position);
     }
 
     let value = r.uint(8 * length)?;

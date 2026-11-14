@@ -14,6 +14,7 @@ from datetime import datetime
 from .utils import BaseTest
 
 from tests import compiled as fixtures
+import asnkitrt
 from asnkitrt.codecs import utc_time_to_datetime as ut2dt
 from datetime import timezone
 from datetime import timedelta
@@ -1249,12 +1250,17 @@ class BerTest(BaseTest):
             (b"\x30\x0d", 15),
             (b"\x30\x84\x00\x00\x00\xb8", 190),
             (b"\x9f\x1f\x00", 3),
-            (b"\x9f\x80\x80\x01\x02\xff", 7),
+            (b"\x9f\x81\x80\x01\x02\xff", 7),
         ]
 
         for encoded, decoded_length in datas:
             length = foo.decode_length(encoded)
             self.assertEqual(length, decoded_length)
+
+        # A tag number in more bytes than it needs is not a tag.
+        for encoded in [b"\x9f\x80\x80\x01\x02\xff", b"\x1f\x02\x01\x00"]:
+            with self.assertRaises(asnkitrt.DecodeError):
+                foo.decode_length(encoded)
 
         # The length cannot be decoded.
         datas = [b"\x30", b"", b"\x30\x84\x00\x00\x00"]

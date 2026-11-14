@@ -352,7 +352,8 @@ pub struct Types {
     pub modules: Vec<(String, Vec<(String, TypeId)>)>,
     pub numeric_enums: bool,
     pub codec: Codec,
-    /// DER that decodes what BER allows.
+    /// DER that decodes what BER allows, and BER and DER that leave out
+    /// what is after the members that are known.
     pub lenient: bool,
     /// The types of each module by name, and those with a name that is
     /// found in one module only.

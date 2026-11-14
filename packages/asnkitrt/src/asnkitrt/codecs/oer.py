@@ -32,6 +32,7 @@ from . import (
     generalized_time_to_datetime,
     utc_time_from_datetime,
     utc_time_to_datetime,
+    reports_decode_errors,
 )
 from .ber import (
     Class,
@@ -65,10 +66,25 @@ def encode_tag(number, flags):
 class Encoder(object):
     def __init__(self):
         self.number_of_bits = 0
-        self.value = 0
+        # The bytes the bits fill, of which the bits of the last that are
+        # not written yet are 0. What is appended goes to its end, which
+        # takes as long after many bytes as after none.
+        self.data = bytearray()
+
+    @property
+    def value(self):
+        """The bits as one number."""
+
+        return int.from_bytes(self.data, "big") >> (
+            8 * len(self.data) - self.number_of_bits
+        )
 
     def __iadd__(self, other):
-        self.append_non_negative_binary_integer(other.value, other.number_of_bits)
+        if self.number_of_bits & 7 == 0 and other.number_of_bits & 7 == 0:
+            self.data += other.data
+            self.number_of_bits += other.number_of_bits
+        else:
+            self.append_non_negative_binary_integer(other.value, other.number_of_bits)
 
         return self
 
@@ -76,24 +92,27 @@ class Encoder(object):
         return (self.number_of_bits + 7) // 8
 
     def set_bit(self, offset):
-        self.value |= 1 << (self.number_of_bits - offset - 1)
+        self.data[offset >> 3] |= 0x80 >> (offset & 7)
 
     def align(self):
-        width = 8 * self.number_of_bytes() - self.number_of_bits
-        self.number_of_bits += width
-        self.value <<= width
+        self.number_of_bits = 8 * self.number_of_bytes()
 
     def append_bit(self, bit):
         """Append given bit."""
 
-        self.number_of_bits += 1
-        self.value <<= 1
-        self.value |= bit
+        self.append_non_negative_binary_integer(bit, 1)
 
     def append_bits(self, data, number_of_bits):
         """Append given bits."""
 
         if number_of_bits == 0:
+            return
+
+        # All but always whole bytes after whole bytes.
+        if self.number_of_bits & 7 == 0 and number_of_bits == 8 * len(data):
+            self.data += data
+            self.number_of_bits += number_of_bits
+
             return
 
         value = int(binascii.hexlify(data), 16)
@@ -112,13 +131,7 @@ class Encoder(object):
     def as_bytearray(self):
         """Return the bits as a bytearray."""
 
-        if self.number_of_bits == 0:
-            return bytearray()
-
-        data = self.value
-        data |= 0x80 << self.number_of_bits
-
-        return bytearray(binascii.unhexlify(hex(data)[4:].rstrip("L")))
+        return bytearray(self.data)
 
     def append_length_determinant(self, value):
         if value < 128:
@@ -141,9 +154,25 @@ class Encoder(object):
     def append_non_negative_binary_integer(self, value, number_of_bits):
         """Append given integer value."""
 
-        self.number_of_bits += number_of_bits
-        self.value <<= number_of_bits
-        self.value |= value
+        if value < 0 or value >> number_of_bits:
+            raise EncodeError(
+                "The value {} does not fit in {} bits.".format(value, number_of_bits)
+            )
+
+        if number_of_bits == 0:
+            return
+
+        # With the bits of the last byte that are written, if it is not
+        # all written.
+        used = self.number_of_bits & 7
+
+        if used:
+            value |= (self.data.pop() >> (8 - used)) << number_of_bits
+
+        number_of_bits += used
+        padding = -number_of_bits & 7
+        self.data += (value << padding).to_bytes((number_of_bits + padding) >> 3, "big")
+        self.number_of_bits += number_of_bits - used
 
     def append_integer(self, value):
         number_of_bits = value.bit_length()
@@ -180,11 +209,28 @@ class Decoder(object):
     def __init__(self, encoded):
         self.number_of_bits = 8 * len(encoded)
         self.total_number_of_bits = self.number_of_bits
+        # How many items may be decoded, as the runtime for Rust has it.
+        self.budget = self.number_of_bits + 1024
 
-        if len(encoded) > 0:
-            self.value = int(binascii.hexlify(encoded), 16)
-        else:
-            self.value = 0
+        # A copy, of which clear_bit() clears a bit. What is read is found
+        # in it by where it is, which takes as long for the last byte as
+        # for the first.
+        self.data = bytearray(encoded)
+
+    def spend(self, count):
+        """Takes `count` items from the budget of the data: a list or a
+        string of items of no bits is as long as its length says, which
+        a few bytes may say is more than can be held.
+
+        """
+
+        if count > self.budget:
+            raise DecodeError(
+                "Too many items for the size of the data.",
+                offset=self.number_of_read_bits(),
+            )
+
+        self.budget -= count
 
     def align(self):
         width = self.number_of_bits & 0x7
@@ -200,34 +246,45 @@ class Decoder(object):
         self.number_of_bits -= number_of_bits
 
     def peek_bit(self):
-        return (self.value >> (self.number_of_bits - 1)) & 1
+        if self.number_of_bits == 0:
+            raise OutOfDataError(self.number_of_read_bits())
+
+        position = self.number_of_read_bits()
+
+        return (self.data[position >> 3] >> (7 - (position & 7))) & 1
 
     def clear_bit(self):
-        self.value &= (1 << (self.number_of_bits - 1)) - 1
+        """Makes the next bit, which there is, 0."""
+
+        position = self.number_of_read_bits()
+        self.data[position >> 3] &= 0xFF ^ (0x80 >> (position & 7))
 
     def read_bit(self):
         """Read a bit."""
 
-        if self.number_of_bits == 0:
-            raise OutOfDataError(self.number_of_read_bits())
-
+        bit = self.peek_bit()
         self.number_of_bits -= 1
 
-        return (self.value >> self.number_of_bits) & 1
+        return bit
 
     def read_bits(self, number_of_bits):
-        """Read given number of bits."""
+        """Read given number of bits, as the bytes they fill."""
 
-        if number_of_bits > self.number_of_bits:
-            raise OutOfDataError(self.number_of_read_bits())
+        position = self.number_of_read_bits()
 
-        self.number_of_bits -= number_of_bits
-        mask = (1 << number_of_bits) - 1
-        value = (self.value >> self.number_of_bits) & mask
-        value &= mask
-        value |= 0x80 << number_of_bits
+        # All but always whole bytes at one.
+        if position & 7 == 0 and number_of_bits & 7 == 0 and number_of_bits >= 0:
+            if number_of_bits > self.number_of_bits:
+                raise OutOfDataError(position)
 
-        return binascii.unhexlify(hex(value)[4:].rstrip("L"))
+            self.number_of_bits -= number_of_bits
+            position >>= 3
+
+            return bytes(self.data[position : position + (number_of_bits >> 3)])
+
+        value = self.read_non_negative_binary_integer(number_of_bits)
+
+        return value.to_bytes((number_of_bits + 7) >> 3, "big")
 
     def read_byte(self):
         return self.read_non_negative_binary_integer(8)
@@ -238,25 +295,50 @@ class Decoder(object):
     def read_non_negative_binary_integer(self, number_of_bits):
         """Read an integer value of given number of bits."""
 
+        position = self.number_of_read_bits()
+
         if number_of_bits > self.number_of_bits:
-            raise OutOfDataError(self.number_of_read_bits())
+            raise OutOfDataError(position)
+
+        if number_of_bits < 0:
+            raise DecodeError("Expected a number of bits.", offset=position)
 
         self.number_of_bits -= number_of_bits
-        mask = (1 << number_of_bits) - 1
 
-        return (self.value >> self.number_of_bits) & mask
+        # The bytes the bits are in, and the bits of them.
+        end = position + number_of_bits
+        last = (end + 7) >> 3
+        value = int.from_bytes(self.data[position >> 3 : last], "big")
+
+        return (value >> (8 * last - end)) & ((1 << number_of_bits) - 1)
 
     def read_length_determinant(self):
         value = self.read_byte()
 
         if value & 0x80:
             length = value & 0x7F
+
+            # The long form has the length in a byte or more (X.696 8.6.5).
+            if length == 0:
+                raise DecodeError(
+                    "Expected a length of a byte or more.",
+                    offset=self.number_of_read_bits(),
+                )
+
             value = self.read_non_negative_binary_integer(8 * length)
 
         return value
 
     def read_integer(self):
         number_of_bytes = self.read_length_determinant()
+
+        # An integer is of a byte or more (X.696 10.4).
+        if number_of_bytes == 0:
+            raise DecodeError(
+                "Expected an INTEGER of a byte or more.",
+                offset=self.number_of_read_bits(),
+            )
+
         number_of_bits = 8 * number_of_bytes
         value = self.read_non_negative_binary_integer(number_of_bits)
 
@@ -277,12 +359,28 @@ class Decoder(object):
         tag = bytearray([byte])
 
         if byte & 0x3F == 0x3F:
+            number = 0
+
             while True:
                 byte = self.read_byte()
                 tag.append(byte)
+                number = (number << 7) | (byte & 0x7F)
 
                 if byte & 0x80 == 0:
                     break
+
+            # A number has one form: no group of zeros before it, and one
+            # below 63 is in the first byte (X.696 8.7.2).
+            if tag[1] == 0x80 or number < 63:
+                raise DecodeError(
+                    "Expected the tag number in as few bytes as possible.",
+                    offset=self.number_of_read_bits(),
+                )
+
+            if number >> 64:
+                raise DecodeError(
+                    "A tag number is too large.", offset=self.number_of_read_bits()
+                )
 
         return bytes(tag)
 
@@ -518,7 +616,16 @@ class MembersType(Type):
         # Presence bit field.
         length = decoder.read_length_determinant()
         unused_bits = decoder.read_byte()
+
+        # They are of the last byte, if there is one (X.696 13.3.1).
+        if length < 1 or unused_bits > 7 or (length == 1 and unused_bits):
+            raise DecodeError(
+                "Expected at most 7 unused bits of the presence bits of the additions.",
+                offset=decoder.number_of_read_bits(),
+            )
+
         num_additions = ((length - 1) * 8) - unused_bits
+        decoder.spend(num_additions)
         presence_bits = decoder.read_non_negative_binary_integer(num_additions)
         decoder.align()
 
@@ -567,6 +674,7 @@ class ArrayType(Type):
     def decode(self, decoder):
         length = decoder.read_unsigned_integer()
         decoded = []
+        decoder.spend(length)
 
         for _ in range(length):
             decoded_element = self.element_type.decode(decoder)
@@ -813,6 +921,14 @@ class BitString(Type):
             number_of_bytes = decoder.read_length_determinant()
             number_of_unused_bits = decoder.read_byte()
             number_of_bytes -= 1
+
+            # They are of the last byte, if there is one (X.696 13.3.1).
+            if (
+                number_of_bytes < 0
+                or number_of_unused_bits > 7
+                or (number_of_bytes == 0 and number_of_unused_bits)
+            ):
+                raise DecodeError("Expected at most 7 unused bits of a BIT STRING.")
             number_of_bits = 8 * number_of_bytes - number_of_unused_bits
         else:
             number_of_bytes = (self.number_of_bits + 7) // 8
@@ -1392,7 +1508,9 @@ class AnyDefinedBy(Type):
         offset = decoder.number_of_read_bits()
         data = decode_open_type(decoder)
         inner = Decoder(bytearray(data))
+        inner.budget = decoder.budget
         decoded = choice.decode(inner)
+        decoder.budget = inner.budget
 
         # It fills the length it is in.
         if inner.number_of_read_bits() != 8 * len(data):
@@ -1475,6 +1593,7 @@ class CompiledType(compiler.CompiledType):
 
         return encoder.as_bytearray()
 
+    @reports_decode_errors
     def decode(self, data):
         decoder = Decoder(bytearray(data))
         try:

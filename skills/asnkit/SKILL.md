@@ -74,6 +74,8 @@ Do not treat proposal documents as implemented APIs.
   `generate` for explicit mappings; fallback types and runtime load-time overrides remain unsupported.
 - DER decoding is strict by default. Use lenient mode only when accepting
   BER-compatible input is an intentional requirement.
+- BER and DER reject data after the known members of a `SEQUENCE`/`SET`
+  unless it is additions after an extension marker; lenient mode skips it.
 - `.asni` is version 2.0: a 10-byte header (`ASNI`, major/minor version,
   then the big-endian CRC-32 of the rest of the file, as `zlib.crc32`),
   followed by metadata and nodes. Every runtime rejects a file whose

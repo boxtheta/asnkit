@@ -8,6 +8,7 @@
 
 import sys
 import unittest
+import asnkitrt
 from datetime import datetime
 from datetime import timezone
 from .utils import BaseTest
@@ -349,9 +350,14 @@ class DerTest(BaseTest):
 
         all_types.encode("Sequence12", {"a": [{"a": []}]})
 
-        # ToDo: Should return {'a': [{'a': []}]}
+        # What is not a member is not left out: DER has one encoding.
+        with self.assertRaises(asnkitrt.DecodeError) as cm:
+            all_types.decode("Sequence12", b"\x30\x04\xa0\x02\x30\x00")
+
         self.assertEqual(
-            all_types.decode("Sequence12", b"\x30\x04\xa0\x02\x30\x00"), {}
+            str(cm.exception),
+            "Sequence12: Expected the end of Sequence12, but got more data. "
+            "(At offset: 2)",
         )
 
     def test_repr_all_types(self):

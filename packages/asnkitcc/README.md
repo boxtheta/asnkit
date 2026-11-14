@@ -33,7 +33,8 @@ $ echo 300e0201011609497320312b313d333f \
 
 A type that is in more than one module is given as `Module.Type`.
 `--input-hex` and `--output-hex` read and write the binary codecs as
-hexadecimal digits, and `--lenient` has DER decode what BER allows.
+hexadecimal digits, and `--lenient` has DER decode what BER allows,
+and BER and DER leave out what follows the members of a `SEQUENCE`.
 An `ANY` is
 copied as the bytes it was decoded from, so it can only be converted
 between BER and DER.

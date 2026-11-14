@@ -108,6 +108,23 @@ fn reference(name: &str) -> Result<char> {
     }
 }
 
+/// If `name` is a name of XML (XML 1.0 2.3), of which the characters
+/// that are not ASCII are not looked at.
+fn is_name(name: &str) -> bool {
+    let starts =
+        |byte: u8| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':') || byte >= 0x80;
+
+    match name.as_bytes().split_first() {
+        Some((first, rest)) => {
+            starts(*first)
+                && rest.iter().all(|byte| {
+                    starts(*byte) || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+                })
+        }
+        None => false,
+    }
+}
+
 /// Reads the document in `text`.
 ///
 /// The reader of `quick-xml` takes one event at a time and builds
@@ -159,6 +176,11 @@ pub(crate) fn parse(text: &str) -> Result<Element> {
         match event {
             Event::Start(ref start) | Event::Empty(ref start) => {
                 if root.is_some() || stack.len() >= MAX_DEPTH {
+                    return bad();
+                }
+
+                // The reader takes anything up to a space as a name.
+                if !is_name(start.name().as_ref()) {
                     return bad();
                 }
 
@@ -324,6 +346,20 @@ mod tests {
         assert_eq!(root.children.len(), 2);
         assert_eq!(root.child("b").unwrap().text, None);
         assert_eq!(root.child("c").unwrap().text.as_deref(), Some("\nz"));
+
+        // A name is one of XML.
+        for text in [
+            "<a(/>",
+            "< />",
+            "<a!/>",
+            "<1a/>",
+            "<a><b$></b$></a>",
+            "<-a/>",
+        ] {
+            assert!(parse(text).is_err(), "{text}");
+        }
+
+        assert!(parse("<a-b.c_1/>").is_ok());
 
         // Names are the local ones.
         let root = parse("<n:a xmlns:n='urn:x'><n:b/></n:a>").unwrap();

@@ -41,6 +41,29 @@ fn checked_date(year: i32, month: u8, day: u8) -> Result<Date> {
     Ok(Date { year, month, day })
 }
 
+/// The date of numbers that a decoder read, if they are those of one.
+pub(crate) fn date_of(year: i128, month: i128, day: i128) -> Option<Date> {
+    checked_date(
+        i32::try_from(year).ok()?,
+        u8::try_from(month).ok()?,
+        u8::try_from(day).ok()?,
+    )
+    .ok()
+}
+
+/// The local time of numbers that a decoder read, if they are those of
+/// one.
+pub(crate) fn time_of(hour: i128, minute: i128, second: i128) -> Option<Time> {
+    checked_time(
+        u8::try_from(hour).ok()?,
+        u8::try_from(minute).ok()?,
+        u8::try_from(second).ok()?,
+        0,
+        None,
+    )
+    .ok()
+}
+
 fn checked_time(
     hour: u8,
     minute: u8,

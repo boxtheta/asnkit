@@ -9,14 +9,15 @@ parser.
 
 """
 
+import contextlib
 import importlib
 import typing
-from typing import Any, Callable, Dict, Literal, Set, Tuple
+from typing import Any, Callable, Dict, Iterator, Literal, Set, Tuple
 
 from . import syntax
 from .syntax.convert import _compiled_to_dict
 from .codecs.codec import Codec
-from .errors import CompileError, DecodeError, EncodeError
+from .errors import CompileError, DecodeError, EncodeError, Error
 
 CodecType = Literal["ber", "der", "gser", "jer", "oer", "per", "uper", "xer"]
 
@@ -301,9 +302,20 @@ def load(
     bits, a SET OF in ascending order of its elements, members in the
     order they are declared in, nothing encoded that is a DEFAULT, a
     REAL in its canonical form, and a UTCTime and a GeneralizedTime in
-    UTC with seconds and no trailing zeros. What the codec encodes is
-    DER whatever `lenient` is, and no other codec looks at it. What is
-    left after the data, as in `decode`, is never accepted.
+    UTC with seconds and no trailing zeros, and nothing after the
+    members of a SEQUENCE or a SET but, after an extension marker, the
+    additions of a later version. What the codec encodes is
+    DER whatever `lenient` is.
+
+    The `'ber'` codec looks at `lenient` too. It takes nothing after
+    the members of a SEQUENCE or a SET either, but for the additions
+    after an extension marker, each all of a tag, a length and its
+    contents, and nothing after what an explicit tag is around. Told
+    to be lenient, both codecs leave out whatever is there. No other
+    codec looks at it.
+
+    What ends after the contents it is in is never accepted, and
+    neither is what is left after the data, as in `decode`.
 
     An `.asni` file whose CRC-32 does not match is corrupt, and is not
     loaded.
@@ -315,15 +327,39 @@ def load(
 
     """
 
-    if isinstance(compiled, (bytes, bytearray)):
-        compiled = syntax.from_asni(compiled)
+    with _malformed_is_an_error():
+        if isinstance(compiled, (bytes, bytearray)):
+            compiled = syntax.from_asni(compiled)
 
-    if not isinstance(compiled, syntax.CompiledSpecification):
-        raise CompileError("Expected a compiled specification.")
+        if not isinstance(compiled, syntax.CompiledSpecification):
+            raise CompileError("Expected a compiled specification.")
 
-    _refuse_empty_constraints(compiled)
+        _refuse_empty_constraints(compiled)
 
-    return _load_dict(_compiled_to_dict(compiled), codec, numeric_enums, lenient)
+        return _load_dict(_compiled_to_dict(compiled), codec, numeric_enums, lenient)
+
+
+@contextlib.contextmanager
+def _malformed_is_an_error() -> Iterator[None]:
+    """Makes whatever goes wrong when a compiled specification is loaded
+    a `CompileError`: a file may be anything, with a CRC-32 that
+    matches, and whoever loads it catches the errors of this package.
+    A file that can not be read is still an `OSError`.
+
+    """
+
+    try:
+        yield
+    except (Error, OSError, NotImplementedError):
+        raise
+    except RecursionError:
+        raise CompileError("The compiled specification is nested too deeply.") from None
+    except Exception as error:
+        raise CompileError(
+            "The compiled specification is malformed: {}: {}".format(
+                type(error).__name__, error
+            )
+        ) from error
 
 
 def _empty_constraint(type_: syntax.Type, path: str) -> str | None:
@@ -400,8 +436,11 @@ def load_asni(
 
     """
 
+    with _malformed_is_an_error():
+        compiled = syntax.from_asni(data)
+
     return load(
-        syntax.from_asni(data),
+        compiled,
         codec,
         numeric_enums,
         lenient=lenient,
@@ -424,8 +463,11 @@ def load_asni_file(
 
     """
 
+    with _malformed_is_an_error():
+        compiled = syntax.from_asni_file(filename)
+
     return load(
-        syntax.from_asni_file(filename),
+        compiled,
         codec,
         numeric_enums,
         lenient=lenient,

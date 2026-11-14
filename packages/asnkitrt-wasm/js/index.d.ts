@@ -63,7 +63,10 @@ export type Value =
 export interface LoadOptions {
   /** ENUMERATED values are numbers and not names. */
   numericEnums?: boolean;
-  /** DER decodes what BER allows. */
+  /**
+   * DER decodes what BER allows, and BER and DER leave out what is after
+   * the members of a SEQUENCE or a SET, and after what is tagged.
+   */
   lenient?: boolean;
 }
 

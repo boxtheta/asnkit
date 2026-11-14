@@ -117,7 +117,8 @@ void asnkit_load_options_free(asnkit_load_options *options);
 
 /* ENUMERATED values are integers, and not names. */
 asnkit_status asnkit_load_options_set_numeric_enums(asnkit_load_options *options, int numeric_enums);
-/* DER decodes what BER allows. */
+/* DER decodes what BER allows, and BER and DER leave out what is after the
+ * members of a SEQUENCE or a SET, and after what is tagged. */
 asnkit_status asnkit_load_options_set_lenient(asnkit_load_options *options, int lenient);
 
 /* Loads the `length` bytes of an .asni file for `codec`: "ber", "der",

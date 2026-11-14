@@ -79,6 +79,11 @@ fn get_length(r: &mut Reader<'_>) -> Result<usize> {
 
     let count = value & 0x7f;
 
+    // The long form has the length in a byte or more (X.696 8.6.5).
+    if count == 0 {
+        return decode_error("Expected a length of a byte or more.", r.position);
+    }
+
     if count > core::mem::size_of::<usize>() {
         return decode_error("A length is too large.", r.position);
     }
@@ -95,6 +100,12 @@ fn put_integer(w: &mut Writer, bytes: &[u8]) -> Result<()> {
 
 fn get_integer<'a>(r: &mut Reader<'_>) -> Result<Value<'a>> {
     let length = get_length(r)?;
+
+    // An integer is of a byte or more (X.696 10.4).
+    if length == 0 {
+        return decode_error("Expected an INTEGER of a byte or more.", r.position);
+    }
+
     let bytes = r.octets(length)?;
 
     Ok(Value::from_twos_complement(&bytes))
@@ -219,10 +230,23 @@ fn get_tag(r: &mut Reader<'_>) -> Result<(TagClass, u64)> {
     let mut number = u64::from(first & 0x3f);
 
     if number == 0x3f {
+        let mut first = true;
+
         number = 0;
 
         loop {
             let byte = r.uint(8)? as u8;
+
+            // A number has one form: no group of zeros before it
+            // (X.696 8.7.2.3).
+            if first && byte == 0x80 {
+                return decode_error(
+                    "Expected the tag number in as few bytes as possible.",
+                    r.position,
+                );
+            }
+
+            first = false;
 
             if number >> 57 != 0 {
                 return decode_error("A tag number is too large.", r.position);
@@ -233,6 +257,14 @@ fn get_tag(r: &mut Reader<'_>) -> Result<(TagClass, u64)> {
             if byte & 0x80 == 0 {
                 break;
             }
+        }
+
+        // And a number below 63 is in the first byte (X.696 8.7.2.2).
+        if number < 63 {
+            return decode_error(
+                "Expected the tag number in as few bytes as possible.",
+                r.position,
+            );
         }
     }
 
@@ -971,13 +1003,14 @@ impl<'a> Coder<'a> {
                     return decode_error("Expected at least one byte of a BIT STRING.", r.position);
                 }
 
-                let bytes = r.octets(length - 1)?;
-                let bits = (8 * (length - 1)).checked_sub(unused);
-
-                match bits {
-                    Some(bits) => Ok(Value::Bits(bytes, bits)),
-                    None => decode_error("Too many unused bits.", r.position),
+                // They are of the last byte, if there is one (X.696 13.3.1).
+                if unused > 7 || (length == 1 && unused != 0) {
+                    return decode_error("Too many unused bits.", r.position);
                 }
+
+                let bytes = r.octets(length - 1)?;
+
+                Ok(Value::Bits(bytes, 8 * (length - 1) - unused))
             }
             Kind::OctetString => {
                 let length = match fixed_size(size) {
@@ -997,6 +1030,13 @@ impl<'a> Coder<'a> {
                 let first = r.uint(8)? as i128;
                 let number = if first & 0x80 != 0 {
                     let length = (first & 0x7f) as usize;
+
+                    // The long form has the value in a byte or more
+                    // (X.696 11.4).
+                    if length == 0 {
+                        return decode_error("Expected an enumeration value.", r.position);
+                    }
+
                     let bytes = r.octets(length)?;
 
                     match Value::from_twos_complement(&bytes) {
@@ -1199,23 +1239,22 @@ impl<'a> Coder<'a> {
 
     fn decode_date(&self, r: &mut Reader<'a>) -> Result<Date> {
         let year = match get_integer(r)? {
-            Value::Integer(year) => year as i32,
+            Value::Integer(year) => year,
             _ => return decode_error("The year is too large.", r.position),
         };
-        let month = r.uint(8)? as u8;
-        let day = r.uint(8)? as u8;
+        let month = r.uint(8)? as i128;
+        let day = r.uint(8)? as i128;
 
-        Ok(Date { year, month, day })
+        time::date_of(year, month, day).ok_or_else(|| Error::decode("Expected a date.", r.position))
     }
 
     fn decode_time_of_day(&self, r: &mut Reader<'a>) -> Result<Time> {
-        Ok(Time {
-            hour: r.uint(8)? as u8,
-            minute: r.uint(8)? as u8,
-            second: r.uint(8)? as u8,
-            microsecond: 0,
-            offset: None,
-        })
+        let hour = r.uint(8)? as i128;
+        let minute = r.uint(8)? as i128;
+        let second = r.uint(8)? as i128;
+
+        time::time_of(hour, minute, second)
+            .ok_or_else(|| Error::decode("Expected a time of day.", r.position))
     }
 
     fn decode_duration(&self, r: &mut Reader<'a>) -> Result<String> {
@@ -1386,6 +1425,11 @@ impl<'a> Coder<'a> {
 
         if length == 0 {
             return decode_error("Expected the presence bits of the additions.", r.position);
+        }
+
+        // They are of the last byte, if there is one (X.696 13.3.1).
+        if unused > 7 || (length == 1 && unused != 0) {
+            return decode_error("Bad unused bits.", r.position);
         }
 
         let count = (8 * (length - 1))

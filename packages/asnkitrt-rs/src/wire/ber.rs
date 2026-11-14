@@ -9,7 +9,7 @@
 use core::cmp::Ordering;
 
 use super::views::{BitString, Integer, Octets, Oid, Text, Width};
-use crate::ber::{read_length, read_tag, tag_bytes};
+use crate::ber::{read_length, read_tag, skip_tag, tag_bytes};
 use crate::node::TagClass;
 use crate::types::StrKind;
 use crate::value::DateTime;
@@ -370,6 +370,18 @@ pub(crate) fn next_part(data: &[u8], mut at: usize) -> Option<(&[u8], usize)> {
     }
 }
 
+/// Where the TLV at `at` ends, whatever its tag, at `depth` of what it
+/// is in.
+pub(crate) fn skip_any(data: &[u8], at: usize, depth: usize) -> Result<usize> {
+    let mut reader = Reader::new(data, false);
+
+    reader.position = at;
+    reader.depth = depth;
+    reader.any()?;
+
+    Ok(reader.position)
+}
+
 /// The contents of a constructed value: up to `end`, or the
 /// end-of-contents octets if its length is indefinite.
 #[derive(Debug, Clone, Copy)]
@@ -557,7 +569,15 @@ impl<'a> Reader<'a> {
     /// of a SEQUENCE, and ends it.
     pub fn skip_rest(&mut self, region: Region) -> Result<()> {
         while self.more(&region)? {
-            self.any()?;
+            if self.der {
+                // Each is one of DER, as far as its length tells.
+                let after = skip_tag(self.data, self.position)?;
+                let (length, start) = read_length(self.data, after, true, true)?;
+
+                self.position = start + length.unwrap_or(0);
+            } else {
+                self.any()?;
+            }
         }
 
         self.close(region)
@@ -729,6 +749,14 @@ impl<'a> Reader<'a> {
             }
 
             self.position = start + length;
+        }
+
+        // No part is after the end.
+        if end.is_some_and(|end| self.position > end) {
+            return decode_error(
+                "Expected more contents bytes than there are.",
+                self.position,
+            );
         }
 
         Ok(())

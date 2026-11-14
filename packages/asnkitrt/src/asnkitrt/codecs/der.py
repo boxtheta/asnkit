@@ -77,6 +77,7 @@ def make_lenient(compiled):
 class MembersMixin(Lenient):
     name: str
     members_in_any_order = False
+    rest_is_der = True
 
     def check_member(self, member, value, offset):
         # A member with its default is left out in DER.
@@ -362,7 +363,12 @@ class ArrayType(StandardEncodeMixin, Type):
 
         while (offset - start_offset) < length:
             decoded_element, offset = self.element_type.decode(data, offset)
+            # A tag that is not the element's leaves the offset where it
+            # was, which would be decoded again without an end.
+            ber.check_decode_error(self.element_type, decoded_element, data, offset)
             decoded.append(decoded_element)
+
+        ber.check_within(offset, start_offset + length)
 
         return decoded, offset
 
@@ -464,6 +470,14 @@ class BitString(ConstructedMixin, Type):
         number_of_bits = 8 * (length - 1) - number_of_unused_bits
         offset += 1
 
+        # They are of the last byte, which there is then (X.690 8.6.2.3).
+        if number_of_bits < 0:
+            raise self.decode_error(
+                "Expected at most 7 unused bits of a BIT STRING, but got {} "
+                "of no bytes.".format(number_of_unused_bits),
+                offset - 1,
+            )
+
         if not self.lenient:
             if number_of_bits < 0 or (
                 number_of_unused_bits
@@ -534,6 +548,9 @@ class SetOf(ArrayType):
         while (offset - start_offset) < length:
             element_offset = offset
             decoded_element, offset = self.element_type.decode(data, offset)
+            # A tag that is not the element's leaves the offset where it
+            # was, which would be decoded again without an end.
+            ber.check_decode_error(self.element_type, decoded_element, data, offset)
             decoded.append(decoded_element)
 
             if not self.lenient:
@@ -550,6 +567,8 @@ class SetOf(ArrayType):
                         )
 
                 previous = encoded
+
+        ber.check_within(offset, start_offset + length)
 
         return decoded, offset
 
@@ -676,10 +695,6 @@ class GeneralizedTime(StandardEncodeMixin, Type):
 
 class Compiler(ber.Compiler):
     explicit_tag_class = ExplicitTag
-
-    def __init__(self, specification, numeric_enums=False, lenient=False):
-        super().__init__(specification, numeric_enums)
-        self._lenient = lenient
 
     def compile_type(self, name, type_descriptor, module_name):
         compiled = super().compile_type(name, type_descriptor, module_name)

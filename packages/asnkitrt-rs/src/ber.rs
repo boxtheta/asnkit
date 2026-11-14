@@ -199,6 +199,15 @@ pub(crate) fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u6
                 .get(at)
                 .ok_or_else(|| Error::decode("Ran out of data when reading tag", at))?;
 
+            // A number has one form: no group of zeros before it
+            // (X.690 8.1.2.4.2).
+            if at == offset + 1 && byte == 0x80 {
+                return decode_error(
+                    "Expected the tag number in as few bytes as possible.",
+                    offset,
+                );
+            }
+
             at += 1;
 
             if number >> 57 != 0 {
@@ -211,6 +220,14 @@ pub(crate) fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u6
                 break;
             }
         }
+
+        // And a number below 31 is in the first byte (X.690 8.1.2.2).
+        if number < 31 {
+            return decode_error(
+                "Expected the tag number in as few bytes as possible.",
+                offset,
+            );
+        }
     }
 
     Ok((class, constructed, number, at))
@@ -218,7 +235,7 @@ pub(crate) fn read_tag(data: &[u8], offset: usize) -> Result<(TagClass, bool, u6
 
 /// The offset after the tag at `offset`. As BER does, it needs a byte
 /// after the tag.
-fn skip_tag(data: &[u8], offset: usize) -> Result<usize> {
+pub(crate) fn skip_tag(data: &[u8], offset: usize) -> Result<usize> {
     let (_, _, _, at) = read_tag(data, offset)?;
 
     if at >= data.len() {
@@ -1305,6 +1322,8 @@ impl<'a> Coder<'a> {
                 kind
             {
                 let end = length.map(|length| start + length);
+                // Nothing in it is after its end.
+                let data = end.map_or(data, |end| &data[..end]);
 
                 self.decode_members(
                     members,
@@ -1317,6 +1336,7 @@ impl<'a> Coder<'a> {
                 .map(Some)
             } else if let Kind::SequenceOf(element) | Kind::SetOf(element) = kind {
                 let end = length.map(|length| start + length);
+                let data = end.map_or(data, |end| &data[..end]);
 
                 self.decode_array(
                     *element,
@@ -1339,18 +1359,30 @@ impl<'a> Coder<'a> {
 
         // An explicit tag around the rest.
         let (length, start) = read_length(data, after_tag, self.strict, self.strict)?;
+        let contents = length.map_or(data, |length| &data[..start + length]);
         let Some((value, mut end)) =
-            self.decode_tags(rest, concrete, data, start, siblings, false, depth)?
+            self.decode_tags(rest, concrete, contents, start, siblings, false, depth)?
         else {
             return decode_error("Expected another tag.", start);
         };
 
-        if length.is_none() {
-            if data.get(end..end + 2) != Some(&[0, 0]) {
-                return decode_error("Expected end-of-contents tag.", end);
-            }
+        match length {
+            None => {
+                if data.get(end..end + 2) != Some(&[0, 0]) {
+                    return decode_error("Expected end-of-contents tag.", end);
+                }
 
-            end += 2;
+                end += 2;
+            }
+            // What is tagged is all of the contents, but for a lenient
+            // reader.
+            Some(length) => {
+                if end != start + length && !self.types.lenient {
+                    return decode_error("Expected the end of the contents.", end);
+                }
+
+                end = start + length;
+            }
         }
 
         Ok(Some((value, end)))
@@ -1607,6 +1639,8 @@ impl<'a> Coder<'a> {
             other => other,
         };
         let end = length.map(|length| start + length);
+        // No part is after its end.
+        let data = end.map_or(data, |end| &data[..end]);
         let mut at = start;
         let mut segments = Vec::new();
 
@@ -1833,6 +1867,9 @@ impl<'a> Coder<'a> {
             // The additions, even when out of data, so that defaults are
             // added.
             if members.additions.is_some() {
+                // The end is not read again where it was found.
+                let end = if out_of_data { Some(at) } else { end };
+
                 (at, out_of_data) = self.decode_member_list(
                     additions().iter().copied(),
                     0,
@@ -1852,14 +1889,71 @@ impl<'a> Coder<'a> {
             return Ok((Value::Map(values), at));
         }
 
-        match end {
-            None => decode_error(
-                "Could not find end-of-contents tag for indefinite length field.",
-                at,
-            ),
-            // Extra data is allowed in cases of versioned additions.
-            Some(end) => Ok((Value::Map(values), end)),
+        let end = self.check_rest(members, data, at, end, depth)?;
+
+        Ok((Value::Map(values), end))
+    }
+
+    /// Checks what is after the members that are known, from `at` to
+    /// `end` or the end-of-contents octets, and returns where the
+    /// contents end. That is nothing, or after an extension marker the
+    /// additions of a later version, each all of a TLV, which is one of
+    /// DER in DER. A lenient reader takes anything up to `end`.
+    fn check_rest(
+        &self,
+        members: &Members,
+        data: &[u8],
+        at: usize,
+        end: Option<usize>,
+        depth: usize,
+    ) -> Result<usize> {
+        let extensible = members.additions.is_some();
+        let mut at = at;
+
+        let Some(end) = end else {
+            if !extensible {
+                return decode_error(
+                    "Could not find end-of-contents tag for indefinite length field.",
+                    at,
+                );
+            }
+
+            loop {
+                match data.get(at..at + 2) {
+                    Some([0, 0]) => return Ok(at + 2),
+                    Some(_) => at = crate::wire::ber::skip_any(data, at, depth)?,
+                    None => {
+                        return decode_error(
+                            "Ran out of data when trying to find End of Contents tag.",
+                            at,
+                        );
+                    }
+                }
+            }
+        };
+
+        if self.types.lenient || at >= end {
+            return Ok(end);
         }
+
+        if !extensible {
+            return decode_error("Expected the end of the contents.", at);
+        }
+
+        let contents = &data[..end];
+
+        while at < end {
+            if self.strict {
+                let after = skip_tag(contents, at)?;
+                let (length, start) = read_length(contents, after, true, true)?;
+
+                at = start + length.unwrap_or(0);
+            } else {
+                at = crate::wire::ber::skip_any(contents, at, depth)?;
+            }
+        }
+
+        Ok(end)
     }
 
     fn is_end(&self, data: &[u8], offset: usize, end: Option<usize>) -> Result<(bool, usize)> {

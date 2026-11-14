@@ -13,7 +13,10 @@ public data class Options(
     public val codec: Codec = Codec.BER,
     /** ENUMERATED values are numbers and not names. */
     public val numericEnums: Boolean = false,
-    /** DER decodes what BER allows. Only DER looks at it. */
+    /**
+     * DER decodes what BER allows, and BER and DER leave out what is after the members of a
+     * SEQUENCE or a SET, and after what is tagged. No other codec looks at it.
+     */
     public val lenient: Boolean = false,
 )
 

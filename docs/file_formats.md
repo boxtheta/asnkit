@@ -801,6 +801,16 @@ size, strings in pieces, any byte for `TRUE` and so on. A DER decoder
 reads only what DER writes, unless it is told to be lenient, when it
 reads what BER allows.
 
+Neither reads a tag number that is not in as few bytes as possible
+(X.690 8.1.2), nor a value that ends after the contents it is in. After
+the members of a `SEQUENCE` or a `SET` that it knows, a decoder reads
+nothing if the type has no extension marker, and if it has one the
+additions of a later version, each all of a tag, a length and its
+contents, which are those of DER for a DER decoder. After what an
+explicit tag is around it reads nothing. A decoder of BER or of DER
+that is told to be lenient leaves out whatever is there, up to the end
+of the contents.
+
 ### Members
 
 The members of a `SEQUENCE`, a `SET` or a `CHOICE` are the

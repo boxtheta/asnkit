@@ -205,6 +205,15 @@ public sealed class Value {
 
                         BigInteger(part)
                     }
+
+                // The first arc is 0, 1 or 2, and the second is below 40 under 0 and 1
+                // (X.660 6.2), or the two are read back as others.
+                if (arcs[0] > BigInteger.TWO || (arcs[0] < BigInteger.TWO && arcs[1] >= FORTY)) {
+                    encodeError(
+                        "Expected an OBJECT IDENTIFIER of a first arc of 0 to 2, and a second arc below 40 under 0 and 1.",
+                    )
+                }
+
                 val out = ByteBuffer()
 
                 fun push(subidentifier: BigInteger) {
