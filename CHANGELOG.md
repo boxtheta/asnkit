@@ -10,6 +10,8 @@ security fixes.
 
 ## [Unreleased]
 
+## [2.0.0-rc8] - 2026-11-14
+
 ### Added
 
 - Pragmas: comments `--@ key = value`, or `--@ key`, on the lines
@@ -674,6 +676,7 @@ WebAssembly runtime on npm.
   `application/vnd.asnkit.asnst+cbor`, guidelines for third-party
   runtimes, a corpus of `.asni` files and more than 5,300 test vectors.
 
+[2.0.0-rc8]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc8
 [2.0.0-rc7]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc7
 [2.0.0-rc6]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc6
 [2.0.0-rc5]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc5

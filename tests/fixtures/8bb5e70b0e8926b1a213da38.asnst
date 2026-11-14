@@ -1,4 +1,4 @@
-§fformateasnstgversionÇhmetadata¢igeneratorx asnkit-compiler 2.0.0-rc7 (Rust)gsourcesÅ£dnamehx680.asnfsha256x@4626051b5dad6f0452afae3884ad0120421800cc1cff44f7a91bd281211321cfdtextyQEX680 DEFINITIONS AUTOMATIC TAGS ::= BEGIN
+§fformateasnstgversionÇhmetadata¢igeneratorx asnkit-compiler 2.0.0-rc8 (Rust)gsourcesÅ£dnamehx680.asnfsha256x@4626051b5dad6f0452afae3884ad0120421800cc1cff44f7a91bd281211321cfdtextyQEX680 DEFINITIONS AUTOMATIC TAGS ::= BEGIN
 
     -- 14.10
     T-14-10 ::= SEQUENCE {
