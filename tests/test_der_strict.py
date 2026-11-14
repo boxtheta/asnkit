@@ -151,7 +151,7 @@ class DerStrictTest(unittest.TestCase):
         self.check("WithDefault", "3003020105", {"a": 5})
 
     def test_sequence_members_not_in_order(self) -> None:
-        self.check("InOrder", "3008a103020102a003020101", {"a": 1, "b": 2})
+        self.check("InOrder", "300aa103020102a003020101", {"a": 1, "b": 2})
 
     def test_set_members_not_in_order(self) -> None:
         self.check("Unordered", "31060201010101ff", {"a": 1, "b": True})
@@ -331,7 +331,9 @@ class DerStrictTest(unittest.TestCase):
                 codec.encode("Plain", (b"\xc0", 3)), bytes.fromhex("030205c0")
             )
 
-    def test_only_the_der_codec_looks_at_lenient(self) -> None:
+    def test_lenient_ber_decodes_what_ber_does(self) -> None:
+        # It only takes more after the members of a SEQUENCE or a SET,
+        # and after what is tagged (see tests/test_robust.py).
         ber = fixtures.compile_string(SPECIFICATION, "ber", lenient=True)
 
         self.assertEqual(ber.decode("Bool", bytes.fromhex("010101")), True)

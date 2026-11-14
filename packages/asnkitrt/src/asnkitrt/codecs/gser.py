@@ -24,6 +24,7 @@ from . import (
     format_or,
     generalized_time_from_datetime,
     utc_time_from_datetime,
+    object_identifier_arcs,
 )
 from .compiler import enum_values_as_dict
 
@@ -174,6 +175,11 @@ class ObjectIdentifier(Type):
         super(ObjectIdentifier, self).__init__(name, "OBJECT IDENTIFIER")
 
     def encode(self, data, _separator, _indent):
+        if object_identifier_arcs(data) is None:
+            raise EncodeError(
+                "Expected an OBJECT IDENTIFIER, but got '{}'.".format(data)
+            )
+
         return data
 
 

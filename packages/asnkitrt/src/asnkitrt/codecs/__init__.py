@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import functools
 import importlib
 import re
 from datetime import datetime, timedelta, timezone
@@ -153,6 +154,66 @@ class DecodeError(ErrorWithLocation, _DecodeError):
         :return:
         """
         return " (At offset: {})".format(self.offset)
+
+
+_OBJECT_IDENTIFIER = re.compile(r"[0-9]+(?:\.[0-9]+)+\Z")
+
+
+def object_identifier_arcs(text: Any) -> List[int] | None:
+    """The arcs of an OBJECT IDENTIFIER written as `1.2.840`, or None if
+    it is not one: two arcs or more, of digits, the first 0, 1 or 2 and
+    the second below 40 under 0 and 1 (X.660 6.2), as they are read back
+    as other arcs if not.
+
+    """
+
+    if not isinstance(text, str) or _OBJECT_IDENTIFIER.match(text) is None:
+        return None
+
+    # Arcs of more digits than an int is made from fail, as any too large.
+    try:
+        arcs = [int(arc) for arc in text.split(".")]
+    except ValueError:
+        return None
+
+    if arcs[0] > 2 or (arcs[0] < 2 and arcs[1] >= 40):
+        return None
+
+    # A subidentifier is of at most 127 bits, as the runtime for Rust
+    # reads them.
+    if any(arc >> 127 for arc in [40 * arcs[0] + arcs[1]] + arcs[2:]):
+        return None
+
+    return arcs
+
+
+def reports_decode_errors(decode: Any) -> Any:
+    """Makes a `decode()` of a compiled type raise a `DecodeError` for
+    data that is not what its codec writes, whatever went wrong on the
+    way: what is decoded may be anything, and whoever decodes it catches
+    the errors of this package.
+
+    What a codec does not support is still a `NotImplementedError`.
+
+    """
+
+    @functools.wraps(decode)
+    def wrapper(self: Any, data: Any) -> Any:
+        try:
+            return decode(self, data)
+        except (Error, NotImplementedError):
+            raise
+        except RecursionError:
+            raise DecodeError(
+                "The data is nested too deeply.", location=self._type
+            ) from None
+        except Exception as error:
+            raise DecodeError(
+                "Malformed data: {}: {}".format(type(error).__name__, error),
+                location=self._type,
+            ) from error
+
+    return wrapper
 
 
 class ConstraintsError(ErrorWithLocation, _ConstraintsError):

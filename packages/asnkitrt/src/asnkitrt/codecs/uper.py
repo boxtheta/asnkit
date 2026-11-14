@@ -17,6 +17,7 @@ from . import (
     restricted_generalized_time_to_datetime,
     restricted_utc_time_from_datetime,
     restricted_utc_time_to_datetime,
+    reports_decode_errors,
 )
 from .per import (
     Any,
@@ -224,6 +225,7 @@ class CompiledType(per.CompiledType):
 
         return encoder.as_bytearray()
 
+    @reports_decode_errors
     def decode(self, data):
         decoder = Decoder(bytearray(data))
         try:

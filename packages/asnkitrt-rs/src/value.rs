@@ -388,6 +388,11 @@ impl FromStr for ObjectIdentifier<'static> {
             parts
                 .next()
                 .map(|part| {
+                    // Digits only: parsing takes a sign before them too.
+                    if !part.bytes().all(|byte| byte.is_ascii_digit()) {
+                        return Err(Error::encode("Expected an OBJECT IDENTIFIER."));
+                    }
+
                     // Parsing a u64 is faster, and an arc is all but always one.
                     part.parse::<u64>()
                         .map(u128::from)
@@ -401,6 +406,16 @@ impl FromStr for ObjectIdentifier<'static> {
                 "Expected an OBJECT IDENTIFIER of at least two arcs.",
             ));
         };
+
+        // The first arc is 0, 1 or 2, and the second is below 40 under 0
+        // and 1 (X.660 6.2), or the two are read back as others.
+        if first > 2 || (first < 2 && second >= 40) {
+            return Err(Error::encode(
+                "Expected an OBJECT IDENTIFIER of a first arc of 0 to 2, and a second \
+                 arc below 40 under 0 and 1.",
+            ));
+        }
+
         let too_large = || Error::encode("An arc of an OBJECT IDENTIFIER is too large.");
         // A subidentifier is read back if it is of at most 127 bits.
         let push = |subidentifier: u128, out: &mut Vec<u8>| {

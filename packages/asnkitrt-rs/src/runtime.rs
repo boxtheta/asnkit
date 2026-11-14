@@ -23,7 +23,9 @@ pub struct Options {
     pub codec: Codec,
     /// ENUMERATED values are numbers and not names.
     pub numeric_enums: bool,
-    /// DER decodes what BER allows. Only DER looks at it.
+    /// DER decodes what BER allows, and BER and DER leave out what is
+    /// after the members of a SEQUENCE or a SET, and after what is
+    /// tagged. No other codec looks at it.
     pub lenient: bool,
 }
 

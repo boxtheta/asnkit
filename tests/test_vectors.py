@@ -11,6 +11,8 @@ import collections
 import gzip
 import json
 import os
+import random
+import time
 import unittest
 
 import asnkitrt
@@ -116,6 +118,93 @@ class VectorsTest(unittest.TestCase):
 
         self.assertEqual(failures[:20], [], "{} failed".format(len(failures)))
         self.assertGreater(sum(passed.values()), 5000)
+
+    def test_changed_data_is_an_error_of_the_package(self):
+        """What the vectors decode, cut short and changed, is a value or
+        an error of this package, and soon, as the runtime for Rust is
+        held to in its `tests/robust.rs`.
+
+        """
+
+        specs = {}
+        generator = random.Random(0x2545F4914F6CDD1D)
+        failures = []
+        seen = set()
+        tried = 0
+
+        for vector in read_vectors():
+            if (
+                vector["operation"] != "decode"
+                or vector["error"] is not None
+                or not vector["encoded"]
+            ):
+                continue
+
+            key = (
+                vector["spec"],
+                vector["codec"],
+                vector["numeric_enums"],
+                vector["lenient"],
+            )
+
+            if (key, vector["type"], vector["encoded"]) in seen:
+                continue
+
+            seen.add((key, vector["type"], vector["encoded"]))
+
+            if key not in specs:
+                specs[key] = load(*key)
+
+            encoded = bytes.fromhex(vector["encoded"])
+            changed = [encoded[: generator.randrange(len(encoded))]]
+
+            for _ in range(3):
+                data = bytearray(encoded)
+
+                for _ in range(1 + generator.randrange(3)):
+                    index = generator.randrange(len(data))
+                    data[index] = generator.choice(
+                        [
+                            generator.randrange(256),
+                            data[index] ^ (1 << generator.randrange(8)),
+                            0xFF,
+                            0x80,
+                        ]
+                    )
+
+                changed.append(bytes(data))
+
+            for data in changed:
+                started = time.monotonic()
+                tried += 1
+
+                try:
+                    specs[key].decode(vector["type"], data)
+                except (asnkitrt.Error, NotImplementedError):
+                    pass
+                except Exception as error:
+                    failures.append(
+                        "{!r} <= {} {} {} {}".format(
+                            error,
+                            vector["codec"],
+                            vector["spec"],
+                            vector["type"],
+                            data.hex()[:200],
+                        )
+                    )
+
+                if time.monotonic() - started > 5:
+                    failures.append(
+                        "slow <= {} {} {} {}".format(
+                            vector["codec"],
+                            vector["spec"],
+                            vector["type"],
+                            data.hex()[:200],
+                        )
+                    )
+
+        self.assertEqual(failures[:20], [], "{} failed".format(len(failures)))
+        self.assertGreater(tried, 5000)
 
 
 if __name__ == "__main__":

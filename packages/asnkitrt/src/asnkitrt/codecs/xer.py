@@ -32,6 +32,8 @@ from . import (
     generalized_time_to_datetime,
     utc_time_from_datetime,
     utc_time_to_datetime,
+    reports_decode_errors,
+    object_identifier_arcs,
 )
 from .compiler import enum_values_as_dict
 
@@ -225,6 +227,12 @@ class MembersType(Type):
                 pass
             elif member.has_default():
                 values[name] = member.get_default()
+            else:
+                raise DecodeError(
+                    "{} member '{}' not found in the element.".format(
+                        self.__class__.__name__, name
+                    )
+                )
 
         return values
 
@@ -304,8 +312,17 @@ class Integer(NamedNumbersMixin, Type):
         return element
 
     def decode(self, element):
-        return int(element.text)
+        text = (element.text or "").strip()
 
+        # Digits after a sign or not, and not all that int() takes, as
+        # the "_" of 1_000.
+        if INTEGER.match(text) is None:
+            raise DecodeError("Expected an INTEGER, but got '{}'.".format(text))
+
+        return int(text)
+
+
+INTEGER = re.compile(r"[-+]?[0-9]+\Z")
 
 # A realnumber (X.680 12.9), after a "-" or not (X.680 21.9).
 REAL_NUMBER = re.compile(r"-?[0-9]+(\.[0-9]*)?([eE][-+]?[0-9]+)?")
@@ -455,11 +472,23 @@ class ObjectIdentifier(StringType):
     def __init__(self, name):
         super(ObjectIdentifier, self).__init__(name, "OBJECT IDENTIFIER")
 
-    def decode(self, element):
-        if element.text is None:
-            raise DecodeError("Expected an OBJECT IDENTIFIER, but got ''.")
+    def encode(self, data):
+        if object_identifier_arcs(data) is None:
+            raise EncodeError(
+                "Expected an OBJECT IDENTIFIER, but got '{}'.".format(data)
+            )
 
-        return element.text
+        return super().encode(data)
+
+    def decode(self, element):
+        text = text_of(element)
+
+        if object_identifier_arcs(text) is None:
+            raise DecodeError(
+                "Expected an OBJECT IDENTIFIER, but got '{}'.".format(text)
+            )
+
+        return text
 
 
 class Enumerated(Type):
@@ -871,7 +900,13 @@ class CompiledType(compiler.CompiledType):
 
         return CONTROL_TAG.sub(rb"<\1/>", encoded)
 
+    @reports_decode_errors
     def decode(self, data):
+        # A document type declaration can define entities, which are
+        # made as large as they say and read from where they say.
+        if b"<!DOCTYPE" in data:
+            raise DecodeError("A document type declaration is not supported.")
+
         element = ElementTree.fromstring(data.decode("utf-8"))
         try:
             return self._type.decode(element)

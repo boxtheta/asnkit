@@ -114,10 +114,17 @@ XER reads XML with [Woodstox](https://github.com/FasterXML/woodstox).
 
 The DER decoder rejects anything X.690 does not allow, such as a
 `BOOLEAN` other than 0x00 or 0xff, an `INTEGER` that is not minimally
-encoded, an unsorted `SET OF`, a `REAL` not in its canonical form, or a
-`UTCTime` or `GeneralizedTime` other than the one form DER has. Pass
+encoded, an unsorted `SET OF`, a `REAL` not in its canonical form, a
+`UTCTime` or `GeneralizedTime` other than the one form DER has, or data
+after the members of a `SEQUENCE` that are not additions after its
+extension marker. Pass
 `lenient=True` to `asnkitrt.load()` (or set `lenient` in the Rust
 runtime's options) to accept anything BER allows.
+
+The BER decoder does not take data after the members of a `SEQUENCE` or
+a `SET` either, other than additions after an extension marker, nor
+after the value inside an explicit tag. `lenient` has both decoders
+leave out whatever is there.
 
 ## Known limitations
 

@@ -792,6 +792,12 @@ impl<'a> Reader<'a> {
 
     pub fn unconstrained_whole_number(&mut self) -> Result<Value<'static>> {
         let length = self.length()?;
+
+        // An integer is of a byte or more (X.691 13.2.6).
+        if length == 0 {
+            return decode_error("Expected an INTEGER of a byte or more.", self.position);
+        }
+
         let bytes = self.bytes(length)?;
 
         Ok(Value::from_twos_complement(&bytes))
@@ -2283,11 +2289,9 @@ impl<'a> Coder<'a> {
         let month = self.get_range(1, 12, r)?;
         let day = self.get_range(1, 31, r)?;
 
-        Ok(Date {
-            year: year as i32,
-            month: month as u8,
-            day: day as u8,
-        })
+        // The bits of a month hold 16 and those of a day 32, and a month
+        // has not every day.
+        time::date_of(year, month, day).ok_or_else(|| Error::decode("Expected a date.", r.position))
     }
 
     fn decode_time_of_day(&self, r: &mut Reader<'a>) -> Result<Time> {
@@ -2295,13 +2299,8 @@ impl<'a> Coder<'a> {
         let minute = self.get_range(0, 59, r)?;
         let second = self.get_range(0, 60, r)?;
 
-        Ok(Time {
-            hour: hour as u8,
-            minute: minute as u8,
-            second: second as u8,
-            microsecond: 0,
-            offset: None,
-        })
+        time::time_of(hour, minute, second)
+            .ok_or_else(|| Error::decode("Expected a time of day.", r.position))
     }
 
     /// A time element of DURATION-INTERVAL-ENCODING, of which the root

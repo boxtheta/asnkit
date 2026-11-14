@@ -33,6 +33,8 @@ from . import (
     generalized_time_to_datetime,
     utc_time_from_datetime,
     utc_time_to_datetime,
+    reports_decode_errors,
+    object_identifier_arcs,
 )
 from .compiler import clean_bit_string_value, enum_values_as_dict
 
@@ -150,6 +152,20 @@ def detect_end_of_contents_tag(data, offset):
         )
     else:
         return False
+
+
+def check_within(offset, end_offset):
+    """Checks that what is in contents up to given end offset, if there
+    is one, does not end after it, at given offset.
+
+    """
+
+    if end_offset is not None and offset > end_offset:
+        raise OutOfByteDataError(
+            "Expected the contents to end at offset {}, but what is in them "
+            "ends at {}.".format(end_offset, offset),
+            offset=end_offset,
+        )
 
 
 def check_decode_error(asn_type, decoded_value, data, offset):
@@ -339,10 +355,27 @@ def skip_tag(data, offset):
         offset += 1
 
         if byte & 0x1F == 0x1F:
-            while data[offset] & 0x80:
-                offset += 1
+            start = offset
+            number = 0
 
-            offset += 1
+            while True:
+                byte = data[offset]
+                offset += 1
+                number = (number << 7) | (byte & 0x7F)
+
+                if not byte & 0x80:
+                    break
+
+            # A number has one form: no group of zeros before it, and one
+            # below 31 is in the first byte (X.690 8.1.2.2, 8.1.2.4.2).
+            if data[start] == 0x80 or number < 31:
+                raise DecodeError(
+                    "Expected the tag number in as few bytes as possible.",
+                    offset=start - 1,
+                )
+
+            if number >> 64:
+                raise DecodeError("A tag number is too large.", offset=start - 1)
     except IndexError:
         raise OutOfByteDataError("Ran out of data when reading tag", offset=offset)
 
@@ -366,6 +399,50 @@ def skip_tag_length_contents(data, offset):
     offset = skip_tag(data, offset)
 
     return sum(decode_length(data, offset))
+
+
+def skip_element(data, offset, end_offset, der=False):
+    """The offset after the TLV at given offset, whatever its tag, which
+    is not after given end offset. With `der`, its length is as DER has
+    it.
+
+    """
+
+    constructed = data[offset] & Encoding.CONSTRUCTED
+    after_tag = skip_tag(data, offset)
+    length, offset = decode_length(
+        data, after_tag, enforce_definite=der, enforce_minimal=der
+    )
+
+    if length is not None:
+        offset += length
+    elif not constructed:
+        raise DecodeError("Expected definite length.", offset=after_tag)
+    else:
+        while True:
+            if offset + 2 > end_offset:
+                raise OutOfByteDataError(
+                    "Ran out of data when trying to find End of Contents tag "
+                    "for indefinite length field",
+                    offset=offset,
+                )
+
+            if detect_end_of_contents_tag(data, offset):
+                break
+
+            offset = skip_element(data, offset, end_offset)
+
+        offset += 2
+
+    if offset > end_offset:
+        raise OutOfByteDataError(
+            "Expected the contents to end at offset {}, but they end at {}.".format(
+                end_offset, offset
+            ),
+            offset=after_tag,
+        )
+
+    return offset
 
 
 def decode_ascii(data, offset, end_offset):
@@ -582,7 +659,13 @@ def decode_real(data, strict=False):
 
 
 def encode_object_identifier(data):
-    identifiers = [int(identifier) for identifier in data.split(".")]
+    identifiers = object_identifier_arcs(data)
+
+    if identifiers is None:
+        raise EncodeError(
+            "Expected an OBJECT IDENTIFIER of a first arc of 0 to 2, and a "
+            "second arc below 40 under 0 and 1, but got '{}'.".format(data)
+        )
 
     first_subidentifier = 40 * identifiers[0] + identifiers[1]
     encoded_subidentifiers = encode_object_identifier_subidentifier(first_subidentifier)
@@ -605,27 +688,32 @@ def encode_object_identifier_subidentifier(subidentifier):
 
 
 def decode_object_identifier(data, offset, end_offset):
-    subidentifier, offset = decode_object_identifier_subidentifier(data, offset)
-    decoded = [subidentifier // 40, subidentifier % 40]
+    # Not one with no subidentifier, or with a last one that does not end.
+    if end_offset <= offset or len(data) < end_offset or data[end_offset - 1] & 0x80:
+        raise DecodeError("Expected an OBJECT IDENTIFIER.", offset=offset)
 
-    while offset < end_offset:
-        subidentifier, offset = decode_object_identifier_subidentifier(data, offset)
-        decoded.append(subidentifier)
+    decoded = []
+    subidentifier = 0
+
+    for index in range(offset, end_offset):
+        byte = data[index]
+        subidentifier = (subidentifier << 7) | (byte & 0x7F)
+
+        # As large as the runtime for Rust reads them.
+        if subidentifier >> 127:
+            raise DecodeError(
+                "An arc of an OBJECT IDENTIFIER is too large.", offset=index
+            )
+
+        if not byte & 0x80:
+            decoded.append(subidentifier)
+            subidentifier = 0
+
+    # The first subidentifier is of the first two arcs (X.690 8.19.4).
+    first = min(decoded[0] // 40, 2)
+    decoded[:1] = [first, decoded[0] - 40 * first]
 
     return ".".join([str(v) for v in decoded])
-
-
-def decode_object_identifier_subidentifier(data, offset):
-    decoded = 0
-
-    while data[offset] & 0x80:
-        decoded += data[offset] & 0x7F
-        decoded <<= 7
-        offset += 1
-
-    decoded += data[offset]
-
-    return decoded, offset + 1
 
 
 class Type(BaseType):
@@ -855,6 +943,8 @@ class PrimitiveOrConstructedType(Type):
             check_decode_error(self.segment, decoded, data, offset)
             segments.append(decoded)
 
+        check_within(offset, end_offset)
+
         return self.decode_constructed_segments(segments), offset
 
     def decode_primitive_contents(self, data, offset, length):
@@ -891,6 +981,12 @@ class MembersType(StandardEncodeMixin, StandardDecodeMixin, Type):
     # Whether the members, when not in any order, are in the order of
     # their tags, as those of a SET in DER, and not as declared.
     ordered_by_tags = False
+    # Whether anything is taken after the members that are known, and
+    # not only the additions of a later version after an extension
+    # marker.
+    lenient = False
+    # Whether those additions have their lengths as DER has them.
+    rest_is_der = False
 
     def __init__(self, name, tag_name, tag, root_members, additions):
         super(MembersType, self).__init__(name, tag_name, tag, Encoding.CONSTRUCTED)
@@ -965,27 +1061,62 @@ class MembersType(StandardEncodeMixin, StandardDecodeMixin, Type):
                 data,
                 values,
                 offset,
-                end_offset,
+                # The end is not read again where it was found.
+                offset if out_of_data else end_offset,
                 ignore_missing=True,
             )
+
+        check_within(offset, end_offset)
 
         if out_of_data:
             return values, offset
 
-        if end_offset is None:
-            raise NoEndOfContentsTagError(
-                "Could not find end-of-contents tag for indefinite length field.",
-                offset=offset,
-            )
-        else:
-            # Extra data is allowed in cases of versioned additions
-            return values, end_offset
+        return values, self.check_rest(data, offset, end_offset)
 
     def check_member(self, member, value, offset):
         """Called with each member decoded, to raise DecodeError if it
         is not allowed. Nothing is not allowed in BER.
 
         """
+
+    def check_rest(self, data, offset, end_offset):
+        """Called with what is left of the contents after the members
+        that are known, to raise DecodeError if it is not allowed, and
+        returns the offset after the contents.
+
+        That is nothing, or after an extension marker the additions of a
+        later version, each all of a TLV, which is one of DER in DER. A
+        lenient reader takes anything up to the end.
+
+        """
+
+        extensible = self.additions is not None
+
+        if end_offset is None:
+            if not extensible:
+                raise NoEndOfContentsTagError(
+                    "Could not find end-of-contents tag for indefinite length field.",
+                    offset=offset,
+                )
+
+            while not detect_end_of_contents_tag(data, offset):
+                offset = skip_element(data, offset, len(data))
+
+            return offset + 2
+
+        if self.lenient or offset >= end_offset:
+            return end_offset
+
+        if not extensible:
+            raise DecodeError(
+                "Expected the end of {}, but got more data.".format(self.name),
+                offset=offset,
+            )
+
+        while offset < end_offset:
+            offset = skip_element(data, offset, end_offset, self.rest_is_der)
+
+        return end_offset
 
     def decode_members(
         self,
@@ -1144,6 +1275,9 @@ class ArrayType(StandardEncodeMixin, StandardDecodeMixin, Type):
             check_decode_error(self.element_type, decoded_element, data, offset)
             decoded.append(decoded_element)
 
+        if length is not None:
+            check_within(offset, start_offset + length)
+
         return decoded, offset
 
     def __repr__(self):
@@ -1250,6 +1384,13 @@ class BitString(StandardEncodeMixin, PrimitiveOrConstructedType):
         return bytearray([number_of_unused_bits]) + data
 
     def decode_primitive_contents(self, data, offset, length):
+        # The unused bits are of the last byte, if there is one (X.690
+        # 8.6.2).
+        if length < 1 or data[offset] > 7 or (length == 1 and data[offset]):
+            raise DecodeError(
+                "Expected at most 7 unused bits of a BIT STRING.", offset=offset
+            )
+
         length -= 1
         number_of_bits = 8 * length - data[offset]
         offset += 1
@@ -1382,17 +1523,12 @@ class Set(MembersType):
             members, data, values, offset, end_offset, additions_from=additions_from
         )
 
+        check_within(offset, end_offset)
+
         if out_of_data:
             return values, offset
 
-        if end_offset is None:
-            raise NoEndOfContentsTagError(
-                "Could not find end-of-contents tag for indefinite length field.",
-                offset=offset,
-            )
-        else:
-            # Extra data is allowed in cases of versioned additions
-            return values, end_offset
+        return values, self.check_rest(data, offset, end_offset)
 
 
 class SetOf(ArrayType):
@@ -1728,6 +1864,8 @@ class AnyDefinedBy(Type):
 class ExplicitTag(StandardEncodeMixin, StandardDecodeMixin, Type):
     # no_error_location = True
     indefinite_allowed = True
+    # Whether anything is taken after what is tagged.
+    lenient = False
 
     def __init__(self, name, inner):
         super(ExplicitTag, self).__init__(name, "ExplicitTag", None)
@@ -1769,6 +1907,18 @@ class ExplicitTag(StandardEncodeMixin, StandardDecodeMixin, Type):
                     "Expected end-of-contents tag.", offset=end_offset, location=self
                 )
             end_offset += 2
+        else:
+            # What is tagged is all of the contents, but for a lenient
+            # reader.
+            check_within(end_offset, offset + length)
+
+            if end_offset != offset + length and not self.lenient:
+                raise DecodeError(
+                    "Expected the end of {}, but got more data.".format(self.name),
+                    offset=end_offset,
+                )
+
+            end_offset = offset + length
 
         return decoded, end_offset
 
@@ -1828,6 +1978,7 @@ class CompiledType(compiler.CompiledType):
 
         return decoded
 
+    @reports_decode_errors
     def decode_with_length(self, data):
         """
         Decode and return decoded values as well as length of binary data decoded
@@ -1849,12 +2000,32 @@ class Compiler(compiler.Compiler):
     # What is wrapped around a type with an explicit tag.
     explicit_tag_class = ExplicitTag
 
+    def __init__(self, specification, numeric_enums=False, lenient=False):
+        super().__init__(specification, numeric_enums)
+        self._lenient = lenient
+
     def process_type(self, type_name, type_descriptor, module_name):
         compiled_type = self.compile_type(type_name, type_descriptor, module_name)
 
         return CompiledType(compiled_type)
 
     def compile_implicit_type(self, name, type_descriptor, module_name):
+        compiled = self.compile_ber_type(name, type_descriptor, module_name)
+
+        if self._lenient and isinstance(compiled, MembersType):
+            compiled.lenient = True
+
+        return compiled
+
+    def compile_type(self, name, type_descriptor, module_name):
+        compiled = self.compile_tagged_type(name, type_descriptor, module_name)
+
+        if self._lenient and isinstance(compiled, ExplicitTag):
+            compiled.lenient = True
+
+        return compiled
+
+    def compile_ber_type(self, name, type_descriptor, module_name):
         type_name = type_descriptor["type"]
 
         compiled: Type
@@ -1968,7 +2139,7 @@ class Compiler(compiler.Compiler):
 
         return compiled
 
-    def compile_type(self, name, type_descriptor, module_name):
+    def compile_tagged_type(self, name, type_descriptor, module_name):
         module_name = self.get_module_name(type_descriptor, module_name)
         compiled = self.compile_implicit_type(name, type_descriptor, module_name)
 
@@ -2034,7 +2205,7 @@ class Compiler(compiler.Compiler):
 class BERCodec(Codec):
     @staticmethod
     def compile_dict(specification, numeric_enums=False, lenient=False):
-        return Compiler(specification, numeric_enums).process()
+        return Compiler(specification, numeric_enums, lenient).process()
 
     @staticmethod
     def decode_full_length(data):

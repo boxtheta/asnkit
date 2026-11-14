@@ -6,6 +6,7 @@
 """JSON Encoding Rules (JER) codec."""
 
 import binascii
+import string
 import datetime
 import json
 import math
@@ -30,6 +31,8 @@ from . import (
     generalized_time_to_datetime,
     utc_time_from_datetime,
     utc_time_to_datetime,
+    reports_decode_errors,
+    object_identifier_arcs,
 )
 from .compiler import clean_bit_string_value, enum_values_as_dict
 
@@ -37,6 +40,30 @@ from .compiler import clean_bit_string_value, enum_values_as_dict
 class Type(BaseType):
     def set_size_range(self, minimum, maximum, has_extension_marker):
         pass
+
+
+def expect(data, type_, what):
+    """`data`, which is of the JSON `what` if it is a `type_`. A `bool` is
+    an `int` in Python and not a number in JSON.
+
+    """
+
+    if not isinstance(data, type_) or (isinstance(data, bool) and type_ is not bool):
+        raise DecodeError("Expected a JSON {}.".format(what))
+
+    return data
+
+
+def unhexlify(text):
+    """The bytes of hexadecimal digits, and of nothing else, as
+    `binascii.unhexlify()` takes more.
+
+    """
+
+    if len(text) % 2 or not all(digit in string.hexdigits for digit in text):
+        raise DecodeError("Expected hex.")
+
+    return binascii.unhexlify(text)
 
 
 class StringType(Type):
@@ -47,7 +74,7 @@ class StringType(Type):
         return data
 
     def decode(self, data):
-        return data
+        return expect(data, str, "string")
 
 
 class MembersType(Type):
@@ -85,6 +112,7 @@ class MembersType(Type):
         return values
 
     def decode(self, data):
+        expect(data, dict, "object")
         values: dict[str, typing.Any] = {}
 
         for member in self.members:
@@ -105,6 +133,12 @@ class MembersType(Type):
                 pass
             elif member.has_default():
                 values[name] = member.get_default()
+            else:
+                raise DecodeError(
+                    "{} member '{}' not found in the object.".format(
+                        self.__class__.__name__, name
+                    )
+                )
 
         return values
 
@@ -124,7 +158,7 @@ class Boolean(Type):
         return data
 
     def decode(self, data):
-        return data
+        return expect(data, bool, "boolean")
 
 
 class Integer(NamedNumbersMixin, Type):
@@ -137,7 +171,7 @@ class Integer(NamedNumbersMixin, Type):
         return data
 
     def decode(self, data):
-        return data
+        return expect(data, int, "integer")
 
 
 class Real(Type):
@@ -160,13 +194,23 @@ class Real(Type):
     def decode(self, data):
         if isinstance(data, float):
             return data
+        elif isinstance(data, int) and not isinstance(data, bool):
+            # A number with no fraction is one too (X.697 23.3).
+            try:
+                return float(data)
+            except OverflowError:
+                return math.copysign(float("inf"), data)
+        elif isinstance(data, str) and data in self.SPECIAL:
+            return self.SPECIAL[data]
         else:
-            return {
-                "INF": float("inf"),
-                "-INF": float("-inf"),
-                "NaN": float("nan"),
-                "-0": -0.0,
-            }[data]
+            raise DecodeError("Expected a JSON number or INF, -INF, NaN or -0.")
+
+    SPECIAL = {
+        "INF": float("inf"),
+        "-INF": float("-inf"),
+        "NaN": float("nan"),
+        "-0": -0.0,
+    }
 
 
 class Null(Type):
@@ -177,7 +221,7 @@ class Null(Type):
         return data
 
     def decode(self, data):
-        return data
+        return expect(data, type(None), "null")
 
 
 class BitString(Type):
@@ -217,9 +261,24 @@ class BitString(Type):
 
     def decode(self, data):
         if self.size is None:
-            return (binascii.unhexlify(data["value"]), data["length"])
+            if (
+                not isinstance(data, dict)
+                or not isinstance(data.get("value"), str)
+                or not isinstance(data.get("length"), int)
+                or isinstance(data["length"], bool)
+                or data["length"] < 0
+            ):
+                raise DecodeError("Expected a value and a length of a BIT STRING.")
+
+            value, number_of_bits = unhexlify(data["value"]), data["length"]
         else:
-            return (binascii.unhexlify(data), self.size)
+            value, number_of_bits = unhexlify(expect(data, str, "string")), self.size
+
+        # As many bytes as the bits take.
+        if len(value) != (number_of_bits + 7) // 8:
+            raise DecodeError("The length of a BIT STRING is not that of its value.")
+
+        return (value, number_of_bits)
 
 
 class OctetString(Type):
@@ -230,7 +289,7 @@ class OctetString(Type):
         return format_bytes(data).upper()
 
     def decode(self, data):
-        return binascii.unhexlify(data)
+        return unhexlify(expect(data, str, "string"))
 
 
 class ObjectIdentifier(Type):
@@ -238,10 +297,20 @@ class ObjectIdentifier(Type):
         super(ObjectIdentifier, self).__init__(name, "OBJECT IDENTIFIER")
 
     def encode(self, data):
+        if object_identifier_arcs(data) is None:
+            raise EncodeError(
+                "Expected an OBJECT IDENTIFIER, but got '{}'.".format(data)
+            )
+
         return data
 
     def decode(self, data):
-        return str(data)
+        if object_identifier_arcs(data) is None:
+            raise DecodeError(
+                "Expected an OBJECT IDENTIFIER, but got '{}'.".format(data)
+            )
+
+        return data
 
 
 class Enumerated(Type):
@@ -310,7 +379,7 @@ class SequenceOf(Type):
     def decode(self, data):
         values = []
 
-        for element_data in data:
+        for element_data in expect(data, list, "array"):
             value = self.element_type.decode(element_data)
             values.append(value)
 
@@ -342,7 +411,7 @@ class SetOf(Type):
     def decode(self, data):
         values = []
 
-        for element_data in data:
+        for element_data in expect(data, list, "array"):
             value = self.element_type.decode(element_data)
             values.append(value)
 
@@ -377,7 +446,10 @@ class Choice(Type):
             raise e
 
     def decode(self, data):
-        name, value = list(data.items())[0]
+        if not expect(data, dict, "object"):
+            raise DecodeError("Expected an alternative of the CHOICE.")
+
+        name, value = next(iter(data.items()))
 
         if name in self.name_to_member:
             member = self.name_to_member[name]
@@ -453,7 +525,7 @@ class UTCTime(StringType):
         return utc_time_from_datetime(data)
 
     def decode(self, data):
-        return utc_time_to_datetime(data)
+        return utc_time_to_datetime(expect(data, str, "string"))
 
 
 class GeneralizedTime(StringType):
@@ -461,7 +533,7 @@ class GeneralizedTime(StringType):
         return generalized_time_from_datetime(data)
 
     def decode(self, data):
-        return generalized_time_to_datetime(data)
+        return generalized_time_to_datetime(expect(data, str, "string"))
 
 
 class Date(StringType):
@@ -469,7 +541,9 @@ class Date(StringType):
         return str(data)
 
     def decode(self, data):
-        return datetime.date(*time.strptime(data, "%Y-%m-%d")[:3])
+        return datetime.date(
+            *time.strptime(expect(data, str, "string"), "%Y-%m-%d")[:3]
+        )
 
 
 class TimeOfDay(StringType):
@@ -479,7 +553,9 @@ class TimeOfDay(StringType):
         return str(data)
 
     def decode(self, data):
-        return datetime.time(*time.strptime(data, "%H:%M:%S")[3:6])
+        return datetime.time(
+            *time.strptime(expect(data, str, "string"), "%H:%M:%S")[3:6]
+        )
 
 
 class Duration(StringType):
@@ -488,7 +564,7 @@ class Duration(StringType):
         return data
 
     def decode(self, data):
-        validate_duration(data)
+        validate_duration(expect(data, str, "string"))
         return data
 
 
@@ -499,7 +575,9 @@ class DateTime(StringType):
         return str(data).replace(" ", "T")
 
     def decode(self, data):
-        return datetime.datetime(*time.strptime(data, "%Y-%m-%dT%H:%M:%S")[:6])
+        return datetime.datetime(
+            *time.strptime(expect(data, str, "string"), "%Y-%m-%dT%H:%M:%S")[:6]
+        )
 
 
 class Any(Type):
@@ -602,6 +680,7 @@ class CompiledType(compiler.CompiledType):
 
         return string.encode("utf-8")
 
+    @reports_decode_errors
     def decode(self, data):
         try:
             return self._type.decode(json.loads(data.decode("utf-8")))

@@ -70,6 +70,7 @@ TEST_MODULES = [
     "tests.test_runtime",
     "tests.test_type_checker",
     "tests.test_constraints_checker",
+    "tests.test_robust",
 ]
 
 CODECS = ("ber", "der", "oer", "per", "uper", "jer", "xer", "gser")

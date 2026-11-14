@@ -167,6 +167,11 @@ internal object Ber {
             while (true) {
                 val byte = data.getOrNull(at)?.toInt()?.and(0xff) ?: decodeError("Ran out of data when reading tag", at)
 
+                // A number has one form: no group of zeros before it (X.690 8.1.2.4.2).
+                if (at == offset + 1 && byte == 0x80) {
+                    decodeError("Expected the tag number in as few bytes as possible.", offset)
+                }
+
                 at += 1
 
                 if (number shr 57 != 0uL) decodeError("A tag number is too large.", offset)
@@ -175,6 +180,9 @@ internal object Ber {
 
                 if (byte and 0x80 == 0) break
             }
+
+            // And a number below 31 is in the first byte (X.690 8.1.2.2).
+            if (number < 31uL) decodeError("Expected the tag number in as few bytes as possible.", offset)
         }
 
         return ReadTag(tagClass, first and 0x20 != 0, number, at)
@@ -1121,6 +1129,15 @@ private class Coder(
             if (end + 2 > data.size || data[end].toInt() != 0 || data[end + 1].toInt() != 0) decodeError("Expected end-of-contents tag.", end)
 
             end += 2
+        } else {
+            // What is tagged is all of the contents, but for a lenient reader.
+            val contentsEnd = length.end + length.length
+
+            if (end > contentsEnd) decodeError("Expected more contents bytes than there are.", length.end)
+
+            if (end != contentsEnd && !types.lenient) decodeError("Expected the end of the contents.", end)
+
+            end = contentsEnd
         }
 
         return Decoded(inner.value, end)
@@ -1322,6 +1339,8 @@ private class Coder(
             }
         }
 
+        checkWithin(at, end, start)
+
         val value =
             when (kind) {
                 is Kind.BitString -> {
@@ -1391,7 +1410,18 @@ private class Coder(
             items.add(item.value)
         }
 
+        checkWithin(at, end, offset)
+
         return Decoded(Value.List(items), at)
+    }
+
+    /** Checks that what is in contents up to `end` does not end after it, at `at`. */
+    private fun checkWithin(
+        at: Int,
+        end: Int?,
+        start: Int,
+    ) {
+        if (end != null && at > end) decodeError("Expected more contents bytes than there are.", start)
     }
 
     /**
@@ -1423,17 +1453,95 @@ private class Coder(
 
             // The additions, even when out of data, so that defaults are added.
             if (members.additions != null) {
-                result = decodeMemberList(members.additionMembers, 0, false, data, result.first, end, values, depth)
+                // The end is not read again where it was found.
+                val additionsEnd = if (result.second) result.first else end
+
+                result = decodeMemberList(members.additionMembers, 0, false, data, result.first, additionsEnd, values, depth)
             }
 
             at = result.first
             outOfData = result.second
         }
 
+        checkWithin(at, end, offset)
+
         if (outOfData) return Decoded(Value.Map(values), at)
 
-        // Extra data is allowed in cases of versioned additions.
-        return Decoded(Value.Map(values), end ?: decodeError("Could not find end-of-contents tag for indefinite length field.", at))
+        return Decoded(Value.Map(values), checkRest(members, data, at, end, depth))
+    }
+
+    /**
+     * Checks what is after the members that are known, from `start` to `end` or the end-of-contents
+     * octets, and returns where the contents end. That is nothing, or after an extension marker the
+     * additions of a later version, each all of a TLV, which is one of DER in DER. A lenient reader
+     * takes anything up to `end`.
+     */
+    private fun checkRest(
+        members: Members,
+        data: ByteArray,
+        start: Int,
+        end: Int?,
+        depth: Int,
+    ): Int {
+        val extensible = members.additions != null
+        var at = start
+
+        if (end == null) {
+            if (!extensible) decodeError("Could not find end-of-contents tag for indefinite length field.", at)
+
+            while (true) {
+                if (at + 2 > data.size) decodeError("Ran out of data when trying to find End of Contents tag.", at)
+
+                if (data[at].toInt() == 0 && data[at + 1].toInt() == 0) return at + 2
+
+                at = skipAny(data, at, data.size, depth)
+            }
+        }
+
+        if (types.lenient || at >= end) return end
+
+        if (!extensible) decodeError("Expected the end of the contents.", at)
+
+        while (at < end) at = skipAny(data, at, end, depth)
+
+        return end
+    }
+
+    /** Where the TLV at `start` ends, whatever its tag, which is not after `end`. */
+    private fun skipAny(
+        data: ByteArray,
+        start: Int,
+        end: Int,
+        depth: Int,
+    ): Int {
+        val tag = Ber.readTag(data, start)
+
+        if (tag.end >= end) decodeError("Ran out of data when reading tag", tag.end)
+
+        val length = Ber.readLength(data, tag.end, strict, strict)
+        var at = length.end
+
+        if (length.length != null) {
+            at += length.length
+        } else {
+            if (!tag.constructed) decodeError("Expected definite length.", tag.end)
+
+            if (depth >= MAX_DEPTH) decodeError("The data is nested too deeply.", start)
+
+            while (true) {
+                if (at + 2 > end) decodeError("Ran out of data when trying to find End of Contents tag.", at)
+
+                if (data[at].toInt() == 0 && data[at + 1].toInt() == 0) break
+
+                at = skipAny(data, at, end, depth + 1)
+            }
+
+            at += 2
+        }
+
+        if (at > end) decodeError("Expected more contents bytes than there are.", length.end)
+
+        return at
     }
 
     /** If the members end at `offset`, and the offset after the end-of-contents octets if they are there. */
