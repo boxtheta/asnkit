@@ -98,7 +98,7 @@ Also in the repository:
 | XML Encoding Rules (XER) | yes | yes, feature `xer` | yes | yes |
 | Generic String Encoding Rules (GSER) | encoding only | yes, feature `gser` | yes | not yet |
 
-The Rust runtime is the one of reference: the more than 5,500 vectors
+The Rust runtime is the one of reference: the more than 5,700 vectors
 in `tests/vectors` are what it does, including constraint checks, and
 the Python runtime gives the same results for all of them. The
 WebAssembly and C runtimes are the Rust one; the WebAssembly runtime is
@@ -116,15 +116,22 @@ The DER decoder rejects anything X.690 does not allow, such as a
 `BOOLEAN` other than 0x00 or 0xff, an `INTEGER` that is not minimally
 encoded, an unsorted `SET OF`, a `REAL` not in its canonical form, a
 `UTCTime` or `GeneralizedTime` other than the one form DER has, or data
-after the members of a `SEQUENCE` that are not additions after its
-extension marker. Pass
-`lenient=True` to `asnkitrt.load()` (or set `lenient` in the Rust
-runtime's options) to accept anything BER allows.
+after the members of a `SEQUENCE` or a `SET` that are not additions
+after its extension marker. Pass `lenient=True` to `asnkitrt.load()`,
+set `lenient` in the options of the other runtimes, or give `--lenient`
+to `asnkitcc convert`, to accept anything BER allows.
 
 The BER decoder does not take data after the members of a `SEQUENCE` or
 a `SET` either, other than additions after an extension marker, nor
 after the value inside an explicit tag. `lenient` has both decoders
-leave out whatever is there.
+leave out whatever is there. Neither takes a tag number in more bytes
+than it needs, or a value that ends after the contents it is in,
+lenient or not.
+
+Every decoder refuses data that its codec does not write, with a
+decoding error and nothing else, in time and memory proportional to the
+data. [What the nodes mean](docs/file_formats.md#what-the-nodes-mean)
+tells what each codec reads.
 
 ## Known limitations
 
@@ -404,7 +411,7 @@ It refuses, as errors, what no runtime could use:
 CRC-32 of the rest of the file. Every runtime checks it before it
 parses anything, so a corrupt file is rejected and never read.
 Recompile version 1 files, and those of 2.0.0-rc4, from their ASN.1
-sources. `.asnst` remains at 1.0. Signing, encryption, nonces and
+sources. `.asnst` is at 1.1, which a reader of 1.0 reads. Signing, encryption, nonces and
 binding have been removed, along with their options and dependencies;
 the CRC-32 detects corruption, not tampering. Provide those protections
 in the firmware update or patching system, or another layer that

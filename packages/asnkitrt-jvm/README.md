@@ -52,6 +52,11 @@ dependencies {
 - **Untrusted input** fails with an `AsnkitException` and nothing else,
   in time and memory proportional to the input, with nesting limited:
   the CBOR of a file to 64 levels by default (`Checks`), and values to 128.
+- **Decoding is strict**: data that is not what the codec writes for
+  the type is a `DecodeException`. DER reads only DER, and BER and DER
+  nothing after the members of a `SEQUENCE` or a `SET` but the
+  additions after an extension marker, unless `lenient` of `Options` is
+  set.
 - **Errors** tell where in the value they are: an `EncodeException`,
   a `DecodeException` or a `ConstraintsException` has a `location`, and
   its message is as `Question.question: Expected data of type str.`.

@@ -42,6 +42,11 @@ let decoded = foo.decode("Question", &encoded)?;
   an error, in time and memory proportional to the input, with nesting
   limited. This applies to JSON and XML too. XML with a document type
   declaration is rejected, so there are no entities to expand.
+- **Decoding is strict**: data that is not what the codec writes for
+  the type is an `Error::Decode`. DER reads only DER, and BER and DER
+  nothing after the members of a `SEQUENCE` or a `SET` but the
+  additions after an extension marker, unless `Options::lenient` is
+  set.
 - **Embedded targets** build with `default-features = false`. CI builds
   it for `thumbv7em-none-eabi`.
 
@@ -150,7 +155,7 @@ bits is not loaded, and a `DURATION` with a time element of more than
 encoded either way. All of these return an error; none produces a wrong
 value.
 
-It is the runtime of reference: the more than 5,500 vectors in
+It is the runtime of reference: the more than 5,700 vectors in
 [`tests/vectors`](https://github.com/boxtheta/asnkit/blob/trunk/tests/vectors) are what it encodes and decodes,
 including constraint checks, and the Python and WebAssembly runtimes
 are held to them. `tests/x509.rs` checks it against OpenSSL.

@@ -7,7 +7,7 @@ first-party runtimes are `asnkitrt` for Python, `asnkitrt` for Rust,
 `asnkitrt-c`, the one for Rust as a C library, and `org.boxtheta:asnkitrt`
 for the JVM.
 
-> **Note:** This builds on the [file formats](file_formats.md), `.asni` 2.0 and `.asnst` 1.0. What they do not specify yet is listed under [Not yet specified](file_formats.md#not-yet-specified).
+> **Note:** This builds on the [file formats](file_formats.md), `.asni` 2.0 and `.asnst` 1.1. What they do not specify yet is listed under [Not yet specified](file_formats.md#not-yet-specified).
 
 ## What a runtime is
 
@@ -60,12 +60,24 @@ where nobody can update it. So:
   nesting, the size of anything it allocates from a length it was
   told, and the time spent. A length in the data is never trusted to
   be as long as the data that is left. This holds for the CBOR reader
-  and every decoder.
+  and every decoder. What takes no bits is counted too: a few bytes of
+  OER or PER can tell of thousands of millions of elements that are
+  `NULL`, so a decoder has a limit to the number of items it reads
+  from data of a size, as
+  [Limits of a decoder](file_formats.md#limits-of-a-decoder) tells.
 
 - A decoder is strict. For DER, that means no indefinite lengths, no
-  lengths in more bytes than they need, and no data after the value.
+  lengths in more bytes than they need, and no data after the value,
+  nor after the members of a `SEQUENCE` or a `SET` other than the
+  additions after an extension marker.
   Data that is not the one encoding of a value is an error, so that
-  two different byte strings are never the same value.
+  two different byte strings are never the same value. For the other
+  codecs, [What the nodes mean](file_formats.md#what-the-nodes-mean)
+  tells what a decoder reads and what it refuses.
+
+- A decoder fails in one way, with the error the runtime has for
+  decoding, whatever is wrong with the data, so that those who catch
+  that error catch all of them.
 
 - It is fuzzed, or tested with data made to break it, and does not
   panic, crash or run without end on any input.
