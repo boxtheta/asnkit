@@ -17,7 +17,9 @@ the tests of the codecs of the runtime for Python. It runs them with
 methods of a specification wrapped. Each time a test loads a
 specification, it is resolved and kept as an ``.asni`` file in
 ``specs``, named by the SHA-256 of its contents. Each time a test encodes or decodes, the type and what is
-given (the value to encode, or the bytes to decode) are noted.
+given (the value to encode, or the bytes to decode) are noted. A
+specification that no vector names in the end is removed: some tests
+only load, and some load files changed at random.
 
 The runtime for Rust then does each of these, with
 ``packages/asnkitrt-rs/examples/record_vectors.rs``, and what it gives
@@ -238,10 +240,18 @@ def main():
         for line in vectors:
             fout.write(line.encode("utf-8") + b"\n")
 
+    # The runtime for Rust read them all. Only those of a vector are of
+    # use to the others.
+    named = {vector["spec"] for vector in done if vector is not None}
+
+    for digest in RECORDER.specs:
+        if digest not in named:
+            os.remove(os.path.join(specs_folder, digest + ".asni"))
+
     print(
         "{} specifications, {} vectors, {} not written, {} not supported "
         "by the runtime for Rust.".format(
-            len(RECORDER.specs), len(vectors), RECORDER.skipped, unsupported
+            len(named), len(vectors), RECORDER.skipped, unsupported
         )
     )
 

@@ -24,8 +24,8 @@ runtime for Python is held to them by ``tests/test_vectors.py``.
 decode, from the tests of the codecs of the runtime for Python, and
 has the runtime for Rust do each of them
 (``packages/asnkitrt-rs/examples/record_vectors.rs``). What it does
-not support is left out. ``values.py`` says how a value is written as
-JSON.
+not support is left out, and so is a specification that no vector
+names. ``values.py`` says how a value is written as JSON.
 
 ``specs/`` holds the compiled specifications (version 2 ``.asni``
 files with no metadata, named by the first 16 hexadecimal digits of
