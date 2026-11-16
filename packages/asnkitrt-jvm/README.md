@@ -31,14 +31,30 @@ Specification foo = Specification.load(new File("foo.asni"), new Options(Codec.D
 Value decoded = foo.decode("Question", encoded);
 ```
 
-It is published to Maven Central as `org.boxtheta:asnkitrt`, with the
-version of the other packages of asnkit:
+It is published to GitHub Packages as `org.boxtheta:asnkitrt`, with the
+version of the other packages of asnkit. GitHub Packages gives a Maven
+package only to who has an account: a build needs the name of a user of
+GitHub and a token of theirs that can `read:packages`, here from the
+environment:
 
 ```kotlin
+repositories {
+    mavenCentral()
+    maven {
+        url = uri("https://maven.pkg.github.com/boxtheta/asnkit")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
+}
+
 dependencies {
     implementation("org.boxtheta:asnkitrt:2.0.0-rc8")
 }
 ```
+
+It is not on Maven Central yet.
 
 - **Values** are `Value`s, as in the runtimes for Python and Rust: a
   `Value.Map` for a `SEQUENCE`, a `Value.Choice` for a `CHOICE`, and so

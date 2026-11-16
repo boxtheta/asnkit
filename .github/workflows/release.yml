@@ -2,7 +2,8 @@ name: Release
 
 # A tag v1.2.3 releases every package at version 1.2.3: the Python
 # packages to PyPI, the crates to crates.io, the WebAssembly runtime and
-# compiler to npm, and makes a release on GitHub with the notes of CHANGELOG.md.
+# compiler to npm, the runtime for the JVM to GitHub Packages, and makes
+# a release on GitHub with the notes of CHANGELOG.md.
 # RELEASING.md tells how to make one, and what has to be set up first.
 on:
   push:
@@ -64,6 +65,17 @@ jobs:
         for package in asnkitrt-wasm asnkit-compiler-wasm; do
           (cd "packages/$package" && npm run build && npm test && npm pack --pack-destination ../../npm)
         done
+    - name: Install Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: 17
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+    - name: Build and test the runtime for the JVM
+      working-directory: packages/asnkitrt-jvm
+      run: |
+        ./gradlew build
     - uses: actions/upload-artifact@v4
       with:
         name: python
@@ -165,9 +177,45 @@ jobs:
           fi
         done
 
+  maven:
+
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # GitHub Packages takes the token of the workflow.
+      packages: write
+
+    defaults:
+      run:
+        working-directory: packages/asnkitrt-jvm
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: 17
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+    - name: Publish to GitHub Packages
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      # Left out if it is already there, so that the job can be run
+      # again: GitHub Packages refuses a version a second time.
+      run: |
+        version=${GITHUB_REF_NAME#v}
+        if curl -sfL -o /dev/null -u "$GITHUB_ACTOR:$GITHUB_TOKEN" \
+            "https://maven.pkg.github.com/$GITHUB_REPOSITORY/org/boxtheta/asnkitrt/$version/asnkitrt-$version.pom"; then
+          echo "asnkitrt $version is already published."
+        else
+          ./gradlew publishAllPublicationsToGitHubPackagesRepository
+        fi
+
   github:
 
-    needs: [pypi, crates, npm]
+    needs: [pypi, crates, npm, maven]
     runs-on: ubuntu-latest
     permissions:
       contents: write

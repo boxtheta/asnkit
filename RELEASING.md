@@ -2,8 +2,9 @@
 
 All packages are released together, with one version, by pushing a tag
 `v1.2.3`. `.github/workflows/release.yml` then tests everything,
-publishes the Python packages to PyPI, the crates to crates.io and the
-WebAssembly runtime and compiler to npm, and makes a release on GitHub with the
+publishes the Python packages to PyPI, the crates to crates.io, the
+WebAssembly runtime and compiler to npm and the runtime for the JVM to
+GitHub Packages, and makes a release on GitHub with the
 notes of `CHANGELOG.md`. Nothing is published unless all of it builds
 and passes its tests.
 
@@ -34,6 +35,9 @@ published.
 - **npm:** publish `asnkitrt` and `asnkit-compiler` once by hand, then
   add a trusted publisher to each: GitHub Actions, owner `boxtheta`, repository `asnkit`, workflow
   `release.yml`, environment `npm`. No token is needed.
+- **GitHub Packages:** nothing. The workflow publishes
+  `org.boxtheta:asnkitrt` with its own token, and the package is of the
+  repository, public as it is.
 - **DCO:** install the [DCO app](https://github.com/apps/dco) on the
   repository, and make its check required on `trunk`, so that every
   commit of a pull request is signed off (see `CONTRIBUTING.md`).

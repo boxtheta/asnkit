@@ -70,7 +70,12 @@ mavenPublishing {
     configure(KotlinJvm(javadocJar = JavadocJar.Empty(), sourcesJar = SourcesJar.Sources()))
     coordinates("org.boxtheta", "asnkitrt", version.toString())
     publishToMavenCentral()
-    signAllPublications()
+
+    // Signed when there is a key, as Maven Central wants. GitHub
+    // Packages takes it without.
+    if (providers.gradleProperty("signingInMemoryKey").isPresent) {
+        signAllPublications()
+    }
 
     pom {
         name = "asnkitrt"
@@ -98,6 +103,22 @@ mavenPublishing {
             url = "https://github.com/boxtheta/asnkit"
             connection = "scm:git:https://github.com/boxtheta/asnkit.git"
             developerConnection = "scm:git:ssh://git@github.com/boxtheta/asnkit.git"
+        }
+    }
+}
+
+// GitHub Packages, which the release workflow publishes to, with the
+// name and the token GitHub Actions gives it.
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/boxtheta/asnkit")
+
+            credentials {
+                username = providers.environmentVariable("GITHUB_ACTOR").orNull
+                password = providers.environmentVariable("GITHUB_TOKEN").orNull
+            }
         }
     }
 }
