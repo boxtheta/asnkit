@@ -10,6 +10,14 @@ security fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `org.boxtheta:asnkitrt`, the runtime for the JVM, is published to
+  GitHub Packages with each release, at
+  `https://maven.pkg.github.com/boxtheta/asnkit`. A build that depends
+  on it needs a token of GitHub that can `read:packages`, as
+  `packages/asnkitrt-jvm/README.md` tells.
+
 ## [2.0.0-rc8] - 2026-11-14
 
 ### Added
