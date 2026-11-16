@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 //! Compiles C with include/asnkitrt.h, links it with the shared library
-//! that Cargo built for these tests, and runs it: examples/question.c on
+//! that Cargo builds, and runs it: examples/question.c on
 //! examples/compiled/foo.asni, and tests/api.c.
 //!
 //! It needs a compiler of C, `cc` or the one `CC` names, and is for the
@@ -12,18 +12,59 @@
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::sync::OnceLock;
 
 fn manifest() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// The folder of the shared library. Cargo is asked where it is, as it
+/// is not always next to the test: since 1.100, Cargo gives each crate
+/// a folder of its own. The library is built already, for the test.
+fn libraries() -> &'static Path {
+    static LIBRARIES: OnceLock<PathBuf> = OnceLock::new();
+
+    LIBRARIES.get_or_init(|| {
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+        let mut command = Command::new(&cargo);
+
+        command
+            .args(["build", "--lib", "--message-format=json", "--manifest-path"])
+            .arg(manifest().join("Cargo.toml"))
+            .stderr(Stdio::inherit());
+
+        // The profile of the test, to build nothing again.
+        if !cfg!(debug_assertions) {
+            command.arg("--release");
+        }
+
+        let output = command
+            .output()
+            .unwrap_or_else(|error| panic!("Can not run {cargo}: {error}"));
+
+        assert!(output.status.success(), "{cargo} build failed");
+
+        // A path is between quotes in the messages, and the file is
+        // named as the library: libasnkitrt_c.so, or .dylib.
+        String::from_utf8_lossy(&output.stdout)
+            .split('"')
+            .map(Path::new)
+            .find(|path| {
+                path.file_stem().is_some_and(|stem| stem == "libasnkitrt_c")
+                    && path
+                        .extension()
+                        .is_some_and(|extension| extension == "so" || extension == "dylib")
+            })
+            .and_then(Path::parent)
+            .expect("the shared library in what Cargo built")
+            .to_path_buf()
+    })
+}
+
 /// Compiles `source`, of this package, and runs it with `arguments`.
 fn compile_and_run(source: &str, arguments: &[PathBuf]) -> String {
-    // Where Cargo put the libraries for the tests: `deps/`, with the
-    // test.
-    let test = std::env::current_exe().expect("the path of the test");
-    let libraries = test.parent().expect("the folder of the test");
+    let libraries = libraries();
     let name = Path::new(source).file_stem().expect("a file");
     let output = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     let compiler = std::env::var("CC").unwrap_or_else(|_| "cc".into());
