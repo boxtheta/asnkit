@@ -18,6 +18,16 @@ security fixes.
   on it needs a token of GitHub that can `read:packages`, as
   `packages/asnkitrt-jvm/README.md` tells.
 
+### Fixed
+
+- `asnkitrt-c`: `asnkit_map_set()` and `asnkit_value_new_choice()` kept
+  the pointer to the name they were given, of the member or of the
+  alternative, rather than a copy of it. A program that gave a name in
+  a buffer it then freed or used again had a value with a name that
+  was freed or changed, and reading or encoding it read freed memory.
+  Names that are string literals were not affected. It was so from
+  2.0.0-rc1 on; the names are now copied.
+
 ## [2.0.0-rc8] - 2026-11-14
 
 ### Added

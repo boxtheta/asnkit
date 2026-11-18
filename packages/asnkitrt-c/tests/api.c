@@ -235,6 +235,23 @@ static void test_values(const char *types)
     CHECK(text_is(decoded, "green"));
     asnkit_value_free(decoded);
 
+    /* The names of members and alternatives are copied, and not kept. */
+    {
+        char buffer[8];
+
+        strcpy(buffer, "id");
+        value = asnkit_value_new_map();
+        OK(asnkit_map_set(value, buffer, asnkit_value_new_integer(1)));
+        strcpy(buffer, "b");
+        value = asnkit_value_new_choice(buffer, value);
+        strcpy(buffer, "xx");
+        OK(asnkit_choice_get(value, &name, &name_length, &inner));
+        CHECK(name_length == 1 && name[0] == 'b');
+        OK(asnkit_map_member(inner, 0, &name, &name_length, &inner));
+        CHECK(name_length == 2 && memcmp(name, "id", 2) == 0);
+        asnkit_value_free(value);
+    }
+
     /* A SEQUENCE, its members in order, and a member set twice. */
     value = asnkit_value_new_map();
     OK(asnkit_map_set(value, "id", asnkit_value_new_integer(1)));
