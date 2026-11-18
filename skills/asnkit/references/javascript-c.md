@@ -1,7 +1,8 @@
-# JavaScript/WebAssembly and C
+# JavaScript/WebAssembly, C and C++
 
-Both runtimes wrap the Rust runtime. Use the same compiled `.asni` schema
-and the exact codec used by the peer.
+Both runtimes wrap the Rust runtime; C++ uses the C runtime through a
+header. Use the same compiled `.asni` schema and the exact codec used by
+the peer.
 
 ## JavaScript / TypeScript
 
@@ -105,3 +106,55 @@ not match fails with `ASNKIT_ERROR_LOAD`. The binding setters,
 nonce/key/signature setters and `ASNKIT_KEY_*` constants are removed.
 Use codec options for constraint checks. Do not pass allocator-owned buffers to
 C's `free`; use the library's matching destructor.
+
+## C++
+
+Include `packages/asnkitrt-c/include/asnkitrt.hpp` (C++17 or later,
+header-only) and link the same `libasnkitrt_c`:
+
+```text
+c++ -std=c++17 -I packages/asnkitrt-c/include app.cpp \
+    -L target/release -lasnkitrt_c -Wl,-rpath,"$PWD/target/release" -o app
+```
+
+Start from `packages/asnkitrt-c/examples/question.cpp`. The header's
+comments are the API reference; use the C calls only to hand a handle
+to C code (`get()`, `value::release()`, `value::adopt()`).
+
+```cpp
+#include "asnkitrt.hpp"
+
+auto spec = asnkit::spec::load_file("foo.asni", "der");
+auto value = asnkit::value::map({{"id", 1}, {"question", "Is 1+1=3?"}});
+asnkit::options checked;
+checked.check_constraints = true;
+std::vector<std::uint8_t> encoded = spec.encode("Question", value, checked);
+asnkit::value decoded = spec.decode("Question", encoded, checked);
+if (decoded["id"].as_integer() != 1 || decoded["question"].as_text() != "Is 1+1=3?") {
+    throw std::runtime_error("Round-trip mismatch");
+}
+```
+
+- `asnkit::spec` (move-only) and `asnkit::value` free themselves. Copying
+  a value is a deep copy; moved-from objects are empty and throw
+  `asnkit::argument_error` on use.
+- Make values from C++ types (`bool`, integers, `double`, strings) or
+  with `value::list()`, `value::map()`, `value::choice()`,
+  `value::bytes()`, `value::bits()`, `value::object_identifier()`,
+  `value::date()`, `value::time()`, `value::date_time()`. Build
+  incrementally with `push()` / `set()`, which chain.
+- Read with `kind()` and `as_*()`, `at()` / `[]` / `find()` for list
+  items and map members, and range-for over `items()` / `members()`.
+  `value_view`, `std::string_view`, `bytes_view` and `bits_view` are
+  borrowed: keep the owning value alive and unmodified while using them,
+  and `clone()` a view to own it.
+- Every failure throws `asnkit::error` (a `std::runtime_error`) or its
+  per-status subclass, e.g. `decode_error`, `constraints_error`,
+  `no_such_type_error`, `kind_error`, `asn_range_error`. `code()` is the
+  `asnkit_status`; `decode_error::offset()` is an optional offset
+  (bits for PER/UPER).
+- Encode/decode options are the fields `module`, `check_constraints`
+  and `indent` of `asnkit::options`; use `encode_text()` /
+  `decode_text()` for JER, XER and GSER. Load options are the fields
+  `numeric_enums` and `lenient` of `asnkit::load_options`. Names (types, modules, codecs, members, alternatives) must not contain
+  a NUL.

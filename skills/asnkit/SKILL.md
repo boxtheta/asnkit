@@ -30,8 +30,8 @@ Read only the reference needed for the task:
   mappings, resolve names and member paths, and run the included examples.
 - [Python and Rust runtimes](references/python-rust.md): loading schemas,
   value representations, validation, module disambiguation, embedded builds.
-- [JavaScript and C runtimes](references/javascript-c.md): WebAssembly,
-  browser compilation, C ownership and linking.
+- [JavaScript, C and C++ runtimes](references/javascript-c.md):
+  WebAssembly, browser compilation, C and C++ ownership and linking.
 
 These examples describe this repository's implementation. For an installed
 package, check the project lockfile/version and its actual API before using

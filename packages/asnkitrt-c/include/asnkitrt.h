@@ -23,7 +23,8 @@
  * - A function returns an asnkit_status, ASNKIT_OK or an error, and
  *   writes what it gives through its last arguments; or it returns a
  *   handle, which is NULL on an error. Either way the message of an
- *   error is then asnkit_last_error(), of the thread it happened on.
+ *   error is then asnkit_last_error(), and its status
+ *   asnkit_last_error_status(), of the thread it happened on.
  * - Handles are opaque. What a function gives is owned by the caller and
  *   freed with the function named for it (asnkit_spec_free(),
  *   asnkit_value_free(), asnkit_bytes_free()), unless it says it is
@@ -90,6 +91,12 @@ enum {
 /* The message of the last error of this thread, or "" if there was
  * none. It is valid until the next error of the thread. */
 const char *asnkit_last_error(void);
+
+/* The status of the last error of this thread, or ASNKIT_OK if there
+ * was none. It tells which error a function that makes a handle and
+ * returned NULL had. As the message, it is that of the last function that
+ * failed: one that succeeds leaves it as it was. */
+asnkit_status asnkit_last_error_status(void);
 
 /* If the last error of this thread was ASNKIT_ERROR_DECODE, writes where
  * it was found to *offset, in bytes, or in bits for PER and UPER, and

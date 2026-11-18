@@ -17,6 +17,16 @@ security fixes.
   `https://maven.pkg.github.com/boxtheta/asnkit`. A build that depends
   on it needs a token of GitHub that can `read:packages`, as
   `packages/asnkitrt-jvm/README.md` tells.
+- `asnkitrt-c`: `include/asnkitrt.hpp`, the runtime for C++17 and
+  later. It is only a header, over `asnkitrt.h` and the same library:
+  `asnkit::spec` and `asnkit::value` free what they hold, a value is
+  copied deeply and moved cheaply, what an accessor gives is a view
+  (`asnkit::value_view`, `std::string_view`, `asnkit::bytes_view`), and
+  an error is thrown as an `asnkit::error`, of a class for each status.
+  `examples/question.cpp` is `examples/question.c` in C++.
+- `asnkitrt-c`: `asnkit_last_error_status()`, the status of the last
+  error of the thread, which tells which error a function that returned
+  a `NULL` handle had.
 
 ### Fixed
 

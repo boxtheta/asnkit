@@ -87,8 +87,10 @@ impl From<asnkitrt::Error> for Failure {
     }
 }
 
-/// The last error of this thread: its message and its offset.
+/// The last error of this thread: its status, its message and its
+/// offset.
 struct LastError {
+    status: c_int,
     message: CString,
     offset: Option<usize>,
 }
@@ -103,6 +105,7 @@ fn remember(failure: Failure) -> c_int {
 
     LAST_ERROR.with(|last| {
         *last.borrow_mut() = Some(LastError {
+            status: failure.status,
             message,
             offset: failure.offset,
         })
@@ -202,6 +205,14 @@ pub extern "C" fn asnkit_last_error() -> *const c_char {
         Some(last) => last.message.as_ptr(),
         None => c"".as_ptr(),
     })
+}
+
+/// The status of the last error of this thread, or `ASNKIT_OK` if
+/// there was none: which error a function that makes a handle and
+/// returned null had. A function that succeeds leaves it as it was.
+#[unsafe(no_mangle)]
+pub extern "C" fn asnkit_last_error_status() -> c_int {
+    LAST_ERROR.with(|last| last.borrow().as_ref().map_or(ASNKIT_OK, |last| last.status))
 }
 
 /// Writes the offset of the last error of this thread to `offset` and
