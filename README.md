@@ -52,7 +52,7 @@ with an error rather than encoded wrongly.
 | `asnkitrt` | Runtime for Python. | [`packages/asnkitrt`](packages/asnkitrt) | [PyPI](https://pypi.org/project/asnkitrt/) | MIT |
 | `asnkitrt` | Runtime for Rust. Needs `alloc` but not `std`, so it builds for embedded targets. | [`packages/asnkitrt-rs`](packages/asnkitrt-rs) | [crates.io](https://crates.io/crates/asnkitrt) | MIT |
 | `asnkitrt` | Runtime for browsers and Node.js: the Rust runtime as WebAssembly. | [`packages/asnkitrt-wasm`](packages/asnkitrt-wasm) | [npm](https://www.npmjs.com/package/asnkitrt) | MIT |
-| `asnkitrt-c` | Runtime for C: the Rust runtime as a shared and a static library, with a header. | [`packages/asnkitrt-c`](packages/asnkitrt-c) | build from source | MIT |
+| `asnkitrt-c` | Runtime for C and C++: the Rust runtime as a shared and a static library, with a header for each. | [`packages/asnkitrt-c`](packages/asnkitrt-c) | build from source | MIT |
 | `org.boxtheta:asnkitrt` | Runtime for the JVM, in Kotlin, for Kotlin, Java and the other languages of the JVM. | [`packages/asnkitrt-jvm`](packages/asnkitrt-jvm) | [GitHub Packages](https://github.com/boxtheta/asnkit/packages) | MIT |
 | **Compiler** | Parses ASN.1 and writes `.asni` files. | | | |
 | `asnkit-compiler` | The compiler as a Rust library, which also runs the plugins, for an application to compile ASN.1 itself. | [`packages/asnkit-compiler`](packages/asnkit-compiler) | [crates.io](https://crates.io/crates/asnkit-compiler) | Apache-2.0 |
@@ -173,8 +173,8 @@ pip install asnkit-gen-python        # Generate Python code from ASN.1 with asnk
 ```
 
 The compiler, the Rust runtime and the plugins for Rust are on
-crates.io, and the WebAssembly runtime and compiler are on npm. The C
-runtime is built from source; see
+crates.io, and the WebAssembly runtime and compiler are on npm. The
+runtime for C and C++ is built from source; see
 [`packages/asnkitrt-c`](packages/asnkitrt-c/README.md). The JVM runtime
 needs Java 17 or later; see
 [`packages/asnkitrt-jvm`](packages/asnkitrt-jvm/README.md).

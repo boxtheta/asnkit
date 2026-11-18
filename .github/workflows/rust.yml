@@ -94,8 +94,9 @@ jobs:
         npm run build
         npm test
 
-  # The runtime for C: the runtime in Rust as a shared and a static
-  # library, with include/asnkitrt.h, used from C and C++.
+  # The runtime for C and C++: the runtime in Rust as a shared and a
+  # static library, with include/asnkitrt.h for C and
+  # include/asnkitrt.hpp for C++.
   runtime-c:
 
     runs-on: ubuntu-latest
@@ -106,10 +107,10 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
-    - name: Test, with the example and the API in C and the shared library
+    - name: Test, with the examples and the API in C and C++ and the shared library
       run: |
         cargo test --locked -p asnkitrt-c
-    - name: Link the example with the static library
+    - name: Link the examples in C and C++ with the static library
       # Without color, which CARGO_TERM_COLOR asks for, as a code of it
       # would end the list of libraries.
       run: |
@@ -119,7 +120,10 @@ jobs:
         cc -std=c99 -Wall -Wextra -Werror -pedantic -I packages/asnkitrt-c/include \
           packages/asnkitrt-c/examples/question.c target/release/libasnkitrt_c.a $libraries -o "$RUNNER_TEMP/question"
         "$RUNNER_TEMP/question" examples/compiled/foo.asni
-    - name: The header is C++ too
+        c++ -std=c++17 -Wall -Wextra -Werror -pedantic -I packages/asnkitrt-c/include \
+          packages/asnkitrt-c/examples/question.cpp target/release/libasnkitrt_c.a $libraries -o "$RUNNER_TEMP/question-cpp"
+        "$RUNNER_TEMP/question-cpp" examples/compiled/foo.asni
+    - name: The header of C is C++11 too
       run: |
         printf '#include "asnkitrt.h"\nint main() { asnkit_options options = ASNKIT_OPTIONS_INIT; (void) options; }\n' \
           | c++ -std=c++11 -Wall -Wextra -Werror -pedantic -fsyntax-only -I packages/asnkitrt-c/include -x c++ -

@@ -4,7 +4,8 @@
 
 //! include/asnkitrt.h is written by hand: it has to declare the
 //! functions of src/, all of them and no others, and give its constants
-//! the values they have there.
+//! the values they have there. include/asnkitrt.hpp, which wraps it for
+//! C++, has to use all of them too, so that it does not fall behind.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -45,23 +46,33 @@ fn exported() -> BTreeSet<String> {
     found
 }
 
-/// The header, without its comments.
-fn header() -> String {
-    let mut header = read("include/asnkitrt.h");
+/// `text` without its comments of C, and of C++ if `line_comments`.
+fn without_comments(mut text: String, line_comments: bool) -> String {
+    while let Some(open) = text.find("/*") {
+        let close = open + text[open..].find("*/").expect("a comment that ends") + 2;
 
-    while let Some(open) = header.find("/*") {
-        let close = open + header[open..].find("*/").expect("a comment that ends") + 2;
-
-        header.replace_range(open..close, "");
+        text.replace_range(open..close, "");
     }
 
-    header
+    if line_comments {
+        while let Some(open) = text.find("//") {
+            let close = open + text[open..].find('\n').unwrap_or(text.len() - open);
+
+            text.replace_range(open..close, "");
+        }
+    }
+
+    text
 }
 
-/// The functions that the header declares: an identifier `asnkit_…`
-/// followed by `(`, which the type of the callback is not.
-fn declared() -> BTreeSet<String> {
-    let header = header();
+/// The header, without its comments.
+fn header() -> String {
+    without_comments(read("include/asnkitrt.h"), false)
+}
+
+/// The functions that `header` declares or calls: an identifier
+/// `asnkit_…` followed by `(`, which the type of the callback is not.
+fn functions(header: &str) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
 
     for (at, _) in header.match_indices("asnkit_") {
@@ -82,6 +93,15 @@ fn declared() -> BTreeSet<String> {
 
     found
 }
+
+/// The functions that the header declares.
+fn declared() -> BTreeSet<String> {
+    functions(&header())
+}
+
+/// The functions of C that include/asnkitrt.hpp may leave unused, each
+/// with why. None for now.
+const UNUSED_BY_CPP: &[&str] = &[];
 
 /// The constants `ASNKIT_…` that are given a value, with it.
 fn constants(text: &str, separator: &str) -> BTreeMap<String, String> {
@@ -125,4 +145,22 @@ fn the_constants_agree() {
         in_header.keys().collect::<Vec<_>>(),
         in_rust.keys().collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn the_cpp_header_uses_every_function() {
+    let used = functions(&without_comments(read("include/asnkitrt.hpp"), true));
+    let exported = exported();
+
+    for name in UNUSED_BY_CPP {
+        assert!(exported.contains(*name), "{name} is not a function");
+        assert!(!used.contains(*name), "{name} is used, and not unused");
+    }
+
+    let missing: Vec<_> = exported
+        .iter()
+        .filter(|name| !used.contains(*name) && !UNUSED_BY_CPP.contains(&name.as_str()))
+        .collect();
+
+    assert!(missing.is_empty(), "asnkitrt.hpp does not use {missing:?}");
 }

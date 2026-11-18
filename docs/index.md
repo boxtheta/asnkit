@@ -2,8 +2,8 @@
 
 This is the documentation of the Python runtime and of the formats of the
 files. For the repository as a whole (the runtimes in Python, Rust,
-WebAssembly, C and the JVM, the compiler, the plugins, the codecs, the commands
-and the known limitations) see the
+WebAssembly, C, C++ and the JVM, the compiler, the plugins, the codecs, the
+commands and the known limitations) see the
 [README](https://github.com/boxtheta/asnkit#readme).
 The Rust crates are documented by `cargo doc`. ASN.1 is compiled to `.asni`
 files by the compiler `asnkitcc`, which has no Python API.

@@ -65,7 +65,8 @@ that you are allowed to.
    ```
 
    The tests of the C runtime, `packages/asnkitrt-c`, compile C with
-   `cc`, or the compiler `CC` names, on Linux and macOS.
+   `cc`, or the compiler `CC` names, and C++17 with `c++`, or the
+   compiler `CXX` names, on Linux and macOS.
 
    Also test the Rust runtime without its default features, as embedded
    targets build it:

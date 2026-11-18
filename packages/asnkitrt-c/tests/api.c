@@ -99,7 +99,11 @@ static void test_errors(const char *types)
     asnkit_value *list;
     size_t offset;
 
+    /* No error yet. */
+    CHECK(asnkit_last_error_status() == ASNKIT_OK);
+    CHECK(asnkit_last_error()[0] == '\0');
     CHECK(asnkit_spec_load_file(types, "nope", NULL, &spec) == ASNKIT_ERROR_ARGUMENT);
+    CHECK(asnkit_last_error_status() == ASNKIT_ERROR_ARGUMENT);
     CHECK(strstr(asnkit_last_error(), "Unsupported codec 'nope'") != NULL);
     CHECK(asnkit_spec_load(garbage, sizeof(garbage), NULL, NULL, &spec) == ASNKIT_ERROR_LOAD);
     CHECK(asnkit_spec_load_file("/nonexistent/types.asni", NULL, NULL, &spec) == ASNKIT_ERROR_IO);
@@ -111,7 +115,10 @@ static void test_errors(const char *types)
     CHECK(asnkit_value_kind(NULL) == -1);
     CHECK(asnkit_value_new_text(NULL, 1) == NULL);
     CHECK(asnkit_value_new_text("\xff", 1) == NULL);
+    CHECK(asnkit_last_error_status() == ASNKIT_ERROR_ARGUMENT);
     CHECK(asnkit_value_new_bits(garbage, 3, 8) == NULL);
+    /* The status of a NULL handle. */
+    CHECK(asnkit_last_error_status() == ASNKIT_ERROR_RANGE);
     CHECK(asnkit_list_push(NULL, asnkit_value_new_null()) == ASNKIT_ERROR_ARGUMENT);
     list = asnkit_value_new_list();
     CHECK(asnkit_map_set(list, "a", NULL) == ASNKIT_ERROR_ARGUMENT);
@@ -344,6 +351,7 @@ static void test_values(const char *types)
         CHECK(asnkit_decode(der, "Record", truncated, sizeof(truncated), NULL, &decoded)
               == ASNKIT_ERROR_DECODE);
         CHECK(asnkit_last_error_offset(&offset) == 1);
+        CHECK(asnkit_last_error_status() == ASNKIT_ERROR_DECODE);
         CHECK(asnkit_last_error()[0] != '\0');
     }
 
