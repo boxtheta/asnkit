@@ -260,7 +260,8 @@ pub unsafe extern "C" fn asnkit_value_new_choice(
         let inner = unsafe { take(inner) }?;
         let name = unsafe { crate::text(name, "the name of the alternative") }?;
 
-        Ok(new(Value::Choice(name.into(), Box::new(inner))))
+        // The name is copied: C may free it after.
+        Ok(new(Value::Choice(name.to_owned().into(), Box::new(inner))))
     })
 }
 
@@ -335,7 +336,8 @@ pub unsafe extern "C" fn asnkit_map_set(
 
         match members.iter_mut().find(|(found, _)| found == name) {
             Some((_, found)) => *found = member,
-            None => members.push((name.into(), member)),
+            // The name is copied: C may free it after.
+            None => members.push((name.to_owned().into(), member)),
         }
 
         Ok(())
