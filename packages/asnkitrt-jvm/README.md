@@ -50,7 +50,7 @@ repositories {
 }
 
 dependencies {
-    implementation("org.boxtheta:asnkitrt:2.0.0-rc8")
+    implementation("org.boxtheta:asnkitrt:2.0.0-rc9")
 }
 ```
 
