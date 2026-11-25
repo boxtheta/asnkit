@@ -10,6 +10,8 @@ security fixes.
 
 ## [Unreleased]
 
+## [2.0.0-rc9] - 2026-11-25
+
 ### Added
 
 - `org.boxtheta:asnkitrt`, the runtime for the JVM, is published to
@@ -704,6 +706,7 @@ WebAssembly runtime on npm.
   `application/vnd.asnkit.asnst+cbor`, guidelines for third-party
   runtimes, a corpus of `.asni` files and more than 5,300 test vectors.
 
+[2.0.0-rc9]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc9
 [2.0.0-rc8]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc8
 [2.0.0-rc7]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc7
 [2.0.0-rc6]: https://github.com/boxtheta/asnkit/releases/tag/v2.0.0-rc6
